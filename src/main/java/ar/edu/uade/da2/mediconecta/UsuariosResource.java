@@ -36,6 +36,18 @@ public class UsuariosResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Usuario registrar(Usuario usuario) {
-        return servicio.registrarUsuario(usuario.getNombre(), usuario.getEmail(), usuario.getRol());
+        return servicio.registrarUsuario(usuario.getNombre(), usuario.getEmail(), usuario.getRol(), usuario.getContrasenaHash());
+    }
+    
+    @POST
+    @Path("/login")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Usuario login(Usuario credenciales) {
+        Usuario usuario = servicio.autenticar(credenciales.getEmail(), credenciales.getContrasenaHash());
+        if (usuario == null) {
+            throw new jakarta.ws.rs.WebApplicationException("Email o contraseña incorrectos", 401);
+        }
+        return usuario;
     }
 }

@@ -19,6 +19,14 @@ public class UsuarioDAO {
     public Usuario buscarPorId(Long id) {
         return em.find(Usuario.class, id);
     }
+    
+    public Usuario buscarPorEmail(String email) {
+        List<Usuario> resultado = em.createQuery(
+                "SELECT u FROM Usuario u WHERE u.email = :email", Usuario.class)
+                .setParameter("email", email)
+                .getResultList();
+        return resultado.isEmpty() ? null : resultado.get(0);
+    }
 
     public List<Usuario> listarTodos() {
         return em.createQuery("SELECT u FROM Usuario u", Usuario.class)
