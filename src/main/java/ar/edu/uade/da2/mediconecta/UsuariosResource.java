@@ -3,6 +3,7 @@ package ar.edu.uade.da2.mediconecta;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -21,6 +22,7 @@ public class UsuariosResource {
     @Inject
     private ServicioDeUsuarios servicio;
 
+    @RolesAllowed("ADMINISTRADOR")
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public List<UsuarioDTO> listar() {
