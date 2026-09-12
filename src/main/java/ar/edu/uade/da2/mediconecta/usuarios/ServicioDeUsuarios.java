@@ -2,11 +2,19 @@ package ar.edu.uade.da2.mediconecta.usuarios;
 
 import java.util.List;
 
+import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.Stateless;
 import jakarta.ejb.TransactionAttribute;
 import jakarta.ejb.TransactionAttributeType;
 import jakarta.inject.Inject;
 
+// @PermitAll a nivel de clase: WildFly deniega por defecto todo metodo sin
+// permiso declarado en cuanto el bean tiene alguna anotacion de seguridad
+// (default-missing-method-permissions-deny-access). Sin esto, anotar solo
+// listarUsuarios rompe el registro y el login. Los metodos que necesitan
+// restriccion la declaran individualmente y sobreescriben este permiso.
+@PermitAll
 @Stateless
 public class ServicioDeUsuarios {
 
@@ -47,6 +55,7 @@ public class ServicioDeUsuarios {
         return usuarioDAO.buscarPorId(id);
     }
 
+    @RolesAllowed("ADMINISTRADOR")
     public List<Usuario> listarUsuarios() {
         return usuarioDAO.listarTodos();
     }

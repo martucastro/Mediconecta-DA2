@@ -7,6 +7,7 @@ import ar.edu.uade.da2.mediconecta.usuarios.ServicioDeUsuarios;
 import ar.edu.uade.da2.mediconecta.usuarios.Usuario;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.Stateless;
 import jakarta.ejb.TransactionAttribute;
 import jakarta.ejb.TransactionAttributeType;
@@ -54,6 +55,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
     }
 
     @Override
+    @RolesAllowed("PROFESIONAL")
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public HistoriaClinica crearHistoria(Long pacienteId) {
         validarPaciente(pacienteId);
@@ -69,6 +71,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
     }
 
     @Override
+    @RolesAllowed({"PROFESIONAL", "PACIENTE", "ADMINISTRADOR"})
     public HistoriaClinica obtenerHistoriaDePaciente(Long pacienteId) {
         if (pacienteId == null) {
             throw new DatosInvalidosException("El id del paciente es obligatorio.");
@@ -77,6 +80,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
     }
 
     @Override
+    @RolesAllowed("PROFESIONAL")
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public EntradaClinica agregarEntrada(Long pacienteId, NuevaEntradaDTO datos) {
         if (datos == null) {
@@ -103,6 +107,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
      * queda con una consulta a medio registrar.
      */
     @Override
+    @RolesAllowed("PROFESIONAL")
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public HistoriaClinica registrarConsulta(Long pacienteId, RegistrarConsultaDTO datos) {
         if (datos == null) {
@@ -136,6 +141,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
     }
 
     @Override
+    @RolesAllowed({"PROFESIONAL", "PACIENTE", "ADMINISTRADOR"})
     public List<EntradaClinica> listarEntradas(Long pacienteId) {
         HistoriaClinica historia = obtenerHistoriaDePaciente(pacienteId);
         if (historia == null) {
