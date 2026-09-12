@@ -9,11 +9,14 @@ import ar.edu.uade.da2.mediconecta.historiaclinica.datos.TipoEntrada;
 import java.util.List;
 import java.util.logging.Logger;
 
-import ar.edu.uade.da2.mediconecta.usuarios.ServicioDeUsuarios;
-import ar.edu.uade.da2.mediconecta.usuarios.Usuario;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import jakarta.annotation.Resource;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.ejb.EJBAccessException;
+import jakarta.ejb.SessionContext;
 import jakarta.ejb.Stateless;
 import jakarta.ejb.TransactionAttribute;
 import jakarta.ejb.TransactionAttributeType;
@@ -35,6 +38,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
 
     private static final String ROL_PACIENTE = "PACIENTE";
     private static final String ROL_PROFESIONAL = "PROFESIONAL";
+    private static final String ROL_ADMINISTRADOR = "ADMINISTRADOR";
 
     @Inject
     private HistoriaClinicaDAO historiaDAO;
@@ -49,6 +53,11 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
     // nunca se consulta la tabla de usuarios directamente desde acá.
     @Inject
     private ServicioDeUsuarios servicioDeUsuarios;
+
+    // Identifica al usuario autenticado. @RolesAllowed no alcanza para las
+    // reglas que dependen de *cual* historia se esta pidiendo.
+    @Resource
+    private SessionContext contexto;
 
     @PostConstruct
     public void inicializar() {
@@ -82,6 +91,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
         if (pacienteId == null) {
             throw new DatosInvalidosException("El id del paciente es obligatorio.");
         }
+        verificarQuePuedeLeerLaHistoria(pacienteId);
         return historiaDAO.buscarPorPaciente(pacienteId);
     }
 
@@ -154,6 +164,32 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
             return List.of();
         }
         return entradaDAO.listarPorHistoria(historia.getId());
+    }
+
+    /**
+     * Autorizacion que depende del dato, no del rol.
+     *
+     * Un profesional o un administrador pueden leer cualquier historia: lo
+     * necesitan para atender. Un paciente solo puede leer la propia.
+     *
+     * Esto no se puede declarar con @RolesAllowed porque esa anotacion no ve
+     * los argumentos del metodo: solo sabe responder "este usuario tiene rol
+     * PACIENTE", nunca "esta historia es la suya". Por eso se resuelve de forma
+     * programatica, resolviendo el caller autenticado contra el id pedido.
+     */
+    private void verificarQuePuedeLeerLaHistoria(Long pacienteId) {
+        if (contexto.isCallerInRole(ROL_PROFESIONAL)
+                || contexto.isCallerInRole(ROL_ADMINISTRADOR)) {
+            return;
+        }
+
+        String emailDelCaller = contexto.getCallerPrincipal().getName();
+        Usuario solicitante = servicioDeUsuarios.obtenerPorEmail(emailDelCaller);
+
+        if (solicitante == null || !pacienteId.equals(solicitante.getId())) {
+            throw new EJBAccessException(
+                    "Un paciente solo puede consultar su propia historia clinica.");
+        }
     }
 
     private HistoriaClinica obtenerOCrearHistoria(Long pacienteId) {

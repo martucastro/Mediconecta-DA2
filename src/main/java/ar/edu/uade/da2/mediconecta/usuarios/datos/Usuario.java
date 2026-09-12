@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta.usuarios;
+package ar.edu.uade.da2.mediconecta.usuarios.datos;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;

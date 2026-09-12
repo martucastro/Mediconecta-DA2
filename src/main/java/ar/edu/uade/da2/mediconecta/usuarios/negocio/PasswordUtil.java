@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta.usuarios;
+package ar.edu.uade.da2.mediconecta.usuarios.negocio;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;

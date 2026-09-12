@@ -1,4 +1,7 @@
-package ar.edu.uade.da2.mediconecta.usuarios;
+package ar.edu.uade.da2.mediconecta.usuarios.presentacion;
+
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.HashDeContrasena;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.security.enterprise.authentication.mechanism.http.BasicAuthenticationMechanismDefinition;
