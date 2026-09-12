@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.historiaclinica.datos;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.DiscriminatorValue;
 import jakarta.persistence.Entity;
 
@@ -7,7 +8,14 @@ import jakarta.persistence.Entity;
 @DiscriminatorValue("ANTECEDENTE")
 public class Antecedente extends EntradaClinica {
 
+    public static final int MAX_TIPO_ANTECEDENTE = 60;
+    // Texto libre del profesional: 255 caracteres son dos oraciones.
+    public static final int MAX_DETALLE = 2000;
+
+    @Column(length = MAX_TIPO_ANTECEDENTE)
     private String tipoAntecedente; // por ejemplo: "ALERGIA", "QUIRURGICO", "FAMILIAR"
+
+    @Column(length = MAX_DETALLE)
     private String detalle;
 
     public Antecedente() {

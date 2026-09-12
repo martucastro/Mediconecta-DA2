@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.historiaclinica.datos;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.DiscriminatorValue;
 import jakarta.persistence.Entity;
 
@@ -7,7 +8,14 @@ import jakarta.persistence.Entity;
 @DiscriminatorValue("RECETA")
 public class Receta extends EntradaClinica {
 
+    public static final int MAX_MEDICAMENTO = 120;
+    public static final int MAX_DOSIS = 60;
+    public static final int MAX_DIAS_TRATAMIENTO = 365;
+
+    @Column(length = MAX_MEDICAMENTO)
     private String medicamento;
+
+    @Column(length = MAX_DOSIS)
     private String dosis;
 
     // Integer y no int: con SINGLE_TABLE la columna queda nula en las filas

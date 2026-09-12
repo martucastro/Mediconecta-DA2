@@ -8,9 +8,15 @@ import jakarta.persistence.Entity;
 @DiscriminatorValue("DIAGNOSTICO")
 public class Diagnostico extends EntradaClinica {
 
-    @Column(name = "codigo_cie10")
+    // Un codigo CIE-10 mide a lo sumo 8 caracteres (ej. "J18.9", "M79.604").
+    public static final int MAX_CODIGO_CIE10 = 10;
+    // Texto libre del profesional: 255 caracteres son dos oraciones.
+    public static final int MAX_DESCRIPCION = 2000;
+
+    @Column(name = "codigo_cie10", length = MAX_CODIGO_CIE10)
     private String codigoCIE10;
 
+    @Column(length = MAX_DESCRIPCION)
     private String descripcion;
 
     public Diagnostico() {
