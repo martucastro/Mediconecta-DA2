@@ -1,4 +1,11 @@
-package ar.edu.uade.da2.mediconecta.historiaclinica;
+package ar.edu.uade.da2.mediconecta.historiaclinica.negocio;
+
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.Antecedente;
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.Diagnostico;
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.EntradaClinica;
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.HistoriaClinica;
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.Receta;
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.TipoEntrada;
 
 import jakarta.enterprise.context.ApplicationScoped;
 

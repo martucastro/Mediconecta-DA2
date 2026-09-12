@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta.historiaclinica;
+package ar.edu.uade.da2.mediconecta.historiaclinica.negocio;
 
 import jakarta.ejb.ApplicationException;
 

@@ -1,4 +1,12 @@
-package ar.edu.uade.da2.mediconecta.historiaclinica;
+package ar.edu.uade.da2.mediconecta.historiaclinica.presentacion;
+
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.EntradaClinica;
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.HistoriaClinica;
+import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.DatosInvalidosException;
+import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.NuevaEntradaDTO;
+import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.RegistrarConsultaDTO;
+import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.ServicioDeHistoriaClinicaLocal;
 
 import java.util.List;
 import java.util.stream.Collectors;

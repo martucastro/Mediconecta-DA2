@@ -1,56 +1,29 @@
-package ar.edu.uade.da2.mediconecta.historiaclinica;
+package ar.edu.uade.da2.mediconecta.historiaclinica.negocio;
 
-import java.time.LocalDateTime;
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.TipoEntrada;
 
 /**
- * Vista de salida de una entrada clínica. Aplana las tres subclases en una
- * única forma: los campos que no corresponden al tipo quedan nulos y JSON-B
- * no los serializa.
+ * Datos de entrada para crear una entrada clínica de cualquiera de los tres
+ * tipos. Sólo los campos del tipo indicado son relevantes; el resto viaja nulo
+ * y es EntradaClinicaFactory quien decide cuáles leer y cuáles exigir.
  */
-public class EntradaClinicaDTO {
+public class NuevaEntradaDTO {
 
-    private Long id;
     private TipoEntrada tipo;
     private Long profesionalId;
-    private LocalDateTime fecha;
 
+    // ANTECEDENTE
     private String tipoAntecedente;
     private String detalle;
+
+    // DIAGNOSTICO
     private String codigoCIE10;
     private String descripcion;
+
+    // RECETA
     private String medicamento;
     private String dosis;
     private Integer diasTratamiento;
-
-    public EntradaClinicaDTO() {
-    }
-
-    public EntradaClinicaDTO(EntradaClinica entrada) {
-        this.id = entrada.getId();
-        this.tipo = entrada.getTipo();
-        this.profesionalId = entrada.getProfesionalId();
-        this.fecha = entrada.getFecha();
-
-        if (entrada instanceof Antecedente antecedente) {
-            this.tipoAntecedente = antecedente.getTipoAntecedente();
-            this.detalle = antecedente.getDetalle();
-        } else if (entrada instanceof Diagnostico diagnostico) {
-            this.codigoCIE10 = diagnostico.getCodigoCIE10();
-            this.descripcion = diagnostico.getDescripcion();
-        } else if (entrada instanceof Receta receta) {
-            this.medicamento = receta.getMedicamento();
-            this.dosis = receta.getDosis();
-            this.diasTratamiento = receta.getDiasTratamiento();
-        }
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
 
     public TipoEntrada getTipo() {
         return tipo;
@@ -66,14 +39,6 @@ public class EntradaClinicaDTO {
 
     public void setProfesionalId(Long profesionalId) {
         this.profesionalId = profesionalId;
-    }
-
-    public LocalDateTime getFecha() {
-        return fecha;
-    }
-
-    public void setFecha(LocalDateTime fecha) {
-        this.fecha = fecha;
     }
 
     public String getTipoAntecedente() {

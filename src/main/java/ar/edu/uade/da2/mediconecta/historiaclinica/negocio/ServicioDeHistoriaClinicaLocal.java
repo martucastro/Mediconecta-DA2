@@ -1,4 +1,7 @@
-package ar.edu.uade.da2.mediconecta.historiaclinica;
+package ar.edu.uade.da2.mediconecta.historiaclinica.negocio;
+
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.EntradaClinica;
+import ar.edu.uade.da2.mediconecta.historiaclinica.datos.HistoriaClinica;
 
 import java.util.List;
 
