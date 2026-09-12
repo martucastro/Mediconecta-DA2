@@ -1,11 +1,29 @@
-package ar.edu.uade.da2.mediconecta;
+package ar.edu.uade.da2.mediconecta.usuarios;
 
-public class RegistroUsuarioDTO {
+public class UsuarioDTO {
 
+    private Long id;
     private String nombre;
     private String email;
     private String rol;
-    private String contrasena;
+
+    public UsuarioDTO() {
+    }
+
+    public UsuarioDTO(Usuario usuario) {
+        this.id = usuario.getId();
+        this.nombre = usuario.getNombre();
+        this.email = usuario.getEmail();
+        this.rol = usuario.getRol();
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
 
     public String getNombre() {
         return nombre;
@@ -29,13 +47,5 @@ public class RegistroUsuarioDTO {
 
     public void setRol(String rol) {
         this.rol = rol;
-    }
-
-    public String getContrasena() {
-        return contrasena;
-    }
-
-    public void setContrasena(String contrasena) {
-        this.contrasena = contrasena;
     }
 }

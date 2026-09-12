@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta;
+package ar.edu.uade.da2.mediconecta.usuarios;
 
 public class LoginDTO {
 
