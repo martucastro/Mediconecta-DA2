@@ -18,6 +18,15 @@ import jakarta.ws.rs.core.MediaType;
 @RequestScoped
 public class TurnosResource {
 
+    // Decisión de diseño (no un descuido): sin scope explícito, CDI inyecta este
+    // stateful bean como @Dependent, es decir que se crea una instancia nueva por
+    // cada request HTTP y la conversación reservar -> confirmar/cancelar NO la
+    // sostiene el bean en memoria. Es intencional: el hold es durable en la fila
+    // de Turno (estado EN_HOLD + inicioHold en la DB), no conversacional en el
+    // bean. Así el turno puede confirmarse desde otra pestaña, dispositivo, o
+    // incluso tras un restart del servidor, algo que @SessionScoped no daría por
+    // sí solo. El @Stateful + TimerService en ServicioDeTurnos sigue demostrando
+    // ciclo de vida gestionado por el contenedor para la expiración del hold.
     @Inject
     private ServicioDeTurnos servicio;
 
