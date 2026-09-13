@@ -11,7 +11,15 @@ title: "MediConecta - Documento Técnico"
 **Entrega:** Entrega Obligatoria N.º 1
 **Fecha:** 14/09/2026
 
-**Integrantes:** [completar]
+**Integrantes:**
+
+| Apellido y nombre | Legajo |
+|---|---|
+| Castro, Martina | 1167379 |
+| López Scala, Manuel | 1165832 |
+| Mantegazza, Juan Pablo | 1152457 |
+| Perez Ciccone, Luca | 1134329 |
+| Pereyra Metnik, Gonzalo | 1075364 |
 
 ---
 
