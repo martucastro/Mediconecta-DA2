@@ -63,6 +63,22 @@ curl -L -o deploy/postgresql.jar \
 
 ### 3. Configurar WildFly
 
+Descargá el ZIP desde https://www.wildfly.org/downloads/ y descomprimilo donde
+quieras (no va dentro del repo). Definí `WILDFLY_HOME` apuntando a esa carpeta:
+
+```bash
+export WILDFLY_HOME=/ruta/a/wildfly-41.0.0.Final     # Linux y macOS
+set WILDFLY_HOME=C:\ruta\a\wildfly-41.0.0.Final       # Windows
+```
+
+Creá el usuario de administración de la consola de gestión (una sola vez).
+Con `-s` corre en modo silencioso, sin las preguntas interactivas:
+
+```bash
+$WILDFLY_HOME/bin/add-user.sh -u admin -p 'Admin123!' -s     # Linux y macOS
+%WILDFLY_HOME%\bin\add-user.bat -u admin -p Admin123! -s     # Windows
+```
+
 Arrancá el servidor **con el perfil full**, que es el que incluye la mensajería
 que vamos a necesitar en las próximas entregas:
 
@@ -70,6 +86,13 @@ que vamos a necesitar en las próximas entregas:
 $WILDFLY_HOME/bin/standalone.sh -c standalone-full.xml     # Linux y macOS
 %WILDFLY_HOME%\bin\standalone.bat -c standalone-full.xml   # Windows
 ```
+
+Esperá a ver `WFLYSRV0025: WildFly ... started` en la consola, y verificá:
+
+| Qué | URL | Qué deberías ver |
+|---|---|---|
+| Servidor | http://localhost:8080 | Página de bienvenida de WildFly |
+| Consola de administración | http://localhost:9990 | Login; entrá con `admin` / `Admin123!` |
 
 Con el servidor arriba, desde la raíz del proyecto:
 
