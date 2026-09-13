@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iniciar sesión · MediConecta</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="login">
+    <section class="brand">
+      <div class="wordmark"><img src="assets/logo-light.svg" alt="">MediConecta</div>
+      <div>
+        <h1 class="brand-pitch">Turnos, telemedicina e historia clínica en un solo lugar.</h1>
+        <p class="brand-sub">Reservá con tu obra social validada en el momento. Sin llamados, sin esperas.</p>
+      </div>
+      <p class="brand-foot">Universidad Argentina de la Empresa<br>Desarrollo de Aplicaciones II</p>
+    </section>
+
+    <section class="access">
+      <!-- ponytail: no auth backend yet; the form just navigates to the patient home -->
+      <form class="login-form" action="home.html">
+        <div class="stack" style="gap: 8px">
+          <h2 class="h1">Iniciar sesión</h2>
+          <p class="muted">Ingresá con tu correo y contraseña.</p>
+        </div>
+        <div class="field">
+          <label for="email">CORREO</label>
+          <input class="input" id="email" type="email" autocomplete="email" placeholder="paciente@ejemplo.com" required>
+        </div>
+        <div class="field">
+          <label for="password">CONTRASEÑA</label>
+          <input class="input" id="password" type="password" autocomplete="current-password" placeholder="••••••••••" required>
+        </div>
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Ingresar</button>
+        <a class="link" href="#">¿Olvidaste tu contraseña?</a>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
