@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta;
+package ar.edu.uade.da2.mediconecta.turnos.datos;
 
 import java.util.List;
 
@@ -27,7 +27,7 @@ public class TurnoDAO {
     public List<Turno> listarDisponiblesPorProfesional(Long profesionalId) {
         return em.createQuery(
                 "SELECT t FROM Turno t WHERE t.profesional.id = :profesionalId "
-                        + "AND t.estado = ar.edu.uade.da2.mediconecta.EstadoTurno.DISPONIBLE",
+                        + "AND t.estado = ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno.DISPONIBLE",
                 Turno.class)
                 .setParameter("profesionalId", profesionalId)
                 .getResultList();

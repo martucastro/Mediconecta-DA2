@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta;
+package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -12,6 +12,12 @@ import jakarta.ejb.Timer;
 import jakarta.ejb.TimerConfig;
 import jakarta.ejb.TimerService;
 import jakarta.inject.Inject;
+
+import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
+import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
+import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
+import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
 /**
  * Componente stateful: mantiene el hold de un turno (turnoEnCursoId + Timer activo)

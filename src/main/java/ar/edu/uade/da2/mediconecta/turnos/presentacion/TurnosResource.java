@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta;
+package ar.edu.uade.da2.mediconecta.turnos.presentacion;
 
 import java.util.List;
 
@@ -13,6 +13,9 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
+
+import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
 
 @Path("/turnos")
 @RequestScoped

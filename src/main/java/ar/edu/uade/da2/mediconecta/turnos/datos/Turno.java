@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta;
+package ar.edu.uade.da2.mediconecta.turnos.datos;
 
 import java.time.LocalDateTime;
 
@@ -11,6 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+
+import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 
 @Entity
 @Table(name = "turnos")
