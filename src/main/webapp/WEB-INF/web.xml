@@ -50,4 +50,35 @@
         </auth-constraint>
     </security-constraint>
 
+    <!--
+      Operacion sensible 3: reservar, confirmar y cancelar turnos. Se exige
+      estar autenticado para todo lo que no sea consultar disponibilidad: el
+      paciente sobre el que se opera se resuelve del caller principal, nunca de
+      un parametro, asi que sin autenticacion no hay a nombre de quien reservar.
+      Quien puede hacer que lo decide @RolesAllowed sobre ServicioDeTurnos.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Gestion de turnos</web-resource-name>
+            <url-pattern>/api/turnos/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Reserva de turnos</web-resource-name>
+            <url-pattern>/api/turnos</url-pattern>
+            <http-method>POST</http-method>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
 </web-app>

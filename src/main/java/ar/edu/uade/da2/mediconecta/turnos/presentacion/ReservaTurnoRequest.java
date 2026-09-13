@@ -1,9 +1,15 @@
 package ar.edu.uade.da2.mediconecta.turnos.presentacion;
 
+/**
+ * Cuerpo de POST /api/turnos.
+ *
+ * Ya no lleva pacienteId: el paciente se resuelve del usuario autenticado en
+ * ServicioDeTurnos. Si viniera del cuerpo de la peticion, cualquiera podria
+ * reservar un turno a nombre de otra persona.
+ */
 public class ReservaTurnoRequest {
 
     private Long turnoId;
-    private Long pacienteId;
 
     public ReservaTurnoRequest() {
     }
@@ -14,13 +20,5 @@ public class ReservaTurnoRequest {
 
     public void setTurnoId(Long turnoId) {
         this.turnoId = turnoId;
-    }
-
-    public Long getPacienteId() {
-        return pacienteId;
-    }
-
-    public void setPacienteId(Long pacienteId) {
-        this.pacienteId = pacienteId;
     }
 }

@@ -1,7 +1,10 @@
 package ar.edu.uade.da2.mediconecta.turnos.presentacion;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -13,9 +16,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
-
-import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
-import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
+import jakarta.ws.rs.core.Response;
 
 @Path("/turnos")
 @RequestScoped
@@ -28,35 +29,50 @@ public class TurnosResource {
     // de Turno (estado EN_HOLD + inicioHold en la DB), no conversacional en el
     // bean. Así el turno puede confirmarse desde otra pestaña, dispositivo, o
     // incluso tras un restart del servidor, algo que @SessionScoped no daría por
-    // sí solo. El @Stateful + TimerService en ServicioDeTurnos sigue demostrando
-    // ciclo de vida gestionado por el contenedor para la expiración del hold.
+    // sí solo. La expiración del hold la gestiona el contenedor a través de
+    // ExpiradorDeHolds, que es un @Singleton con TimerService.
     @Inject
     private ServicioDeTurnos servicio;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public List<Turno> consultarDisponibilidad(@QueryParam("profesionalId") Long profesionalId) {
-        return servicio.consultarDisponibilidad(profesionalId);
+    public List<TurnoDTO> consultarDisponibilidad(@QueryParam("profesionalId") Long profesionalId) {
+        List<TurnoDTO> salida = new ArrayList<>();
+        for (Turno turno : servicio.consultarDisponibilidad(profesionalId)) {
+            salida.add(new TurnoDTO(turno));
+        }
+        return salida;
+    }
+
+    @POST
+    @Path("/disponibilidad")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response abrirDisponibilidad(NuevaDisponibilidadRequest solicitud) {
+        Turno turno = servicio.abrirDisponibilidad(solicitud.getFechaHora());
+        return Response.status(Response.Status.CREATED)
+                .entity(new TurnoDTO(turno))
+                .build();
     }
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Turno reservar(ReservaTurnoRequest reserva) {
-        return servicio.reservarTurno(reserva.getTurnoId(), reserva.getPacienteId());
+    public TurnoDTO reservar(ReservaTurnoRequest reserva) {
+        return new TurnoDTO(servicio.reservarTurno(reserva.getTurnoId()));
     }
 
     @PUT
     @Path("/{id}/confirmar")
     @Produces(MediaType.APPLICATION_JSON)
-    public Turno confirmar(@PathParam("id") Long id) {
-        return servicio.confirmarTurno(id);
+    public TurnoDTO confirmar(@PathParam("id") Long id) {
+        return new TurnoDTO(servicio.confirmarTurno(id));
     }
 
     @PUT
     @Path("/{id}/cancelar")
     @Produces(MediaType.APPLICATION_JSON)
-    public Turno cancelar(@PathParam("id") Long id) {
-        return servicio.cancelarTurno(id);
+    public TurnoDTO cancelar(@PathParam("id") Long id) {
+        return new TurnoDTO(servicio.cancelarTurno(id));
     }
 }
