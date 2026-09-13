@@ -1,0 +1,268 @@
+{
+  "info": {
+    "name": "MediConecta",
+    "description": "Coleccion de demostracion de la Entrega Obligatoria N.1.\n\nRequiere el sistema desplegado en WildFly (ver README.md).\n\nLas variables de coleccion traen los usuarios de prueba que crea el seed al arrancar. La autenticacion es HTTP Basic: cada carpeta define el usuario que corresponde, asi que no hay que configurar nada por request.\n\nOrden sugerido para la demo:\n1. Seguridad, para mostrar 401 y 403\n2. Flujo del turno, para mostrar el hold\n3. Expiracion del hold, esperando 5 minutos",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/mediconecta-usuarios/api" },
+    { "key": "clave", "value": "cambiar123" },
+    { "key": "admin", "value": "admin@mediconecta.com" },
+    { "key": "profesional", "value": "profesional@mediconecta.com" },
+    { "key": "paciente", "value": "paciente@mediconecta.com" },
+    { "key": "turnoId", "value": "6" }
+  ],
+  "item": [
+    {
+      "name": "1. Seguridad",
+      "description": "Demuestra que la autorizacion por rol funciona de verdad, no solo que la anotacion esta escrita.",
+      "item": [
+        {
+          "name": "Anonimo a historia clinica (espera 401)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/historias/paciente/3",
+            "description": "Sin credenciales. El security-constraint de web.xml exige estar autenticado para /api/historias/*."
+          }
+        },
+        {
+          "name": "Credencial incorrecta (espera 401)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin}}" },
+                { "key": "password", "value": "contrasena-incorrecta" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/usuarios",
+            "description": "El IdentityStore valida contra el hash guardado en la tabla usuarios y rechaza."
+          }
+        },
+        {
+          "name": "Paciente lista usuarios (espera 403)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{paciente}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/usuarios",
+            "description": "Autenticado correctamente, pero sin el rol que exige la operacion. La diferencia entre 401 y 403 es la prueba de que autenticacion y autorizacion son dos cosas distintas y ambas funcionan."
+          }
+        },
+        {
+          "name": "Admin lista usuarios (espera 200)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/usuarios",
+            "description": "Mismo endpoint, rol correcto."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Flujo del turno",
+      "description": "El caso de uso central: reservar con hold y confirmar.",
+      "item": [
+        {
+          "name": "Ver disponibilidad (publico)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/turnos?profesionalId=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["turnos"],
+              "query": [{ "key": "profesionalId", "value": "2" }]
+            },
+            "description": "Consultar la agenda no exige autenticacion: es una decision de producto, cualquiera puede ver horarios antes de registrarse.\n\nFijate que la respuesta NO trae el hash de contrasena del profesional. Se devuelve un TurnoDTO, no la entidad."
+          }
+        },
+        {
+          "name": "Profesional abre una franja",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"2026-09-25T16:00:00\"\n}"
+            },
+            "url": "{{baseUrl}}/turnos/disponibilidad",
+            "description": "El profesional se resuelve del usuario autenticado, no del cuerpo: nadie puede abrir agenda a nombre de otro.\n\nEl formato de fecha es ISO 8601 sin zona horaria, que es como JSON-B serializa un LocalDateTime."
+          }
+        },
+        {
+          "name": "Paciente NO puede abrir franjas (espera 403)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{paciente}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"fechaHora\": \"2026-09-25T17:00:00\"\n}" },
+            "url": "{{baseUrl}}/turnos/disponibilidad",
+            "description": "@RolesAllowed(\"PROFESIONAL\") sobre el metodo de negocio."
+          }
+        },
+        {
+          "name": "Paciente reserva: arranca el hold",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{paciente}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"turnoId\": {{turnoId}}\n}" },
+            "url": "{{baseUrl}}/turnos",
+            "description": "El turno pasa a EN_HOLD y se llena inicioHold.\n\nEl cuerpo NO lleva pacienteId: se resuelve del usuario autenticado. Si viniera del body, cualquiera reservaria a nombre de otro."
+          }
+        },
+        {
+          "name": "Otro usuario NO confirma el hold ajeno (espera 403)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "PUT",
+            "url": "{{baseUrl}}/turnos/{{turnoId}}/confirmar",
+            "description": "Esto no lo puede resolver @RolesAllowed: la anotacion sabe que el que llama tiene un rol, no que ESTE turno sea suyo. La comprobacion es programatica, con SessionContext."
+          }
+        },
+        {
+          "name": "El paciente confirma el suyo",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{paciente}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "PUT",
+            "url": "{{baseUrl}}/turnos/{{turnoId}}/confirmar",
+            "description": "El turno pasa a CONFIRMADO y se cancela el temporizador de expiracion."
+          }
+        },
+        {
+          "name": "Cancelar un turno reservado",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{paciente}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "PUT",
+            "url": "{{baseUrl}}/turnos/{{turnoId}}/cancelar",
+            "description": "Solo se puede cancelar lo que esta reservado. Cancelar un turno DISPONIBLE se rechaza: de lo contrario cualquiera podria vaciar la agenda del profesional."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Expiracion del hold",
+      "description": "La parte que demuestra el requisito del componente stateful.\n\nReserva un turno y NO lo confirmes. A los 5 minutos, volve a pedir la disponibilidad: el turno reaparece. Nadie programo ese vencimiento en la aplicacion, lo hizo el contenedor a traves del TimerService.\n\nEn el log de WildFly se ve la linea: Hold vencido, el turno N vuelve a estar disponible.",
+      "item": [
+        {
+          "name": "Reservar y NO confirmar",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{paciente}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"turnoId\": 7\n}" },
+            "url": "{{baseUrl}}/turnos",
+            "description": "Anota la hora. No confirmes."
+          }
+        },
+        {
+          "name": "Esperar 5 minutos y ver la disponibilidad",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/turnos?profesionalId=2",
+              "host": ["{{baseUrl}}"],
+              "path": ["turnos"],
+              "query": [{ "key": "profesionalId", "value": "2" }]
+            },
+            "description": "Antes de los 5 minutos el turno 7 no aparece, porque solo se listan los DISPONIBLE. Despues de los 5 minutos vuelve a aparecer."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Historia clinica",
+      "item": [
+        {
+          "name": "Profesional consulta la historia de un paciente",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{baseUrl}}/historias/paciente/3",
+            "description": "Un profesional puede leer cualquier historia: lo necesita para atender.\n\nSi el paciente todavia no tiene historia creada, la respuesta es 404, que es correcto."
+          }
+        },
+        {
+          "name": "Crear la historia de un paciente",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional}}" },
+                { "key": "password", "value": "{{clave}}" }
+              ]
+            },
+            "method": "POST",
+            "url": "{{baseUrl}}/historias/paciente/3",
+            "description": "@RolesAllowed(\"PROFESIONAL\") sobre la fachada de negocio."
+          }
+        }
+      ]
+    }
+  ]
+}
