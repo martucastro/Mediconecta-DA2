@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta;
+package ar.edu.uade.da2.mediconecta.usuarios.datos;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -17,15 +17,17 @@ public class Usuario {
     private String nombre;
     private String email;
     private String rol; // por ejemplo: "PACIENTE", "PROFESIONAL", "ADMINISTRADOR"
-
+    private String contrasenaHash;
+    
     // Constructor vacío (obligatorio para JPA)
     public Usuario() {
     }
 
-    public Usuario(String nombre, String email, String rol) {
+    public Usuario(String nombre, String email, String rol, String contrasenaHash) {
         this.nombre = nombre;
         this.email = email;
         this.rol = rol;
+        this.contrasenaHash = contrasenaHash;
     }
 
     // Getters y setters
@@ -59,5 +61,13 @@ public class Usuario {
 
     public void setRol(String rol) {
         this.rol = rol;
+    }
+    
+    public String getContrasenaHash() {
+    	return contrasenaHash;
+    }
+    
+    public void setContrasenaHash(String contrasenaHash) {
+    	this.contrasenaHash = contrasenaHash;
     }
 }
