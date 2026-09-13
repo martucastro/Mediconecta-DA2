@@ -3,3 +3,5 @@ target/
 .classpath
 .project
 *.class
+# driver JDBC, se descarga en el paso 2 del README
+deploy/postgresql.jar

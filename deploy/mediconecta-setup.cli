@@ -1,0 +1,68 @@
+# Configuracion de WildFly para MediConecta.
+#
+# Deja el servidor listo para recibir el WAR: instala el driver de PostgreSQL,
+# crea el datasource java:/MediConectaDS y habilita la integracion de Jakarta
+# Security con Elytron.
+#
+# Uso, con WildFly YA CORRIENDO y el driver descargado (ver README):
+#
+#   jboss-cli.bat --connect --file=deploy/mediconecta-setup.cli
+#
+# Es idempotente: si algo ya existe, ese paso se saltea en vez de fallar.
+
+# ---------------------------------------------------------------------------
+# 1. Driver JDBC de PostgreSQL como modulo de WildFly
+# ---------------------------------------------------------------------------
+if (outcome != success) of /subsystem=datasources/jdbc-driver=postgresql:read-resource
+    module add --name=org.postgresql \
+               --resources=deploy/postgresql.jar \
+               --dependencies=java.se,jakarta.transaction.api
+
+    /subsystem=datasources/jdbc-driver=postgresql:add( \
+        driver-name=postgresql, \
+        driver-module-name=org.postgresql, \
+        driver-xa-datasource-class-name=org.postgresql.xa.PGXADataSource)
+end-if
+
+# ---------------------------------------------------------------------------
+# 2. Datasource java:/MediConectaDS
+#
+# El nombre JNDI tiene que coincidir exactamente con el <jta-data-source> de
+# src/main/resources/META-INF/persistence.xml.
+# ---------------------------------------------------------------------------
+if (outcome != success) of /subsystem=datasources/data-source=MediConectaDS:read-resource
+    data-source add --name=MediConectaDS \
+        --jndi-name=java:/MediConectaDS \
+        --driver-name=postgresql \
+        --connection-url=jdbc:postgresql://localhost:5432/mediconecta \
+        --user-name=postgres \
+        --password=postgres \
+        --use-ccm=true \
+        --background-validation=true \
+        --valid-connection-checker-class-name=org.jboss.jca.adapters.jdbc.extensions.postgres.PostgreSQLValidConnectionChecker \
+        --exception-sorter-class-name=org.jboss.jca.adapters.jdbc.extensions.postgres.PostgreSQLExceptionSorter
+end-if
+
+# ---------------------------------------------------------------------------
+# 3. Integracion de Jakarta Security con Elytron
+#
+# ESTE PASO NO ES OPCIONAL Y NO ES OBVIO.
+#
+# La autenticacion del sistema usa Jakarta Security (Soteria) con
+# @BasicAuthenticationMechanismDefinition y @DatabaseIdentityStoreDefinition,
+# declarados en usuarios/presentacion/ConfiguracionDeSeguridad.java.
+#
+# Con la configuracion por defecto de WildFly, Elytron intenta autorizar contra
+# su propio realm la identidad que establecio Soteria, no la encuentra, y TODOS
+# los endpoints responden 500 con "ELY01177: Authorization failed".
+#
+# El sintoma que delata el problema: una credencial incorrecta devuelve 401
+# (la autenticacion funciona) y una credencial correcta devuelve 500.
+# ---------------------------------------------------------------------------
+/subsystem=undertow/application-security-domain=other:write-attribute( \
+    name=integrated-jaspi, value=false)
+
+# ---------------------------------------------------------------------------
+# 4. Aplicar
+# ---------------------------------------------------------------------------
+reload
