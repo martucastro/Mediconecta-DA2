@@ -59,13 +59,9 @@ El sistema se organiza en tres capas, con una regla de dependencia estricta: cad
 | Negocio | Reglas del dominio, límites transaccionales, seguridad por rol | EJB (`@Stateless`, `@Stateful`, `@Singleton`), CDI, JTA, Jakarta Security | No conoce detalles de SQL ni de la SPA |
 | Datos | Traduce objetos de dominio a filas de base de datos | Patrón DAO, JPA/Hibernate, PostgreSQL | No contiene reglas de negocio |
 
-A diferencia de una entrega anterior, esta separación ya no depende del sufijo de una clase (`*Resource`, `Servicio*`, `*DAO`) conviviendo en un mismo paquete: hoy es una estructura de paquetes real:
+A diferencia de una entrega anterior, esta separación ya no depende del sufijo de una clase (`*Resource`, `Servicio*`, `*DAO`) conviviendo en un mismo paquete: hoy es una estructura de paquetes real. Bajo el paquete raíz `ar.edu.uade.da2.mediconecta`, cada uno de los tres componentes (`usuarios`, `turnos`, `historiaclinica`) se divide en tres subpaquetes homónimos de las capas: `presentacion`, `negocio` y `datos`. Son nueve subpaquetes, tres componentes por tres capas.
 
-```
-ar.edu.uade.da2.mediconecta.{usuarios,turnos,historiaclinica}.{presentacion,negocio,datos}
-```
-
-Nueve subpaquetes (tres componentes por tres capas). Por ejemplo, `turnos.presentacion` contiene `TurnosResource`, `turnos.negocio` contiene `ServicioDeTurnos` y `ExpiradorDeHolds`, y `turnos.datos` contiene `Turno`, `TurnoDAO` y `EstadoTurno`.
+La regla de dependencia queda así verificable con sólo mirar los imports: una clase de `datos` que importara algo de `presentacion` sería visible de inmediato como una violación de la arquitectura, cosa que la convención de nombres anterior no permitía detectar.
 
 En el paquete raíz quedan tres clases fuera de esa estructura: `ApiActivator` (`Application` de JAX-RS) y los `ExceptionMapper` transversales `AccesoDenegadoMapper` y `ErrorInesperadoMapper`. Es deliberado: son infraestructura JAX-RS que atraviesa los tres componentes por igual (`AccesoDenegadoMapper` traduce a `403` cualquier `EJBAccessException`, venga del componente que venga), y ubicarlos dentro de un componente sugeriría una pertenencia que no existe.
 
@@ -109,63 +105,23 @@ Esta sección documenta lo que existe en el código; la sección 3 ya muestra d�
 
 ### 6.1 ServicioDeTurnos y la expiración del hold
 
-`ServicioDeTurnos` sigue siendo `@Stateful` y sostiene el hold del turno, pero ya **no** aloja el `TimerService` que lo expira. El propio código documenta por qué:
-
-```java
-// turnos/negocio/ServicioDeTurnos.java
-@Stateful
-public class ServicioDeTurnos {
-    @Inject private ExpiradorDeHolds expirador;
-
-    // reservarTurno:              expirador.programar(turnoId, DURACION_HOLD_MS);
-    // confirmarTurno, cancelarTurno: expirador.cancelar(turnoId);
-}
-```
+`ServicioDeTurnos` sigue siendo `@Stateful` y sostiene el hold del turno, pero ya **no** aloja el `TimerService` que lo expira: inyecta un colaborador, `ExpiradorDeHolds`, y le delega tanto la programación del temporizador al reservar como su cancelación al confirmar o cancelar.
 
 No es una opinión del equipo: el javadoc de `jakarta.ejb.TimerService` (API `jakarta.jakartaee-api` 11.0.0) enumera qué tipos de bean pueden registrar timers:
 
 > "The enterprise bean Timer Service allows stateless session beans, singleton session beans, message-driven beans, and enterprise bean 2.x entity beans to be registered for timer callback events."
 
-Los *stateful* session beans no figuran en esa lista. En una iteración anterior, con el timer dentro de `ServicioDeTurnos`, WildFly inyectaba un `TimerService` no funcional y `POST /api/turnos` devolvía `500` en la primera reserva. La solución fue separar dos responsabilidades en dos tipos de bean:
+Los *stateful* session beans no figuran en esa lista. En una iteración anterior, con el timer dentro de `ServicioDeTurnos`, WildFly inyectaba un `TimerService` no funcional y `POST /api/turnos` devolvía `500` en la primera reserva. La solución fue separar dos responsabilidades en dos tipos de bean. `ServicioDeTurnos` conserva el estado conversacional, que es lo que justifica que sea stateful. `ExpiradorDeHolds`, un `@Singleton`, concentra el `TimerService` y el método anotado `@Timeout` que el contenedor invoca al vencer cada plazo. La división no es un rodeo para esquivar una limitación: expresa que la expiración programada no pertenece a la conversación con un cliente sino al contenedor, y que por eso debe vivir en un bean cuyo ciclo de vida no dependa de esa conversación.
 
-```java
-// turnos/negocio/ExpiradorDeHolds.java
-@Singleton
-public class ExpiradorDeHolds {
-    @Resource private TimerService timerService;
-
-    @Timeout
-    public void expirar(Timer timer) { /* vuelve el turno a DISPONIBLE */ }
-
-    public void cancelar(Long turnoId) {
-        for (Timer timer : timerService.getTimers())
-            if (turnoId.equals(timer.getInfo())) timer.cancel();
-    }
-}
-```
-
-Corregir esto dejó a la vista un segundo problema: la versión anterior cancelaba con `for (Timer t : timerService.getTimers()) t.cancel();`. El javadoc de `getTimers()` es explícito: devuelve "all active timers associated with this bean", es decir todos los del bean, no de un paciente en particular; esa implementación cancelaba también los holds de los demás pacientes. La versión actual filtra por `timer.getInfo()`, que devuelve el id del turno porque cada timer se crea con `new TimerConfig(turnoId, false)` (no persistente; sección 11).
+Corregir esto dejó a la vista un segundo problema. La versión anterior cancelaba recorriendo todos los temporizadores devueltos por `getTimers()` y cancelándolos sin discriminar. El javadoc de ese método es explícito: devuelve "all active timers associated with this bean", es decir todos los del bean, no los de un paciente en particular. Esa implementación cancelaba también los holds de los demás pacientes, que quedaban retenidos para siempre. La versión actual identifica cada temporizador por el dato con el que fue creado, el identificador del turno, y cancela únicamente el que corresponde.
 
 Entidades: `Turno` (`paciente`/`profesional` `@ManyToOne`, `estado`, `inicioHold`), `EstadoTurno` (`DISPONIBLE`, `EN_HOLD`, `CONFIRMADO`, `CANCELADO`) y `TurnoDAO`. `TurnosResource` agrega `POST /api/turnos/disponibilidad`, con la restricción de rol en `ServicioDeTurnos.abrirDisponibilidad` (`@RolesAllowed("PROFESIONAL")`), no en el recurso JAX-RS, consistente con la sección 3.
 
 ## 7. Autenticación y autorización
 
-La autenticación, pendiente antes, ya está implementada y verificada en ejecución (sección 10). La configuración vive en `usuarios/presentacion/ConfiguracionDeSeguridad.java`:
+La autenticación, pendiente antes, ya está implementada y verificada en ejecución (sección 10). Toda la configuración se declara en una única clase, `ConfiguracionDeSeguridad`, mediante dos anotaciones de Jakarta Security: `@BasicAuthenticationMechanismDefinition`, que establece autenticación HTTP Basic, y `@DatabaseIdentityStoreDefinition`, que apunta el almacén de identidades al mismo datasource de la aplicación. Esa segunda anotación define dos consultas: una recupera el hash de la contraseña a partir del correo, y otra recupera el rol del usuario, que el contenedor publica como grupo.
 
-```java
-@ApplicationScoped
-@BasicAuthenticationMechanismDefinition(realmName = "MediConecta")
-@DatabaseIdentityStoreDefinition(
-        dataSourceLookup = "java:/MediConectaDS",
-        callerQuery = "SELECT contrasenaHash FROM usuarios WHERE email = ?",
-        groupsQuery = "SELECT rol FROM usuarios WHERE email = ?",
-        hashAlgorithm = HashDeContrasena.class,
-        priority = 10)
-public class ConfiguracionDeSeguridad {
-}
-```
-
-Es Jakarta Security estándar: autenticación HTTP Basic contra un `IdentityStore` respaldado por la base de usuarios. El algoritmo de verificación es un `PasswordHash` propio (`HashDeContrasena`), que delega en `PasswordUtil` (SHA-256, sin salt; sección 11).
+El valor de resolverlo así es que **no hay código de autenticación escrito por el equipo**. No se validan credenciales a mano ni se gestionan sesiones: el contenedor resuelve la identidad antes de que la petición llegue al componente de negocio, y recién entonces las anotaciones de autorización tienen contra qué decidir. La única pieza propia es un verificador de contraseñas que implementa la interfaz `PasswordHash` de la especificación, necesario porque los hashes existentes usan SHA-256 y no el algoritmo por defecto (sin salt; sección 11).
 
 Cuando el contenedor rechaza una llamada por rol, la `EJBAccessException` se traduce a `403` mediante `AccesoDenegadoMapper`. `ErrorInesperadoMapper` cumple un rol complementario: intercepta cualquier otra excepción, la registra y devuelve `500` genérico, salvo que ya sea una `WebApplicationException`.
 
@@ -179,20 +135,7 @@ Cuando el contenedor rechaza una llamada por rol, la `EJBAccessException` se tra
 | `/api/historias/*` (todos) | PROFESIONAL, PACIENTE, ADMINISTRADOR | `crearHistoria`, `agregarEntrada`, `registrarConsulta` | PROFESIONAL |
 | `/api/historias/*` (todos) | PROFESIONAL, PACIENTE, ADMINISTRADOR | `obtenerHistoriaDePaciente`, `listarEntradas` | PROFESIONAL, PACIENTE, ADMINISTRADOR |
 
-Esa tabla, sin embargo, no alcanza para expresar toda la regla de negocio. `@RolesAllowed` solo decide en función del rol del que llama: no ve los argumentos del método. Un paciente con rol PACIENTE podría leer *cualquier* historia clínica, no solo la propia, porque la anotación no compara el `pacienteId` recibido contra la identidad de quien llama. Por eso, donde la regla depende de un dato del método y no solo del rol, la autorización se resuelve programáticamente con `SessionContext`:
-
-```java
-// historiaclinica/negocio/ServicioDeHistoriaClinica.java
-private void verificarQuePuedeLeerLaHistoria(Long pacienteId) {
-    if (contexto.isCallerInRole(ROL_PROFESIONAL)
-            || contexto.isCallerInRole(ROL_ADMINISTRADOR)) return;
-
-    Usuario solicitante = servicioDeUsuarios.obtenerPorEmail(
-            contexto.getCallerPrincipal().getName());
-    if (solicitante == null || !pacienteId.equals(solicitante.getId()))
-        throw new EJBAccessException("Solo puede consultar su propia historia.");
-}
-```
+Esa tabla, sin embargo, no alcanza para expresar toda la regla de negocio. `@RolesAllowed` solo decide en función del rol del que llama: no ve los argumentos del método. Un paciente con rol PACIENTE podría leer *cualquier* historia clínica, no solo la propia, porque la anotación no compara el `pacienteId` recibido contra la identidad de quien llama. Por eso, donde la regla depende de un dato del método y no solo del rol, la autorización se resuelve programáticamente consultando el `SessionContext` que el contenedor inyecta. `ServicioDeHistoriaClinica` deja pasar sin más control a quien tenga rol PROFESIONAL o ADMINISTRADOR, porque ambos necesitan leer cualquier historia para atender; para el resto, recupera el usuario autenticado a partir del `Principal` y compara su identificador contra el paciente solicitado, rechazando la operación si no coinciden.
 
 El mismo patrón se repite en `ServicioDeTurnos.verificarQueElHoldEsDelCaller`, para que un paciente no confirme ni cancele el hold de otro. En ambos casos, un rol con visibilidad total pasa sin más chequeo; para el resto se compara la identidad del `Principal` contra el dueño del recurso. Al lanzar la misma `EJBAccessException` del rechazo declarativo, ambos caminos terminan en el mismo `AccesoDenegadoMapper` y el cliente recibe `403`, sin distinguir si lo bloqueó una anotación o una regla escrita a mano.
 
