@@ -706,14 +706,14 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/turnos?profesionalId=1",
+              "raw": "{{base_url}}/turnos?profesionalId=2",
               "host": ["{{base_url}}"],
               "path": ["turnos"],
               "query": [
-                { "key": "profesionalId", "value": "1" }
+                { "key": "profesionalId", "value": "2" }
               ]
             },
-            "description": "No existe GET /api/turnos/{id} en TurnosResource, solo el listado por profesionalId (PermitAll). Para el cierre stateful de la demo, verificar directamente en DBeaver:\n\nSELECT id, paciente_id, profesional_id, estado, inicio_hold FROM turnos WHERE id = {{turno_id}};\n\nDespues de ~5 minutos sin confirmar (ExpiradorDeHolds/@Timeout, DURACION_HOLD_MS=5min), estado deberia volver a DISPONIBLE y paciente_id/inicio_hold a null, sin ninguna request de por medio. Ajustar profesionalId=1 si el seed no usa ese id."
+            "description": "No existe GET /api/turnos/{id} en TurnosResource, solo el listado por profesionalId (PermitAll). Para el cierre stateful de la demo, verificar directamente en DBeaver:\n\nSELECT id, paciente_id, profesional_id, estado, iniciohold FROM turnos WHERE id = {{turno_id}};\n\nDespues de ~5 minutos sin confirmar (ExpiradorDeHolds/@Timeout, DURACION_HOLD_MS=5min), estado deberia volver a DISPONIBLE y paciente_id/iniciohold a null, sin ninguna request de por medio. El seed crea admin=1, profesional=2, paciente=3, asi que el profesional de prueba es el 2."
           }
         }
       ]
