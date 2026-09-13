@@ -1,4 +1,9 @@
-package ar.edu.uade.da2.mediconecta;
+package ar.edu.uade.da2.mediconecta.usuarios.presentacion;
+
+import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.DatosInvalidosException;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -55,11 +60,11 @@ public class UsuariosResource {
             return Response.status(Response.Status.CREATED)
                     .entity(new UsuarioDTO(nuevoUsuario))
                     .build();
-        } catch (IllegalArgumentException e) {
+        } catch (DatosInvalidosException e) {
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(e.getMessage())
                     .build();
-        } catch (IllegalStateException e) {
+        } catch (ConflictoDeNegocioException e) {
             return Response.status(Response.Status.CONFLICT)
                     .entity(e.getMessage())
                     .build();

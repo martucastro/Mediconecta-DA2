@@ -15,4 +15,39 @@
         <role-name>PROFESIONAL</role-name>
     </security-role>
 
+    <!--
+      Operacion sensible 1: la historia clinica completa. El TP la marca como
+      dato de alta sensibilidad, asi que ninguna de sus operaciones es anonima.
+      Quien puede leer y quien puede escribir lo decide @RolesAllowed sobre la
+      fachada del componente; aca solo se exige estar autenticado.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Historia clinica</web-resource-name>
+            <url-pattern>/api/historias/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>PACIENTE</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
+      Operacion sensible 2: el listado completo de usuarios es solo del
+      administrador. Se restringe unicamente el GET, porque el POST sobre la
+      misma URL es el registro publico: si lo cerraramos no habria forma de
+      crear el primer usuario del sistema.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Listado de usuarios</web-resource-name>
+            <url-pattern>/api/usuarios</url-pattern>
+            <http-method>GET</http-method>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
 </web-app>
