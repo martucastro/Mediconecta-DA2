@@ -1,5 +1,7 @@
 package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.logging.Logger;
 
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
@@ -7,15 +9,18 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
+import jakarta.ejb.Schedule;
 import jakarta.ejb.Singleton;
 import jakarta.ejb.Timeout;
 import jakarta.ejb.Timer;
 import jakarta.ejb.TimerConfig;
 import jakarta.ejb.TimerService;
+import jakarta.ejb.TransactionAttribute;
+import jakarta.ejb.TransactionAttributeType;
 import jakarta.inject.Inject;
 
 /**
- * Responsable de expirar los holds vencidos.
+ * Responsable de liberar los turnos cuyo hold vencio.
  *
  * Por que vive separado de ServicioDeTurnos y no adentro:
  *
@@ -26,16 +31,24 @@ import jakarta.inject.Inject;
  * afuera. Tener el TimerService adentro de ServicioDeTurnos compilaba, pero
  * fallaba en tiempo de ejecucion al crear el primer timer.
  *
- * La division de responsabilidades queda ademas mas limpia: ServicioDeTurnos
- * mantiene el estado conversacional del hold, y este singleton se ocupa de la
- * expiracion programada, que es una responsabilidad del contenedor y no de la
- * conversacion con un cliente.
+ * Usa DOS mecanismos, y cada uno cubre lo que al otro se le escapa:
+ *
+ * 1. Un temporizador por turno, preciso: libera exactamente a los cinco minutos.
+ *    Es el que demuestra el ciclo de vida gestionado por el contenedor.
+ * 2. Un barrido periodico, durable: recorre la base cada minuto buscando holds
+ *    vencidos. Cubre el caso que el temporizador no puede cubrir, porque no es
+ *    persistente: si el servidor se reinicia con turnos retenidos, la fila
+ *    sobrevive pero la tarea programada no.
+ *
+ * Sin el barrido, un reinicio dejaba turnos EN_HOLD para siempre.
  */
 @Singleton
 @PermitAll
 public class ExpiradorDeHolds {
 
     private static final Logger LOGGER = Logger.getLogger(ExpiradorDeHolds.class.getName());
+
+    public static final long DURACION_HOLD_MS = 5 * 60 * 1000;
 
     @Resource
     private TimerService timerService;
@@ -69,16 +82,38 @@ public class ExpiradorDeHolds {
     }
 
     @Timeout
+    @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
     public void expirar(Timer timer) {
-        Long turnoId = (Long) timer.getInfo();
-        Turno turno = turnoDAO.buscarPorId(turnoId);
+        liberar((Long) timer.getInfo(), "temporizador");
+    }
 
-        if (turno != null && turno.getEstado() == EstadoTurno.EN_HOLD) {
-            turno.setEstado(EstadoTurno.DISPONIBLE);
-            turno.setPaciente(null);
-            turno.setInicioHold(null);
-            turnoDAO.actualizar(turno);
-            LOGGER.info("Hold vencido: el turno " + turnoId + " vuelve a estar disponible.");
+    /**
+     * Red de seguridad: recupera los holds que quedaron sin temporizador.
+     *
+     * persistent=false en el @Schedule porque el propio barrido se reprograma en
+     * cada arranque del contenedor; guardarlo en el almacen de timers solo
+     * duplicaria la tarea en cada redespliegue.
+     */
+    @Schedule(hour = "*", minute = "*", second = "0", persistent = false)
+    @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
+    public void barrerHoldsVencidos() {
+        LocalDateTime limite = LocalDateTime.now().minusNanos(DURACION_HOLD_MS * 1_000_000);
+        List<Turno> vencidos = turnoDAO.listarHoldsVencidos(limite);
+        for (Turno turno : vencidos) {
+            liberar(turno.getId(), "barrido");
         }
+    }
+
+    private void liberar(Long turnoId, String origen) {
+        Turno turno = turnoDAO.buscarParaActualizar(turnoId);
+        if (turno == null || turno.getEstado() != EstadoTurno.EN_HOLD) {
+            return;
+        }
+        turno.setEstado(EstadoTurno.DISPONIBLE);
+        turno.setPaciente(null);
+        turno.setInicioHold(null);
+        turnoDAO.actualizar(turno);
+        LOGGER.info("Hold vencido (" + origen + "): el turno " + turnoId
+                + " vuelve a estar disponible.");
     }
 }

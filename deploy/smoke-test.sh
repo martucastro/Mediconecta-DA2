@@ -10,7 +10,7 @@
 # la gestiona el contenedor. Para saltearlo: bash deploy/smoke-test.sh --rapido
 
 set -u
-BASE="${BASE:-http://127.0.0.1:8080/mediconecta-usuarios/api}"
+BASE="${BASE:-http://127.0.0.1:8080/mediconecta/api}"
 ADMIN="admin@mediconecta.com:cambiar123"
 PROF="profesional@mediconecta.com:cambiar123"
 PACI="paciente@mediconecta.com:cambiar123"

@@ -33,8 +33,6 @@ import jakarta.inject.Inject;
         ServicioDeUsuarios.ROL_ADMINISTRADOR })
 public class ServicioDeTurnos {
 
-    private static final long DURACION_HOLD_MS = 5 * 60 * 1000;
-
     @Resource
     private SessionContext contexto;
 
@@ -74,6 +72,15 @@ public class ServicioDeTurnos {
     @RolesAllowed(ServicioDeUsuarios.ROL_PROFESIONAL)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno abrirDisponibilidad(LocalDateTime fechaHora) {
+        // La validacion vive aca y no en el recurso REST: es una regla del
+        // negocio (una franja sin horario no es una franja), y tiene que valer
+        // igual si manana se invoca al componente desde otro canal.
+        if (fechaHora == null) {
+            throw new DatosInvalidosException("Falta la fecha y hora de la franja");
+        }
+        if (fechaHora.isBefore(LocalDateTime.now())) {
+            throw new DatosInvalidosException("No se puede abrir una franja en el pasado");
+        }
         Usuario profesional = usuarioAutenticado();
         Turno turno = new Turno(profesional, fechaHora);
         turnoDAO.guardar(turno);
@@ -92,9 +99,13 @@ public class ServicioDeTurnos {
     public Turno reservarTurno(Long turnoId) {
         Usuario paciente = usuarioAutenticado();
 
-        Turno turno = turnoDAO.buscarPorId(turnoId);
-        if (turno == null || turno.getEstado() != EstadoTurno.DISPONIBLE) {
-            throw new IllegalStateException("El turno no esta disponible");
+        Turno turno = turnoDAO.buscarParaActualizar(turnoId);
+        if (turno == null) {
+            throw new DatosInvalidosException("No existe el turno " + turnoId);
+        }
+        if (turno.getEstado() != EstadoTurno.DISPONIBLE) {
+            throw new ConflictoDeNegocioException(
+                    "El turno ya no esta disponible: esta " + turno.getEstado());
         }
 
         turno.setPaciente(paciente);
@@ -103,7 +114,7 @@ public class ServicioDeTurnos {
         turnoDAO.actualizar(turno);
 
         this.turnoEnCursoId = turnoId;
-        expirador.programar(turnoId, DURACION_HOLD_MS);
+        expirador.programar(turnoId, ExpiradorDeHolds.DURACION_HOLD_MS);
 
         return turno;
     }
@@ -111,9 +122,13 @@ public class ServicioDeTurnos {
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno confirmarTurno(Long turnoId) {
-        Turno turno = turnoDAO.buscarPorId(turnoId);
-        if (turno == null || turno.getEstado() != EstadoTurno.EN_HOLD) {
-            throw new IllegalStateException("El turno no tiene un hold activo");
+        Turno turno = turnoDAO.buscarParaActualizar(turnoId);
+        if (turno == null) {
+            throw new DatosInvalidosException("No existe el turno " + turnoId);
+        }
+        if (turno.getEstado() != EstadoTurno.EN_HOLD) {
+            throw new ConflictoDeNegocioException(
+                    "El turno no tiene un hold activo: esta " + turno.getEstado());
         }
         verificarQueElHoldEsDelCaller(turno);
 
@@ -125,12 +140,13 @@ public class ServicioDeTurnos {
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno cancelarTurno(Long turnoId) {
-        Turno turno = turnoDAO.buscarPorId(turnoId);
+        Turno turno = turnoDAO.buscarParaActualizar(turnoId);
         if (turno == null) {
-            throw new IllegalStateException("El turno no existe");
+            throw new DatosInvalidosException("No existe el turno " + turnoId);
         }
         if (turno.getEstado() == EstadoTurno.DISPONIBLE) {
-            throw new IllegalStateException("El turno no esta reservado, no hay nada que cancelar");
+            throw new ConflictoDeNegocioException(
+                    "El turno no esta reservado, no hay nada que cancelar");
         }
         verificarQueElHoldEsDelCaller(turno);
 

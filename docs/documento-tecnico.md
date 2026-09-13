@@ -216,14 +216,21 @@ Un hallazgo de configuración que costó diagnosticar: la integración de Jakart
 
 ## 11. Estado actual y trabajo pendiente
 
-Este documento se entrega con huecos conocidos. La autenticación, la autorización de historia clínica y la separación en capas, pendientes antes, ya están resueltas (secciones 3 y 7). Queda abierto:
+Las seis brechas que este documento listaba como abiertas están resueltas, y cada una se cerró dentro de la capa a la que pertenecía.
 
-- **Reserva concurrente sin control.** Ni `Turno` ni `ServicioDeTurnos` usan lock pesimista ni `@Version`; dos pacientes reservando el mismo turno pueden pisarse.
-- **El timer del hold no es persistente.** `ExpiradorDeHolds` crea cada timer con `new TimerConfig(turnoId, false)`. Si WildFly se reinicia con turnos `EN_HOLD`, la fila sobrevive en PostgreSQL pero la tarea programada no: quedan en `EN_HOLD` indefinidamente.
-- **Los errores de negocio de turnos salen como `500`.** A diferencia de `HistoriaClinicaResource`, `TurnosResource` no traduce sus excepciones de negocio a `400` o `409`.
-- **Contraseñas con SHA-256 sin salt.** `PasswordUtil` no agrega salt, exponiéndolas a ataques de diccionario precomputado si la base de datos se filtrara.
-- **El artifactId sigue siendo `mediconecta-usuarios`.** El único `pom.xml`, de módulo único, conserva ese nombre pese a los tres componentes ya implementados.
-- **`SeedDeUsuariosIniciales` deja contraseñas fijas.** Profesional y paciente de prueba tienen contraseña hardcodeada; el administrador puede sobrescribirla por variable de entorno, pero por defecto cae en la misma.
+**Reserva concurrente.** La capa de datos expone una búsqueda que toma un lock pesimista de escritura sobre la fila del turno, y la usan las tres operaciones que mutan estado; las consultas de sólo lectura siguen sin lock, porque no deciden nada. Dos pacientes que reserven el mismo turno en el mismo instante quedan serializados: el segundo lee el estado ya actualizado y su validación falla como corresponde. Dónde ponerlo importa tanto como el lock en sí: el bloqueo es una propiedad del acceso a datos, así que vive en el DAO y el negocio lo pide por intención, no por mecanismo.
+
+**Expiración de holds tras un reinicio.** El temporizador por turno sigue existiendo, porque es el que demuestra el ciclo de vida gestionado por el contenedor y libera con precisión al vencimiento, pero no es persistente: un reinicio se lleva la tarea programada aunque la fila sobreviva. Se le sumó un barrido periódico que cada minuto recorre la base buscando holds vencidos. Los dos conviven a propósito y cubren riesgos distintos: el temporizador da precisión, el barrido da durabilidad.
+
+**Errores de negocio traducidos a HTTP.** El componente de turnos define dos excepciones propias, una para datos inválidos y otra para conflictos de estado, ambas anotadas para que el contenedor revierta la transacción; la capa de presentación las traduce a `400` y `409`. La traducción vive en presentación de forma deliberada: el código HTTP es un detalle del transporte y el componente de negocio no tiene por qué saber que lo invocan por REST. Es el criterio que ya regía en historia clínica, así que ahora los dos componentes responden igual ante el mismo tipo de error. Se agregó además la validación que faltaba al abrir una franja: sin horario, o con horario en el pasado, ya no se crea.
+
+**Contraseñas.** El esquema pasó de un resumen SHA-256 sin salt a una derivación PBKDF2 con HMAC-SHA256, salt aleatorio por usuario y ciento veinte mil iteraciones, con comparación en tiempo constante. Ataca dos problemas distintos: sin salt, dos usuarios con la misma contraseña producían el mismo resumen y una tabla precomputada los revertía sin esfuerzo; y SHA-256 está diseñado para ser rápido, lo contrario de lo que conviene acá. El formato guardado incluye el número de iteraciones, de modo que subir el costo más adelante no invalide lo existente. La superficie pública de la clase no cambió, así que el adaptador hacia el contrato de Jakarta Security siguió funcionando sin tocarse: es la ventaja concreta de haber encapsulado la decisión en un solo lugar.
+
+**Nombre del artefacto.** El `artifactId` pasó de `mediconecta-usuarios` a `mediconecta`. El nombre viejo describía el proyecto cuando tenía un solo componente y, con tres implementados, decía algo falso sobre el alcance.
+
+**Contraseñas del sembrado inicial.** Ninguna queda escrita en el código: cada usuario inicial toma la suya de una variable de entorno y, si no está definida, el arranque genera una al azar y la registra una sola vez. Una contraseña fija en el fuente es idéntica en todas las instalaciones y queda publicada en el repositorio.
+
+Lo que sigue abierto es alcance, no deuda: no hay interfaz de usuario, la verificación es de integración contra el sistema desplegado y no de unidad, y los tres componentes conviven en un único módulo Maven, que es lo correcto mientras se desplieguen juntos.
 
 ## 12. Uso de inteligencia artificial generativa
 

@@ -108,13 +108,13 @@ romper nada.
 
 ```bash
 mvn clean package
-cp target/mediconecta-usuarios.war $WILDFLY_HOME/standalone/deployments/
+cp target/mediconecta.war $WILDFLY_HOME/standalone/deployments/
 ```
 
 Listo cuando el log dice:
 
 ```
-WFLYSRV0010: Deployed "mediconecta-usuarios.war"
+WFLYSRV0010: Deployed "mediconecta.war"
 ```
 
 ### 5. Verificar
@@ -134,21 +134,35 @@ Para saltearlo: `bash deploy/smoke-test.sh --rapido`.
 Se crean solos en el primer arranque, desde
 `usuarios/negocio/SeedDeUsuariosIniciales`:
 
-| Correo | Rol | Contraseña |
+| Correo | Rol | Variable de entorno |
 |---|---|---|
-| `admin@mediconecta.com` | ADMINISTRADOR | `cambiar123` |
-| `profesional@mediconecta.com` | PROFESIONAL | `cambiar123` |
-| `paciente@mediconecta.com` | PACIENTE | `cambiar123` |
+| `admin@mediconecta.com` | ADMINISTRADOR | `MEDICONECTA_ADMIN_PASSWORD` |
+| `profesional@mediconecta.com` | PROFESIONAL | `MEDICONECTA_PROFESIONAL_PASSWORD` |
+| `paciente@mediconecta.com` | PACIENTE | `MEDICONECTA_PACIENTE_PASSWORD` |
 
-La del administrador se puede sobreescribir con la variable de entorno
-`MEDICONECTA_ADMIN_PASSWORD`. Las otras dos son fijas: son usuarios de prueba y
-no deberían existir fuera de un entorno de desarrollo.
+Ninguna contraseña está escrita en el código. Cada una se toma de su variable de
+entorno y, si no está definida, el arranque genera una al azar y la escribe una
+sola vez en el log del servidor, con un `WARNING` que las lista. Anotalas ahí: lo
+que queda en la base es el hash y de ahí no se vuelve.
+
+Para que las colecciones de Postman y el smoke test funcionen tal cual están,
+levantá el servidor con las tres definidas:
+
+```bash
+export MEDICONECTA_ADMIN_PASSWORD=cambiar123
+export MEDICONECTA_PROFESIONAL_PASSWORD=cambiar123
+export MEDICONECTA_PACIENTE_PASSWORD=cambiar123
+$WILDFLY_HOME/bin/standalone.sh -c standalone-full.xml -b 0.0.0.0
+```
+
+El correo del administrador también se puede cambiar, con
+`MEDICONECTA_ADMIN_EMAIL`.
 
 ---
 
 ## La API
 
-Base: `http://localhost:8080/mediconecta-usuarios/api`
+Base: `http://localhost:8080/mediconecta/api`
 
 Todo lo que no sea consultar disponibilidad o registrarse exige autenticación
 HTTP Basic.
@@ -166,7 +180,7 @@ HTTP Basic.
 ### Ejemplo del flujo completo
 
 ```bash
-BASE=http://localhost:8080/mediconecta-usuarios/api
+BASE=http://localhost:8080/mediconecta/api
 
 # El profesional abre una franja
 curl -u profesional@mediconecta.com:cambiar123 \
@@ -211,13 +225,14 @@ Se arrancó con `standalone.xml` en vez de `standalone-full.xml`.
 
 Están acá a propósito: son decisiones de alcance de esta entrega, no descuidos.
 
-- **Reserva concurrente.** Dos pacientes que reserven el mismo turno en el mismo
-  instante pueden pisarse: la lectura y la escritura del estado no están bajo un
-  lock pesimista ni hay `@Version`.
-- **Holds tras un reinicio.** El timer del hold es no persistente. Si WildFly se
-  reinicia con turnos retenidos, esos turnos quedan `EN_HOLD` hasta que alguien
-  los toque. La fila sobrevive; la expiración programada no.
-- **Errores de negocio.** Los conflictos del componente de turnos salen como 500
-  en vez de 409, a diferencia de historia clínica, que sí los traduce.
-- **Contraseñas.** SHA-256 sin salt. Alcanza para el alcance de la materia, pero
-  no es lo que corresponde fuera de un TP.
+- **Sin frontend.** El sistema se ejerce por HTTP, con las colecciones de Postman
+  de `deploy/` y `postman/`. La primera entrega evalúa la arquitectura de capas y
+  los componentes de negocio, no la interfaz.
+- **Sin pruebas automatizadas de unidad.** La verificación es de integración, con
+  `deploy/smoke-test.sh` contra el sistema desplegado.
+- **Un solo módulo Maven.** Los tres componentes conviven en un WAR. Separarlos en
+  módulos es lo que corresponde cuando se despliegan por separado, y todavía no es
+  el caso.
+- **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
+  profesional y un paciente de ejemplo. Fuera de un entorno de desarrollo esos dos
+  no deberían existir.

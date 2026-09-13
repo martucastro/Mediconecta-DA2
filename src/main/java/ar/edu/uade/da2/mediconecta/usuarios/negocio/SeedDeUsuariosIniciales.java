@@ -1,5 +1,9 @@
 package ar.edu.uade.da2.mediconecta.usuarios.negocio;
 
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 import java.util.logging.Logger;
 
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
@@ -27,6 +31,12 @@ import jakarta.inject.Inject;
  * Es @Singleton y no @Stateless porque tiene que existir una sola instancia y
  * ejecutarse una sola vez; @Startup hace que el contenedor la cree al desplegar
  * en vez de esperar a la primera invocacion.
+ *
+ * Las contrasenas no estan escritas en el codigo. Cada una se toma de una
+ * variable de entorno y, si no esta definida, se genera al azar y se escribe
+ * una sola vez en el log del arranque. Una contrasena fija en el fuente es la
+ * misma en todas las instalaciones y queda publicada en el repositorio; una
+ * generada existe solo en esa instalacion y en ese log.
  */
 @Singleton
 @Startup
@@ -35,7 +45,7 @@ public class SeedDeUsuariosIniciales {
     private static final Logger LOGGER =
             Logger.getLogger(SeedDeUsuariosIniciales.class.getName());
 
-    private static final String CONTRASENA_POR_DEFECTO = "cambiar123";
+    private static final SecureRandom ALEATORIO = new SecureRandom();
 
     @Inject
     private UsuarioDAO usuarioDAO;
@@ -55,19 +65,48 @@ public class SeedDeUsuariosIniciales {
 
         LOGGER.info("Seed inicial: base vacia, creando los usuarios iniciales.");
 
-        String contrasenaAdmin = variableDeEntorno("MEDICONECTA_ADMIN_PASSWORD");
-        if (contrasenaAdmin == null) {
-            contrasenaAdmin = CONTRASENA_POR_DEFECTO;
-            LOGGER.warning("Seed inicial: MEDICONECTA_ADMIN_PASSWORD no esta definida, "
-                    + "se usa la contrasena por defecto. Cambiala antes de exponer el sistema.");
-        }
+        List<String> generadas = new ArrayList<>();
 
-        crear("Administrador", variableDeEntornoODefecto("MEDICONECTA_ADMIN_EMAIL",
-                "admin@mediconecta.com"), ServicioDeUsuarios.ROL_ADMINISTRADOR, contrasenaAdmin);
+        crear("Administrador",
+                variableDeEntornoODefecto("MEDICONECTA_ADMIN_EMAIL", "admin@mediconecta.com"),
+                ServicioDeUsuarios.ROL_ADMINISTRADOR,
+                contrasenaDe("MEDICONECTA_ADMIN_PASSWORD", generadas));
         crear("Profesional de prueba", "profesional@mediconecta.com",
-                ServicioDeUsuarios.ROL_PROFESIONAL, CONTRASENA_POR_DEFECTO);
+                ServicioDeUsuarios.ROL_PROFESIONAL,
+                contrasenaDe("MEDICONECTA_PROFESIONAL_PASSWORD", generadas));
         crear("Paciente de prueba", "paciente@mediconecta.com",
-                ServicioDeUsuarios.ROL_PACIENTE, CONTRASENA_POR_DEFECTO);
+                ServicioDeUsuarios.ROL_PACIENTE,
+                contrasenaDe("MEDICONECTA_PACIENTE_PASSWORD", generadas));
+
+        avisarDeLasGeneradas(generadas);
+    }
+
+    /**
+     * Devuelve la contrasena de la variable de entorno indicada, o una generada
+     * al azar si no esta definida. Las generadas se acumulan para informarlas
+     * juntas: es la unica oportunidad de conocerlas, porque lo que se guarda en
+     * la base es el hash y de ahi no se vuelve.
+     */
+    private String contrasenaDe(String variable, List<String> generadas) {
+        String configurada = variableDeEntorno(variable);
+        if (configurada != null) {
+            return configurada;
+        }
+        byte[] material = new byte[12];
+        ALEATORIO.nextBytes(material);
+        String generada = Base64.getUrlEncoder().withoutPadding().encodeToString(material);
+        generadas.add(variable + " = " + generada);
+        return generada;
+    }
+
+    private void avisarDeLasGeneradas(List<String> generadas) {
+        if (generadas.isEmpty()) {
+            return;
+        }
+        LOGGER.warning("Seed inicial: se generaron contrasenas al azar porque las variables "
+                + "de entorno correspondientes no estaban definidas. Anotalas ahora, no se "
+                + "vuelven a mostrar:"
+                + System.lineSeparator() + "  " + String.join(System.lineSeparator() + "  ", generadas));
     }
 
     private void crear(String nombre, String email, String rol, String contrasenaPlana) {
