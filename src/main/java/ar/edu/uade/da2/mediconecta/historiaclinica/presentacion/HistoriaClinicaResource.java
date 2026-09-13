@@ -26,8 +26,14 @@ import jakarta.ws.rs.core.Response;
  * Capa de presentación del componente: recibe la petición HTTP, delega en la
  * fachada y traduce el resultado. No contiene ninguna regla de negocio.
  *
- * Las anotaciones de seguridad (@RolesAllowed) van sobre estas operaciones
- * cuando se resuelva la autenticación; hoy el endpoint queda abierto.
+ * La autorización por rol NO se declara acá sino sobre la fachada de negocio,
+ * ServicioDeHistoriaClinica, donde cada operación lleva su @RolesAllowed. El
+ * contenedor intercepta la invocación al EJB, así que la regla se aplica igual
+ * y queda en un solo lugar aunque mañana se sume otro consumidor que no sea
+ * este recurso REST.
+ *
+ * A nivel de transporte, web.xml además exige estar autenticado para todo
+ * /api/historias/*.
  */
 @Path("/historias")
 @ApplicationScoped
