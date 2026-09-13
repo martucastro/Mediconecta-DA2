@@ -1,0 +1,722 @@
+{
+  "info": {
+    "_postman_id": "e1a2b3c4-mediconecta-demo-0001",
+    "name": "MediConecta - Demo Entrega Obligatoria N1",
+    "description": "Secuencia de demo verificada contra el codigo (UsuariosResource/ServicioDeUsuarios, TurnosResource/ServicioDeTurnos, HistoriaClinicaResource/ServicioDeHistoriaClinica). Correr las carpetas en orden 00 -> 01 -> 02 -> 03, y despues de ~5 minutos sin confirmar el turno del paso 02, correr 04 para ver la liberacion automatica del hold.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080/api" }
+  ],
+  "item": [
+    {
+      "name": "00 - Setup",
+      "item": [
+        {
+          "name": "Registrar Paciente B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "    pm.expect([200,201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"{{pacienteB_nombre}}\",\n  \"email\": \"{{pacienteB_email}}\",\n  \"rol\": \"PACIENTE\",\n  \"contrasena\": \"{{pacienteB_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Registro publico sin auth. Solo funciona sin credenciales porque rol=PACIENTE (ServicioDeUsuarios.registrarUsuario exige ser ADMINISTRADOR para crear PROFESIONAL/ADMINISTRADOR)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 - ServicioDeUsuarios (autenticacion y roles)",
+      "item": [
+        {
+          "name": "Acceso anonimo (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Sin header Authorization. Muestra falta de autenticacion."
+          }
+        },
+        {
+          "name": "Credencial incorrecta (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "password-incorrecto", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Password invalido. Muestra que falla por credencial, no por rol."
+          }
+        },
+        {
+          "name": "Listado usuarios - ADMINISTRADOR (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "@RolesAllowed(ADMINISTRADOR). Rol correcto para operacion sensible."
+          }
+        },
+        {
+          "name": "Listado usuarios - PACIENTE (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "@RolesAllowed declarativo bloqueando por rol."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - ServicioDeTurnos (stateful, hold, autorizacion programatica)",
+      "item": [
+        {
+          "name": "Abrir disponibilidad como PACIENTE (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"2026-09-20T10:00:00\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/disponibilidad",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "disponibilidad"]
+            },
+            "description": "@RolesAllowed(PROFESIONAL) en ServicioDeTurnos.abrirDisponibilidad. Rol fino distinto del grueso de web.xml."
+          }
+        },
+        {
+          "name": "Abrir disponibilidad como PROFESIONAL (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "    pm.expect([200,201]).to.include(pm.response.code);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.id) {",
+                  "    pm.collectionVariables.set('turno_id', jsonData.id);",
+                  "    console.log('turno_id guardado:', jsonData.id);",
+                  "} else {",
+                  "    console.warn('No se encontro campo id en la respuesta, completar turno_id a mano.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional_email}}", "type": "string" },
+                { "key": "password", "value": "{{profesional_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"2026-09-20T10:00:00\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/disponibilidad",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "disponibilidad"]
+            },
+            "description": "Rol correcto habilita la operacion. El test script guarda el id devuelto en turno_id."
+          }
+        },
+        {
+          "name": "Reservar turno (201, EN_HOLD)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "    pm.expect([200,201]).to.include(pm.response.code);",
+                  "});",
+                  "console.log('Hold arrancado a las', new Date().toISOString(), '- dura 5 minutos (ServicioDeTurnos.DURACION_HOLD_MS)');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": ["{{base_url}}"],
+              "path": ["turnos"]
+            },
+            "description": "ARRANCA EL HOLD (5 min, ExpiradorDeHolds/@Timeout). Turno pasa a EN_HOLD. Seguir con el resto de la demo mientras corre el timer en segundo plano."
+          }
+        },
+        {
+          "name": "PACIENTE_B confirma hold ajeno (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteB_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteB_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_id}}/confirmar",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "{{turno_id}}", "confirmar"]
+            },
+            "description": "Autorizacion PROGRAMATICA (ServicioDeTurnos.verificarQueElHoldEsDelCaller via SessionContext), no una simple anotacion de rol."
+          }
+        },
+        {
+          "name": "PACIENTE_A confirma su turno (200) [alternativo a 04]",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_id}}/confirmar",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "{{turno_id}}", "confirmar"]
+            },
+            "description": "NO correr esta request si el objetivo es mostrar el cierre stateful (carpeta 04) con este mismo turno_id. Son alternativos: o se confirma aca, o se deja expirar en 04. Si quieren mostrar ambos caminos, usar la carpeta 02b para reservar y confirmar un SEGUNDO turno."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02b - Camino feliz opcional (segundo turno, no interfiere con el cierre)",
+      "item": [
+        {
+          "name": "Abrir disponibilidad (turno B)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.id) {",
+                  "    pm.collectionVariables.set('turno_id_b', jsonData.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional_email}}", "type": "string" },
+                { "key": "password", "value": "{{profesional_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"2026-09-20T11:00:00\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/disponibilidad",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "disponibilidad"]
+            }
+          }
+        },
+        {
+          "name": "Reservar turno B",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_id_b}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": ["{{base_url}}"],
+              "path": ["turnos"]
+            }
+          }
+        },
+        {
+          "name": "Confirmar turno B (200, camino feliz)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_id_b}}/confirmar",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "{{turno_id_b}}", "confirmar"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - ServicioDeHistoriaClinica (Factory, autorizacion fina)",
+      "item": [
+        {
+          "name": "Buscar id de Paciente A (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var email = pm.environment.get('pacienteA_email');",
+                  "var user = jsonData.find(function (u) { return u.email === email; });",
+                  "if (user) {",
+                  "    pm.collectionVariables.set('pacienteA_id', user.id);",
+                  "    console.log('pacienteA_id guardado:', user.id);",
+                  "} else {",
+                  "    console.warn('No se encontro el paciente A en el listado, completar pacienteA_id a mano.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Reusa el listado de ADMINISTRADOR para resolver el id del paciente A (necesario porque el pacienteId viaja en el path de /historias)."
+          }
+        },
+        {
+          "name": "Crear historia clinica (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "    pm.expect([200,201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional_email}}", "type": "string" },
+                { "key": "password", "value": "{{profesional_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/historias/paciente/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["historias", "paciente", "{{pacienteA_id}}"]
+            },
+            "description": "@RolesAllowed(PROFESIONAL). Crea la HistoriaClinica del paciente si todavia no existe."
+          }
+        },
+        {
+          "name": "Registrar consulta - receta invalida (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional_email}}", "type": "string" },
+                { "key": "password", "value": "{{profesional_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profesionalId\": 1,\n  \"diagnostico\": {\n    \"tipo\": \"DIAGNOSTICO\",\n    \"codigoCIE10\": \"J00\",\n    \"descripcion\": \"Resfrio comun\"\n  },\n  \"recetas\": [\n    {\n      \"tipo\": \"RECETA\",\n      \"dosis\": \"500mg\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/historias/paciente/{{pacienteA_id}}/consultas",
+              "host": ["{{base_url}}"],
+              "path": ["historias", "paciente", "{{pacienteA_id}}", "consultas"]
+            },
+            "description": "Falta 'medicamento' en la receta a proposito -> EntradaClinicaFactory tira DatosInvalidosException -> 400. Ajustar profesionalId si el seed no usa id=1."
+          }
+        },
+        {
+          "name": "Registrar consulta valida (200/201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200/201', function () {",
+                  "    pm.expect([200,201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional_email}}", "type": "string" },
+                { "key": "password", "value": "{{profesional_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profesionalId\": 1,\n  \"diagnostico\": {\n    \"tipo\": \"DIAGNOSTICO\",\n    \"codigoCIE10\": \"J00\",\n    \"descripcion\": \"Resfrio comun\"\n  },\n  \"recetas\": [\n    {\n      \"tipo\": \"RECETA\",\n      \"medicamento\": \"Paracetamol\",\n      \"dosis\": \"500mg\",\n      \"diasTratamiento\": 5\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/historias/paciente/{{pacienteA_id}}/consultas",
+              "host": ["{{base_url}}"],
+              "path": ["historias", "paciente", "{{pacienteA_id}}", "consultas"]
+            },
+            "description": "Transaccion declarativa (registrarConsulta) persistiendo diagnostico + receta juntos. Ajustar profesionalId si el seed no usa id=1."
+          }
+        },
+        {
+          "name": "Paciente A lee su propia historia (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/historias/paciente/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["historias", "paciente", "{{pacienteA_id}}"]
+            },
+            "description": "Caso permitido de la autorizacion fina (verificarQuePuedeLeerLaHistoria)."
+          }
+        },
+        {
+          "name": "PACIENTE_B intenta leer la historia de A (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteB_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteB_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/historias/paciente/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["historias", "paciente", "{{pacienteA_id}}"]
+            },
+            "description": "verificarQuePuedeLeerLaHistoria: un PACIENTE no puede leer cualquier historia aunque el rol alcance para el endpoint."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Cierre stateful (volver despues de ~5 min)",
+      "item": [
+        {
+          "name": "Nota - no hay GET de un turno individual",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/turnos?profesionalId=1",
+              "host": ["{{base_url}}"],
+              "path": ["turnos"],
+              "query": [
+                { "key": "profesionalId", "value": "1" }
+              ]
+            },
+            "description": "No existe GET /api/turnos/{id} en TurnosResource, solo el listado por profesionalId (PermitAll). Para el cierre stateful de la demo, verificar directamente en DBeaver:\n\nSELECT id, paciente_id, profesional_id, estado, inicio_hold FROM turnos WHERE id = {{turno_id}};\n\nDespues de ~5 minutos sin confirmar (ExpiradorDeHolds/@Timeout, DURACION_HOLD_MS=5min), estado deberia volver a DISPONIBLE y paciente_id/inicio_hold a null, sin ninguna request de por medio. Ajustar profesionalId=1 si el seed no usa ese id."
+          }
+        }
+      ]
+    }
+  ]
+}
