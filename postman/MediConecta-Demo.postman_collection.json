@@ -580,14 +580,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"profesionalId\": 1,\n  \"diagnostico\": {\n    \"tipo\": \"DIAGNOSTICO\",\n    \"codigoCIE10\": \"J00\",\n    \"descripcion\": \"Resfrio comun\"\n  },\n  \"recetas\": [\n    {\n      \"tipo\": \"RECETA\",\n      \"dosis\": \"500mg\"\n    }\n  ]\n}"
+              "raw": "{\n  \"profesionalId\": 2,\n  \"diagnostico\": {\n    \"tipo\": \"DIAGNOSTICO\",\n    \"codigoCIE10\": \"J00\",\n    \"descripcion\": \"Resfrio comun\"\n  },\n  \"recetas\": [\n    {\n      \"tipo\": \"RECETA\",\n      \"dosis\": \"500mg\"\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{base_url}}/historias/paciente/{{pacienteA_id}}/consultas",
               "host": ["{{base_url}}"],
               "path": ["historias", "paciente", "{{pacienteA_id}}", "consultas"]
             },
-            "description": "Falta 'medicamento' en la receta a proposito -> EntradaClinicaFactory tira DatosInvalidosException -> 400. Ajustar profesionalId si el seed no usa id=1."
+            "description": "Falta 'medicamento' en la receta a proposito -> EntradaClinicaFactory tira DatosInvalidosException -> 400. El seed crea el profesional con id=2."
           }
         },
         {
@@ -619,14 +619,14 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"profesionalId\": 1,\n  \"diagnostico\": {\n    \"tipo\": \"DIAGNOSTICO\",\n    \"codigoCIE10\": \"J00\",\n    \"descripcion\": \"Resfrio comun\"\n  },\n  \"recetas\": [\n    {\n      \"tipo\": \"RECETA\",\n      \"medicamento\": \"Paracetamol\",\n      \"dosis\": \"500mg\",\n      \"diasTratamiento\": 5\n    }\n  ]\n}"
+              "raw": "{\n  \"profesionalId\": 2,\n  \"diagnostico\": {\n    \"tipo\": \"DIAGNOSTICO\",\n    \"codigoCIE10\": \"J00\",\n    \"descripcion\": \"Resfrio comun\"\n  },\n  \"recetas\": [\n    {\n      \"tipo\": \"RECETA\",\n      \"medicamento\": \"Paracetamol\",\n      \"dosis\": \"500mg\",\n      \"diasTratamiento\": 5\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{base_url}}/historias/paciente/{{pacienteA_id}}/consultas",
               "host": ["{{base_url}}"],
               "path": ["historias", "paciente", "{{pacienteA_id}}", "consultas"]
             },
-            "description": "Transaccion declarativa (registrarConsulta) persistiendo diagnostico + receta juntos. Ajustar profesionalId si el seed no usa id=1."
+            "description": "Transaccion declarativa (registrarConsulta) persistiendo diagnostico + receta juntos. El seed crea el profesional con id=2."
           }
         },
         {
