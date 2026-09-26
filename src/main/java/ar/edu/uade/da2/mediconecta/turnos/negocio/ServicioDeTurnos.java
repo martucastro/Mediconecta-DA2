@@ -19,6 +19,11 @@ import jakarta.ejb.Stateful;
 import jakarta.ejb.TransactionAttribute;
 import jakarta.ejb.TransactionAttributeType;
 import jakarta.inject.Inject;
+import jakarta.jms.JMSContext;
+import jakarta.jms.JMSException;
+import jakarta.jms.JMSRuntimeException;
+import jakarta.jms.MapMessage;
+import jakarta.jms.Topic;
 
 /**
  * Componente stateful: mantiene el hold de un turno durante la conversacion
@@ -47,6 +52,15 @@ public class ServicioDeTurnos {
     // o ServicioDeNotificaciones, este es el punto donde se orquestarian.
     @Inject
     private ServicioDeUsuarios servicioDeUsuarios;
+
+    // JMSContext inyectado por el contenedor: participa de la misma transaccion
+    // JTA que confirmarTurno (ver publicarTurnoConfirmado). No conoce el nombre
+    // de ningun consumidor: publica en un topico y listo.
+    @Inject
+    private JMSContext jmsContext;
+
+    @Resource(lookup = "java:/jms/topic/TurnoConfirmado")
+    private Topic topicoTurnoConfirmado;
 
     private Long turnoEnCursoId;
 
@@ -134,7 +148,9 @@ public class ServicioDeTurnos {
 
         turno.setEstado(EstadoTurno.CONFIRMADO);
         expirador.cancelar(turnoId);
-        return turnoDAO.actualizar(turno);
+        Turno confirmado = turnoDAO.actualizar(turno);
+        publicarTurnoConfirmado(confirmado);
+        return confirmado;
     }
 
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
@@ -162,6 +178,37 @@ public class ServicioDeTurnos {
     @PermitAll
     public Long getTurnoEnCursoId() {
         return turnoEnCursoId;
+    }
+
+    /**
+     * Publica el evento de dominio TurnoConfirmado en el topico JMS.
+     *
+     * Va dentro de la misma transaccion JTA que confirmarTurno: el JMSContext
+     * inyectado se enlista en esa transaccion, asi que si el metodo termina
+     * haciendo rollback (o si publicar falla y eso hace abortar la
+     * transaccion), el mensaje nunca sale. No hay forma de confirmar sin
+     * publicar ni de publicar sin haber confirmado.
+     *
+     * Formato provisorio (MapMessage, no JSON) mientras se acuerda el contrato
+     * final con quien implemente ServicioDeNotificaciones: turnoId, pacienteId
+     * y profesionalId como long, fechaHora como String ISO-8601 (MapMessage no
+     * admite LocalDateTime).
+     *
+     * ServicioDeTurnos no importa nada de ServicioDeNotificaciones: publica en
+     * un topico por nombre JNDI, sin saber quien esta escuchando ni si hay
+     * alguien escuchando.
+     */
+    private void publicarTurnoConfirmado(Turno turno) {
+        try {
+            MapMessage mensaje = jmsContext.createMapMessage();
+            mensaje.setLong("turnoId", turno.getId());
+            mensaje.setLong("pacienteId", turno.getPaciente().getId());
+            mensaje.setLong("profesionalId", turno.getProfesional().getId());
+            mensaje.setString("fechaHora", turno.getFechaHora().toString());
+            jmsContext.createProducer().send(topicoTurnoConfirmado, mensaje);
+        } catch (JMSException e) {
+            throw new JMSRuntimeException(e.getMessage(), e.getErrorCode(), e);
+        }
     }
 
     private Usuario usuarioAutenticado() {
