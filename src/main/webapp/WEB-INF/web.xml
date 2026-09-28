@@ -82,6 +82,23 @@
     </security-constraint>
 
     <!--
+      Operacion sensible 4: los pagos. Mueven dinero, asi que ninguna operacion
+      es anonima. Quien puede cobrar, consultar o reembolsar lo decide
+      @RolesAllowed sobre ServicioDePagos; aca solo se exige estar autenticado.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Pagos</web-resource-name>
+            <url-pattern>/api/pagos/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
       Fallback del frontend: cualquier URL que no corresponda a un archivo ni a
       la API devuelve index.html. El frontend es una SPA y sus rutas (por
       ejemplo /mediconecta/agenda) no existen como archivos en el servidor:
