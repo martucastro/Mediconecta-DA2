@@ -92,7 +92,7 @@
           }
         },
         {
-          "name": "Profesional abre una franja",
+          "name": "Profesional abre una franja presencial",
           "request": {
             "auth": {
               "type": "basic",
@@ -105,10 +105,55 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2026-09-25T16:00:00\"\n}"
+              "raw": "{\n  \"fechaHora\": \"2027-03-15T16:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             },
             "url": "{{baseUrl}}/turnos/disponibilidad",
-            "description": "El profesional se resuelve del usuario autenticado, no del cuerpo: nadie puede abrir agenda a nombre de otro.\n\nEl formato de fecha es ISO 8601 sin zona horaria, que es como JSON-B serializa un LocalDateTime."
+            "description": "El profesional se resuelve del usuario autenticado, no del cuerpo: nadie puede abrir agenda a nombre de otro.\n\nEl formato de fecha es ISO 8601 sin zona horaria, que es como JSON-B serializa un LocalDateTime.\n\nmodalidad es opcional (si no viene, PRESENCIAL). El consultorio solo se acepta en las franjas presenciales."
+          }
+        },
+        {
+          "name": "Profesional abre una franja de telemedicina",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 y modalidad TELEMEDICINA', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    pm.expect(pm.response.json().modalidad).to.eql('TELEMEDICINA');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{profesional}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{clave}}"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"2027-03-16T10:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+            },
+            "url": "{{baseUrl}}/turnos/disponibilidad",
+            "description": "Misma operacion, otra modalidad. Sin consultorio: una franja de telemedicina con consultorio responde 400."
           }
         },
         {
@@ -123,7 +168,7 @@
             },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"fechaHora\": \"2026-09-25T17:00:00\"\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"fechaHora\": \"2027-03-15T17:00:00\"\n}" },
             "url": "{{baseUrl}}/turnos/disponibilidad",
             "description": "@RolesAllowed(\"PROFESIONAL\") sobre el metodo de negocio."
           }

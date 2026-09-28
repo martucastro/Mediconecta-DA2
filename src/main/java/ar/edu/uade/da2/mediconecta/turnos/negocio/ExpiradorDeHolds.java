@@ -110,8 +110,7 @@ public class ExpiradorDeHolds {
             return;
         }
         turno.setEstado(EstadoTurno.DISPONIBLE);
-        turno.setPaciente(null);
-        turno.setInicioHold(null);
+        turno.liberar();
         turnoDAO.actualizar(turno);
         LOGGER.info("Hold vencido (" + origen + "): el turno " + turnoId
                 + " vuelve a estar disponible.");

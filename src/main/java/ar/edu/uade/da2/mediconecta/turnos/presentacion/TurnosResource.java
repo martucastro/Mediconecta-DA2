@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.negocio.ConflictoDeNegocioException;
 import ar.edu.uade.da2.mediconecta.turnos.negocio.DatosInvalidosException;
@@ -53,8 +54,26 @@ public class TurnosResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response abrirDisponibilidad(NuevaDisponibilidadRequest solicitud) {
         return responder(() -> Response.status(Response.Status.CREATED)
-                .entity(new TurnoDTO(servicio.abrirDisponibilidad(solicitud.getFechaHora())))
+                .entity(new TurnoDTO(servicio.abrirDisponibilidad(solicitud.getFechaHora(),
+                        leerModalidad(solicitud.getModalidad()), solicitud.getConsultorio())))
                 .build());
+    }
+
+    /**
+     * Traduce el texto del cuerpo al enum. Es validacion de formato, asi que
+     * vive en presentacion; si no viene, se deja null y el negocio aplica el
+     * default PRESENCIAL.
+     */
+    private ModalidadTurno leerModalidad(String modalidad) {
+        if (modalidad == null || modalidad.isBlank()) {
+            return null;
+        }
+        try {
+            return ModalidadTurno.valueOf(modalidad.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new DatosInvalidosException("Modalidad desconocida: " + modalidad
+                    + ". Valores posibles: PRESENCIAL, TELEMEDICINA");
+        }
     }
 
     @POST
