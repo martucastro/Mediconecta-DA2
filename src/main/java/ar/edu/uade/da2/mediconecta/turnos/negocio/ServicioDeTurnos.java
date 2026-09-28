@@ -66,6 +66,18 @@ public class ServicioDeTurnos {
     }
 
     /**
+     * Lectura de un turno por id, a traves de la fachada.
+     *
+     * La expone para que otros componentes (por ejemplo ServicioDePagos) puedan
+     * resolver quien es el paciente y el profesional de un turno sin tocar el
+     * TurnoDAO: la regla del sistema es que los componentes se hablan por sus
+     * fachadas, nunca por la base del otro. Hereda el @RolesAllowed de clase.
+     */
+    public Turno obtenerTurno(Long turnoId) {
+        return turnoDAO.buscarPorId(turnoId);
+    }
+
+    /**
      * Abre una franja disponible en la agenda del profesional autenticado.
      * Sin esto no hay forma de que existan turnos para reservar.
      */
