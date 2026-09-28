@@ -1,8 +1,9 @@
 # Configuracion de WildFly para MediConecta.
 #
 # Deja el servidor listo para recibir el WAR: instala el driver de PostgreSQL,
-# crea el datasource java:/MediConectaDS y habilita la integracion de Jakarta
-# Security con Elytron.
+# crea el datasource java:/MediConectaDS, habilita la integracion de Jakarta
+# Security con Elytron y crea el topico JMS TurnoConfirmadoTopic (requiere
+# haber arrancado con standalone-full.xml).
 #
 # Uso, con WildFly YA CORRIENDO y el driver descargado (ver README):
 #
@@ -63,6 +64,26 @@ end-if
     name=integrated-jaspi, value=false)
 
 # ---------------------------------------------------------------------------
-# 4. Aplicar
+# 4. Topico JMS TurnoConfirmadoTopic
+#
+# Al confirmarse un turno se publica un evento TurnoConfirmado en este topico y
+# ServicioDeNotificaciones (@MessageDriven) lo consume de forma asincronica.
+# Aca solo se crea el destino; publicador y consumidor van en otra entrega.
+#
+# El JNDI java:/jms/topic/TurnoConfirmado es un contrato con el codigo: el
+# publicador y el consumidor lo van a buscar con este nombre exacto.
+#
+# Requiere haber arrancado con standalone-full.xml: el perfil por defecto no
+# trae el subsistema messaging-activemq y este paso falla con WFLYCTL0030 ("No
+# resource definition is registered"). En ese caso, reiniciar con
+# standalone-full.xml y volver a correr el script.
+# ---------------------------------------------------------------------------
+if (outcome != success) of /subsystem=messaging-activemq/server=default/jms-topic=TurnoConfirmadoTopic:read-resource
+    /subsystem=messaging-activemq/server=default/jms-topic=TurnoConfirmadoTopic:add( \
+        entries=["java:/jms/topic/TurnoConfirmado"])
+end-if
+
+# ---------------------------------------------------------------------------
+# 5. Aplicar
 # ---------------------------------------------------------------------------
 reload
