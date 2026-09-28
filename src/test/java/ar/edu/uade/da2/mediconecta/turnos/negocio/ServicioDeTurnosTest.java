@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
 import java.security.Principal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,7 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.SessionContext;
 import jakarta.jms.JMSContext;
 import jakarta.jms.JMSProducer;
@@ -273,6 +275,44 @@ class ServicioDeTurnosTest {
         assertNull(cancelado.getPaciente());
         assertNull(cancelado.getNumeroAutorizacion());
         assertNull(cancelado.getCopago());
+    }
+
+    // ---- Mis turnos ------------------------------------------------------------
+
+    @Test
+    void elPacienteVeLosTurnosDelCallerYNoLosDeOtro() {
+        autenticadoComo(paciente);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_PROFESIONAL)).thenReturn(false);
+        List<Turno> suyos = List.of(turnoEnHold(50L, ModalidadTurno.PRESENCIAL));
+        when(turnoDAO.listarPorPaciente(paciente.getId())).thenReturn(suyos);
+
+        // La fecha se ignora para el paciente: no es un filtro de su vista.
+        assertSame(suyos, servicio.misTurnos(LocalDate.of(2027, 3, 15)));
+
+        verify(turnoDAO).listarPorPaciente(paciente.getId());
+        verify(turnoDAO, never()).listarPorProfesional(anyLong(), any());
+    }
+
+    @Test
+    void elProfesionalVeSuAgendaConElFiltroDeFecha() {
+        autenticadoComo(profesional);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_PROFESIONAL)).thenReturn(true);
+        LocalDate dia = LocalDate.of(2027, 3, 15);
+        List<Turno> agenda = List.of(turnoDisponible(51L));
+        when(turnoDAO.listarPorProfesional(profesional.getId(), dia)).thenReturn(agenda);
+
+        assertSame(agenda, servicio.misTurnos(dia));
+
+        verify(turnoDAO, never()).listarPorPaciente(anyLong());
+    }
+
+    @Test
+    void misTurnosNoEstaHabilitadoParaElAdministrador() throws Exception {
+        RolesAllowed roles = ServicioDeTurnos.class.getMethod("misTurnos", LocalDate.class)
+                .getAnnotation(RolesAllowed.class);
+
+        assertEquals(List.of(ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL),
+                List.of(roles.value()));
     }
 
     // ---- helpers ---------------------------------------------------------------

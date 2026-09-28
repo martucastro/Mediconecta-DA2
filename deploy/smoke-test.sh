@@ -62,6 +62,20 @@ comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "$
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID/confirmar")"
 
 echo
+echo "Mis turnos (resueltos desde el usuario autenticado)"
+FECHA_ID=$(printf '%s' "$NUEVO" | sed -n 's/.*"fechaHora":"\([0-9-]*\)T.*/\1/p')
+comprobar "mis turnos sin credenciales"       401 "$(codigo "$BASE/turnos/mios")"
+comprobar "mis turnos como ADMINISTRADOR"     403 "$(codigo -u "$ADMIN" "$BASE/turnos/mios")"
+comprobar "el paciente ve su turno"           "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | grep -q "\"id\":$ID[,}]" && echo si || echo no)"
+comprobar "el profesional lo ve en su agenda" "si" "$(curl -s -u "$PROF" "$BASE/turnos/mios?fecha=$FECHA_ID" | grep -q "\"id\":$ID[,}]" && echo si || echo no)"
+comprobar "fecha mal formada"                 400 "$(codigo -u "$PROF" "$BASE/turnos/mios?fecha=15-01-2027")"
+OTRO_PACI="smoke-$(date +%s)@mediconecta.com:cambiar123"
+curl -s -o /dev/null -H "Content-Type: application/json" \
+     -d "{\"nombre\":\"Otro paciente\",\"email\":\"${OTRO_PACI%%:*}\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
+     "$BASE/usuarios"
+comprobar "otro paciente NO ve ese turno"     "si" "$(curl -s -u "$OTRO_PACI" "$BASE/turnos/mios" | grep -q "\"id\":$ID[,}]" && echo no || echo si)"
+
+echo
 echo "Sistema legado de la obra social (SOAP)"
 SOAP="${SOAP:-${BASE%/api}/legado/obrasocial}"
 

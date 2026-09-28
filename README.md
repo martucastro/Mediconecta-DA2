@@ -237,6 +237,7 @@ HTTP Basic.
 | `POST` | `/turnos` | PACIENTE | Reserva y retiene por 5 minutos |
 | `PUT` | `/turnos/{id}/confirmar` | PACIENTE | Confirma su propio hold |
 | `PUT` | `/turnos/{id}/cancelar` | PACIENTE | Libera su propio hold |
+| `GET` | `/turnos/mios?fecha=YYYY-MM-DD` | PACIENTE, PROFESIONAL | Turnos del usuario autenticado: el paciente ve sus `EN_HOLD` y `CONFIRMADO`; el profesional, toda su agenda (`fecha` opcional filtra un día) |
 
 `POST /turnos/disponibilidad` acepta `modalidad` (`PRESENCIAL` o
 `TELEMEDICINA`, por defecto `PRESENCIAL`) y, solo para las presenciales,
