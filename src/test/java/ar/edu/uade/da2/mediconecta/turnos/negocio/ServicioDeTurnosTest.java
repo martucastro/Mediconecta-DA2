@@ -215,7 +215,47 @@ class ServicioDeTurnosTest {
         verify(jmsContext, never()).createProducer();
     }
 
+    // ---- Liberar el turno ------------------------------------------------------
+
+    @Test
+    void liberarBorraLaCoberturaDelPacienteAnterior() {
+        Turno turno = turnoEnHoldConCobertura(40L);
+
+        turno.liberar();
+
+        assertNull(turno.getPaciente());
+        assertNull(turno.getInicioHold());
+        assertNull(turno.getCoberturaAutorizada());
+        assertNull(turno.getCoberturaPorcentaje());
+        assertNull(turno.getCopago());
+        assertNull(turno.getNumeroAutorizacion());
+    }
+
+    @Test
+    void cancelarNoDejaLaCoberturaDelPacienteEnElTurno() {
+        Turno turno = turnoEnHoldConCobertura(41L);
+        prepararReserva(turno);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
+        when(turnoDAO.actualizar(turno)).thenReturn(turno);
+
+        Turno cancelado = servicio.cancelarTurno(41L);
+
+        assertEquals(EstadoTurno.CANCELADO, cancelado.getEstado());
+        assertNull(cancelado.getPaciente());
+        assertNull(cancelado.getNumeroAutorizacion());
+        assertNull(cancelado.getCopago());
+    }
+
     // ---- helpers ---------------------------------------------------------------
+
+    private Turno turnoEnHoldConCobertura(Long id) {
+        Turno turno = turnoEnHold(id, ModalidadTurno.PRESENCIAL);
+        turno.setCoberturaAutorizada(true);
+        turno.setCoberturaPorcentaje(new java.math.BigDecimal("70"));
+        turno.setCopago(new java.math.BigDecimal("1500.00"));
+        turno.setNumeroAutorizacion("AUT-123");
+        return turno;
+    }
 
     private void prepararReserva(Turno turno) {
         autenticadoComo(paciente);

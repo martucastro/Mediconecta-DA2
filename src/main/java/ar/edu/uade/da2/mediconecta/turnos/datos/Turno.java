@@ -88,6 +88,19 @@ public class Turno {
         this.estado = EstadoTurno.DISPONIBLE;
     }
 
+    // Suelta al paciente junto con todo lo que era suyo: la cobertura, el copago
+    // y la autorizacion. Si quedaran, el proximo paciente los heredaria y el
+    // listado publico de disponibilidad los mostraria. El estado lo decide quien
+    // llama (DISPONIBLE al vencer el hold, CANCELADO al cancelar).
+    public void liberar() {
+        this.paciente = null;
+        this.inicioHold = null;
+        this.coberturaAutorizada = null;
+        this.coberturaPorcentaje = null;
+        this.copago = null;
+        this.numeroAutorizacion = null;
+    }
+
     // Getters y setters
     public Long getId() {
         return id;

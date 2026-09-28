@@ -210,8 +210,7 @@ public class ServicioDeTurnos {
         verificarQueElHoldEsDelCaller(turno);
 
         turno.setEstado(EstadoTurno.CANCELADO);
-        turno.setPaciente(null);
-        turno.setInicioHold(null);
+        turno.liberar();
         expirador.cancelar(turnoId);
         return turnoDAO.actualizar(turno);
     }
