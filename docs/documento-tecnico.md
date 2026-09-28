@@ -101,7 +101,7 @@ Este flujo atraviesa las tres capas y varios de los ocho componentes:
 7. Al confirmarse el turno se publica `TurnoConfirmado` en un tópico JMS, que `ServicioDeNotificaciones` consume asincrónicamente.
 8. La SPA recibe `201 Created`.
 
-Los pasos 1 a 3 y 6 (parcialmente, sección 11) están respaldados por código real, verificado en la sección 10. Los pasos 4, 5 y 7 describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
+Los pasos 1 a 3, 6 (parcialmente, sección 11) y la mitad publicadora del paso 7 (sección 9.1) están respaldados por código real, verificado en la sección 10. Los pasos 4 y 5, y el lado consumidor del paso 7 (`ServicioDeNotificaciones`), describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
 
 ## 6. Evidencia de implementación
 
@@ -191,6 +191,19 @@ Esto es deliberado, por dos razones:
 2. **El paciente puede confirmar desde otra solicitud HTTP.** Un bean `@Stateful` está atado a una instancia concreta del contenedor; si la confirmación llega en una solicitud distinta de la que generó el hold, como ocurre cuando el contenedor inyecta una nueva instancia por request, ningún estado en memoria del bean anterior estaría disponible.
 
 El `@Stateful` se limita a sostener la referencia conversacional y delegar en el `@Singleton` que expira el hold (sección 6.1); lo que debe sobrevivir entre llamadas está en la base de datos, no en memoria. Esto también explica por qué el timer, aunque hoy vive en `ExpiradorDeHolds`, sigue sin resolver un reinicio del contenedor (sección 11).
+
+### 9.1 Publicación de `TurnoConfirmado`
+
+Al confirmar un turno, `ServicioDeTurnos.confirmarTurno` publica un mensaje en el tópico JMS `java:/jms/topic/TurnoConfirmado`, inyectando `JMSContext` y resolviendo el tópico con `@Resource(lookup = ...)`.
+
+La publicación ocurre **dentro de la misma transacción JTA** que la confirmación, no después: el `JMSContext` inyectado se enlista en esa transacción como cualquier otro recurso transaccional (igual que el `EntityManager`). Esto da una garantía en los dos sentidos:
+
+- Si `confirmarTurno` hace rollback (turno sin hold, hold de otro paciente), el mensaje nunca se envía, porque nunca se llega a publicar.
+- Si la publicación fallara, la excepción no controlada aborta la transacción y la confirmación tampoco queda persistida — no puede quedar un turno `CONFIRMADO` en la base sin que el evento haya salido, ni viceversa.
+
+El mensaje es un `MapMessage` (no JSON) con cuatro campos: `turnoId`, `pacienteId`, `profesionalId` (los tres como `long`) y `fechaHora` (como `String` ISO-8601, porque `MapMessage` no admite `LocalDateTime`). Es un formato provisorio: falta acordarlo con quien implemente `ServicioDeNotificaciones` (sección 4, aún no implementado).
+
+`ServicioDeTurnos` no importa ninguna clase de `ServicioDeNotificaciones`: publica por nombre JNDI del tópico, sin saber si hay algún consumidor suscripto. La configuración del propio tópico en Artemis (WildFly) es una dependencia externa a este cambio, no algo que resuelva el código de la aplicación.
 
 ## 10. Verificación en ejecución
 
