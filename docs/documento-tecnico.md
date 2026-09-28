@@ -67,11 +67,13 @@ El sistema se organiza en tres capas, con una regla de dependencia estricta: cad
 | Negocio | Reglas del dominio, límites transaccionales, seguridad por rol | EJB (`@Stateless`, `@Stateful`, `@Singleton`), CDI, JTA, Jakarta Security | No conoce detalles de SQL ni de la SPA |
 | Datos | Traduce objetos de dominio a filas de base de datos | Patrón DAO, JPA/Hibernate, PostgreSQL | No contiene reglas de negocio |
 
-A diferencia de una entrega anterior, esta separación ya no depende del sufijo de una clase (`*Resource`, `Servicio*`, `*DAO`) conviviendo en un mismo paquete: hoy es una estructura de paquetes real. Bajo el paquete raíz `ar.edu.uade.da2.mediconecta`, cada uno de los tres componentes (`usuarios`, `turnos`, `historiaclinica`) se divide en tres subpaquetes homónimos de las capas: `presentacion`, `negocio` y `datos`. Son nueve subpaquetes, tres componentes por tres capas.
+A diferencia de una entrega anterior, esta separación ya no depende del sufijo de una clase (`*Resource`, `Servicio*`, `*DAO`) conviviendo en un mismo paquete: hoy es una estructura de paquetes real. Bajo el paquete raíz `ar.edu.uade.da2.mediconecta`, cada uno de los tres componentes (`usuarios`, `turnos`, `historiaclinica`) se divide en tres subpaquetes homónimos de las capas: `presentacion`, `negocio` y `datos`. Son nueve subpaquetes, tres componentes por tres capas. El cuarto componente, `obrassociales`, sigue la misma estructura pero sólo con `negocio` y `datos`: no se expone por HTTP, lo invocan otros componentes a través de su fachada (sección 6.3).
 
 La regla de dependencia queda así verificable con sólo mirar los imports: una clase de `datos` que importara algo de `presentacion` sería visible de inmediato como una violación de la arquitectura, cosa que la convención de nombres anterior no permitía detectar.
 
 En el paquete raíz quedan tres clases fuera de esa estructura: `ApiActivator` (`Application` de JAX-RS) y los `ExceptionMapper` transversales `AccesoDenegadoMapper` y `ErrorInesperadoMapper`. Es deliberado: son infraestructura JAX-RS que atraviesa los tres componentes por igual (`AccesoDenegadoMapper` traduce a `403` cualquier `EJBAccessException`, venga del componente que venga), y ubicarlos dentro de un componente sugeriría una pertenencia que no existe.
+
+Hay además un paquete que no es nuestro, aunque viva en el mismo WAR: `externos.obrasocial`, la simulación del sistema legado de la obra social (sección 6.2). No se divide en capas porque no es un componente que diseñamos, sino un tercero del que sólo nos importa el contrato SOAP. Ninguna clase de los componentes lo importa: la única forma de llegar a él es su WSDL, igual que con el sistema real.
 
 ## 4. Los ocho componentes del sistema
 
@@ -80,13 +82,13 @@ En el paquete raíz quedan tres clases fuera de esa estructura: `ApiActivator` (
 | 1 | ServicioDeUsuarios | `@Stateless` | Registro, autenticación, perfiles | Implementado |
 | 2 | ServicioDeTurnos | `@Stateful` (con `ExpiradorDeHolds` como `@Singleton` colaborador) | Disponibilidad, reserva, cancelación, hold de aproximadamente 5 minutos | Implementado |
 | 3 | ServicioDeHistoriaClinica | `@Stateless` | Antecedentes, diagnósticos, recetas | Implementado |
-| 4 | ServicioDeObrasSociales | Adapter vía SOAP | Validación de cobertura contra sistema legado | No implementado |
+| 4 | ServicioDeObrasSociales | Adapter vía SOAP | Validación de cobertura contra sistema legado | Implementado (sección 6.3), contra el legado simulado de la sección 6.2 |
 | 5 | ServicioDePagos | REST | Cobro de copagos contra pasarela de pago | No implementado |
 | 6 | ServicioDeTelemedicina | REST | Integración con proveedor de video | No implementado |
 | 7 | ServicioDeNotificaciones | `@MessageDriven` (tópico JMS) | Notificación asincrónica de eventos | No implementado |
 | 8 | ServicioDeFacturacion | `@MessageDriven` (cola JMS) | Facturación a obras sociales/prepagas | No implementado |
 
-Que los tres componentes ya convivan integrados y desplegados juntos fue justamente lo que permitió detectar y corregir la incompatibilidad entre `@Stateful` y `TimerService` descrita en la sección 6.1: un problema que solo se manifiesta con el sistema desplegado, no en aislamiento.
+Que los componentes ya convivan integrados y desplegados juntos fue justamente lo que permitió detectar y corregir la incompatibilidad entre `@Stateful` y `TimerService` descrita en la sección 6.1: un problema que solo se manifiesta con el sistema desplegado, no en aislamiento.
 
 ## 5. Caso de uso representativo: reservar un turno con cobertura
 
@@ -101,7 +103,7 @@ Este flujo atraviesa las tres capas y varios de los ocho componentes:
 7. Al confirmarse el turno se publica `TurnoConfirmado` en un tópico JMS, que `ServicioDeNotificaciones` consume asincrónicamente.
 8. La SPA recibe `201 Created`.
 
-Los pasos 1 a 3, 6 (parcialmente, sección 11) y la mitad publicadora del paso 7 (sección 9.1) están respaldados por código real, verificado en la sección 10. Los pasos 4 y 5, y el lado consumidor del paso 7 (`ServicioDeNotificaciones`), describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
+Los pasos 1 a 3, 6 (parcialmente, sección 11) y la mitad publicadora del paso 7 (sección 9.1) están respaldados por código real, verificado en la sección 10. El componente del paso 4 ya existe (sección 6.3), pero `ServicioDeTurnos` todavía no lo invoca al reservar. El paso 5 y el lado consumidor del paso 7 (`ServicioDeNotificaciones`) describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
 
 ## 6. Evidencia de implementación
 
@@ -124,6 +126,59 @@ Los *stateful* session beans no figuran en esa lista. En una iteración anterior
 Corregir esto dejó a la vista un segundo problema. La versión anterior cancelaba recorriendo todos los temporizadores devueltos por `getTimers()` y cancelándolos sin discriminar. El javadoc de ese método es explícito: devuelve "all active timers associated with this bean", es decir todos los del bean, no los de un paciente en particular. Esa implementación cancelaba también los holds de los demás pacientes, que quedaban retenidos para siempre. La versión actual identifica cada temporizador por el dato con el que fue creado, el identificador del turno, y cancela únicamente el que corresponde.
 
 Entidades: `Turno` (`paciente`/`profesional` `@ManyToOne`, `estado`, `inicioHold`), `EstadoTurno` (`DISPONIBLE`, `EN_HOLD`, `CONFIRMADO`, `CANCELADO`) y `TurnoDAO`. `TurnosResource` agrega `POST /api/turnos/disponibilidad`, con la restricción de rol en `ServicioDeTurnos.abrirDisponibilidad` (`@RolesAllowed("PROFESIONAL")`), no en el recurso JAX-RS, consistente con la sección 3.
+
+### 6.2 Sistema legado de la obra social (simulado)
+
+El sistema legado de la obra social no existe, pero la integración tiene que ser SOAP de verdad. Por eso se simula con un endpoint JAX-WS publicado por el CXF de WildFly, que es contra lo que se integrará el Adapter `ServicioDeObrasSociales`.
+
+**WSDL:** `http://localhost:8080/mediconecta/legado/obrasocial?wsdl`
+
+La URL se fija con un mapeo explícito en `web.xml` en vez de depender del nombre que JBossWS asigna por defecto, para que el contrato tenga una dirección estable. El endpoint no tiene `security-constraint`: representa a un tercero, que no conoce a los usuarios de MediConecta.
+
+Las dos operaciones reciben `dni`, `numeroAfiliado` y `codigoPrestacion` y devuelven una `respuestaCobertura` con `autorizado`, `plan`, `porcentajeCobertura`, `arancel`, `copago`, `numeroAutorizacion` y `mensaje`:
+
+- `validarCobertura`: consulta; nunca devuelve número de autorización.
+- `autorizarPrestacion`: misma evaluación y, si queda autorizada, un número de autorización (`AUT-<afiliado>-<prestación>`).
+
+Las respuestas son deterministas, con un afiliado por plan para poder mostrar cada caso. El porcentaje depende del plan, y el copago es `arancel × (100 − porcentaje) / 100`. Las prestaciones son `CONSULTA` (arancel 20000.00) y `TELECONSULTA` (15000.00).
+
+| DNI | Afiliado | Plan | Cobertura | Resultado para `CONSULTA` |
+|---|---|---|---|---|
+| 30111222 | OS-1001 | `PLAN_ALTO` | 100 % | autorizado, copago 0.00 |
+| 30333444 | OS-2002 | `PLAN_MEDIO` | 70 % | autorizado, copago 6000.00 |
+| 30444555 | OS-3003 | `PLAN_BASICO` | 40 % | autorizado, copago 12000.00 |
+| 30555666 | OS-4004 | `SIN_COBERTURA` | 0 % | no autorizado, copago 20000.00 |
+| 30777888 | OS-5005 | `PLAN_ALTO` | 100 % | tarda 30 s en responder: existe para demostrar el timeout del Adapter (6.3) |
+
+Se distinguen dos tipos de negativa. "Sin cobertura" es una respuesta válida del legado: el afiliado existe y el plan no cubre. Un afiliado inexistente, un DNI que no corresponde al número de afiliado o una prestación desconocida son en cambio pedidos que el legado no puede evaluar, y vuelven como SOAP Fault (`afiliadoInexistente`). El Adapter trata la primera como un resultado de negocio y la segunda como un pedido inválido (sección 6.3).
+
+Una consecuencia del caveat de la sección 2.3: `jakarta.jakartaee-api` 11 ya no incluye JAX-WS, así que el `pom.xml` declara `jakarta.xml.ws-api` 4.0 con alcance `provided`. En tiempo de ejecución la implementación la pone WildFly; la dependencia sólo existe para compilar.
+
+### 6.3 ServicioDeObrasSociales: el Adapter
+
+Es el caso de libro del patrón Adapter. Hacia adentro, el sistema pregunta en su propio idioma: `validarCobertura(pacienteId, Prestacion)` y recibe una `Cobertura` (autorizada, porcentaje, copago, número de autorización). Hacia afuera, el legado sólo entiende DNI, número de afiliado, códigos de prestación y sobres SOAP. El componente traduce en los dos sentidos, y ningún tipo del contrato SOAP sale de él.
+
+| Capa | Clase | Qué hace |
+|---|---|---|
+| Negocio | `ServicioDeObrasSociales` (`@Stateless`) | Fachada: `validarCobertura`, `autorizarPrestacion`, `registrarAfiliacion` |
+| Negocio | `Cobertura`, `Prestacion` | Objeto de dominio devuelto y enum de prestaciones |
+| Negocio | `ObraSocialNoDisponibleException`, `DatosInvalidosException` | Los dos errores que ve el resto del sistema |
+| Negocio | `SeedDeAfiliaciones` | Afilia al paciente de prueba (OS-2002) en el arranque |
+| Datos | `SistemaDeObraSocial` | Interfaz propia hacia la obra social, sin ningún tipo SOAP |
+| Datos | `datos.soap.SistemaDeObraSocialSoap` | Única implementación: el cliente JAX-WS |
+| Datos | `AfiliacionDePaciente`, `AutorizacionDePrestacion` y sus DAO | Tablas `afiliaciones_obra_social` y `autorizaciones_prestacion` |
+
+**Dónde vive SOAP.** Sólo en el subpaquete `obrassociales.datos.soap`: el contrato del lado cliente (`ObraSocialLegadoPort`, un SEI escrito a mano con los mismos nombres y namespace que el WSDL), el espejo JAXB de la respuesta y el cliente. El negocio depende de la interfaz `SistemaDeObraSocial`, que habla con tipos planos (`RespuestaDelLegado`) y excepciones propias. Si mañana la obra social migrara a REST, cambiaría una clase de datos y nada de negocio. Se verifica con los imports: fuera de `externos.obrasocial` y `obrassociales.datos.soap` ningún archivo importa `jakarta.xml.ws`, `jakarta.jws` ni `jakarta.xml.bind`.
+
+**Por qué `Service.create` sin descargar el WSDL.** El cliente se construye con el nombre del servicio y las anotaciones del SEI, sin pedirle el WSDL al legado. Si lo pidiera, crear el cliente ya dependería de que el legado esté vivo, y esa descarga ocurriría fuera de los timeouts configurados.
+
+**Timeouts explícitos.** Conexión 2 s y respuesta 5 s, puestos en el request context de cada llamada. Sin ellos, un legado que acepta la conexión y no contesta retiene indefinidamente el hilo del pedido, y con él la transacción y al usuario. URL y timeouts son propiedades de sistema (`mediconecta.obrasocial.url`, `mediconecta.obrasocial.timeoutConexionMs`, `mediconecta.obrasocial.timeoutRespuestaMs`) que se leen en cada llamada, así que se pueden cambiar con `jboss-cli` sin redesplegar.
+
+**Dos familias de error.** El adaptador distingue si el legado *no respondió* (conexión rechazada, timeout: `LegadoNoDisponibleException`) o si *respondió que no* (SOAP Fault: `PedidoRechazadoPorLegadoException`). La fachada las convierte en `ObraSocialNoDisponibleException`, con un mensaje pensado para mostrarse tal cual ("El sistema de la obra social no respondió. Intentá de nuevo en unos minutos; no se registró ninguna autorización."), y en `DatosInvalidosException`. El detalle técnico queda en el log del adaptador, no en el mensaje. "Sin cobertura" no es un error: es una `Cobertura` con `autorizada = false`.
+
+**Transacciones y persistencia.** `validarCobertura` es `NOT_SUPPORTED`: no escribe nada y no tiene sentido retener una transacción durante una llamada remota. `autorizarPrestacion` es `REQUIRED`: si el legado autoriza, guarda número y fecha de autorización, porcentaje y copago en `autorizaciones_prestacion`, que es lo que facturación va a necesitar. Al participar de la transacción de quien lo invoca, si la reserva del turno falla después, la autorización guardada se deshace con ella. Las negativas y los errores no generan filas.
+
+**Afiliación.** `Usuario` no tiene DNI ni número de afiliado, y no le corresponde: son datos de la relación con la obra social. Viven en `AfiliacionDePaciente`, tabla propia del componente, que referencia al paciente por id y no con `@ManyToOne`, con el mismo criterio que `HistoriaClinica`. `registrarAfiliacion` es `@RolesAllowed("ADMINISTRADOR")`. El resto de la fachada es `@PermitAll`: quién puede reservar o autorizar lo decide el componente que la invoca, que es el que conoce el caso de uso.
 
 ## 7. Autenticación y autorización
 
@@ -219,11 +274,21 @@ El sistema se desplegó en WildFly 41 con PostgreSQL 18 y se verificó endpoint 
 | PROFESIONAL intenta confirmar el hold de un paciente | `403` |
 | Reservar un turno | pasa a `EN_HOLD`, con `inicioHold` seteado |
 | Confirmar el turno reservado | pasa a `CONFIRMADO` |
+| `GET /mediconecta/legado/obrasocial?wsdl` desde el navegador | `200`, WSDL con `validarCobertura` y `autorizarPrestacion` |
+| `autorizarPrestacion` para `CONSULTA` con los cuatro afiliados de prueba | `100 %`/`0.00`, `70 %`/`6000.00`, `40 %`/`12000.00` autorizados; `0 %`/`20000.00` no autorizado |
+| `validarCobertura` con un afiliado inexistente | `500` con SOAP Fault `afiliadoInexistente` |
+| `ServicioDeObrasSociales.validarCobertura` del paciente de prueba (OS-2002) | `Cobertura` autorizada, 70 %, copago 6000.00, sin número; nada persistido |
+| `ServicioDeObrasSociales.autorizarPrestacion` del mismo paciente | número `AUT-OS-2002-CONSULTA` y una fila en `autorizaciones_prestacion` con fecha, 70 % y 6000.00 |
+| `autorizarPrestacion` con afiliación OS-4004 / OS-9999 | no autorizada sin persistir / `DatosInvalidosException` "La obra social rechazó el pedido: No existe el afiliado OS-9999" |
+| `autorizarPrestacion` con afiliación OS-5005 (legado lento) | `ObraSocialNoDisponibleException` a los 5016 ms, sin fila persistida |
+| URL del legado apuntando a un puerto cerrado / a una IP que no responde | la misma `ObraSocialNoDisponibleException`, a los 22 ms / 2016 ms |
 | Hold sin confirmar, transcurrido el tiempo de expiración | a los 303 segundos, el turno volvió a `DISPONIBLE`, con `paciente` e `inicioHold` en `null`, y el log del contenedor registró "Hold vencido: el turno 2 vuelve a estar disponible" |
+
+Como `ServicioDeObrasSociales` no se expone por HTTP, sus filas se verificaron con un recurso JAX-RS provisorio que invocaba la fachada, retirado del código una vez hecha la verificación. Las tablas se comprobaron directamente en PostgreSQL.
 
 Este último resultado es, junto con la corrección de la sección 6.1, la evidencia más fuerte de que el mecanismo de timers funciona como se lo diseñó: nadie liberó el turno manualmente, lo hizo el `@Timeout` de `ExpiradorDeHolds` por su cuenta, sin ninguna solicitud HTTP en curso.
 
-El repositorio incluye dos scripts que automatizan esta verificación: `deploy/mediconecta-setup.cli` (instala el driver JDBC de PostgreSQL como módulo de WildFly y crea el datasource) y `deploy/smoke-test.sh` (automatiza buena parte de la tabla anterior, incluyendo la espera para confirmar la expiración real del hold).
+El repositorio incluye dos scripts que automatizan esta verificación: `deploy/mediconecta-setup.cli` (instala el driver JDBC de PostgreSQL como módulo de WildFly y crea el datasource) y `deploy/smoke-test.sh` (automatiza buena parte de la tabla anterior, incluidos los casos SOAP y la espera para confirmar la expiración real del hold).
 
 Un hallazgo de configuración que costó diagnosticar: la integración de Jakarta Security (Soteria) con Elytron en WildFly requiere fijar `integrated-jaspi=false` en el `application-security-domain` de Undertow. Sin ese ajuste, Elytron intenta reautorizar una identidad que Soteria ya estableció, y **todos** los endpoints protegidos responden `500` con `"ELY01177: Authorization failed"`, incluso con credenciales y rol correctos. La pista que distingue esto de un error de credenciales real: una contraseña incorrecta sigue devolviendo `401` con normalidad, mientras que una credencial correcta con permisos correctos falla igual con `500`.
 
