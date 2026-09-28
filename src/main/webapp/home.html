@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mis turnos · MediConecta</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="home.html"><img src="assets/logo.svg" alt="">MediConecta</a>
+    <nav class="nav">
+      <a href="home.html" aria-current="page">Mis turnos</a>
+      <a href="#">Mi historia clínica</a>
+      <a href="#">Cobertura</a>
+      <img class="avatar" src="assets/avatar.svg" alt="Perfil">
+    </nav>
+    <img class="avatar m" src="assets/avatar.svg" alt="Perfil">
+  </header>
+
+  <main class="content home">
+    <div class="stack" style="gap: 6px">
+      <h1 class="h1">Hola, Sofía</h1>
+      <p class="muted" style="font-size: 16px">Tenés un turno confirmado esta semana.</p>
+    </div>
+
+    <article class="card next">
+      <div class="date-box">
+        <span class="dow">JUE</span>
+        <span class="day">18</span>
+        <span class="mon">SEP</span>
+      </div>
+      <div class="stack grow" style="gap: 7px">
+        <h2 style="font-size: 20px; font-weight: 600">Dra. Carla Benítez</h2>
+        <p class="muted">Clínica médica · Consultorio 4B · 14:30 hs</p>
+        <span class="tag tag-soft" style="align-self: flex-start">Cobertura autorizada · OSDE 210</span>
+      </div>
+      <div class="row actions-row" style="gap: 10px">
+        <a class="btn" href="disponibilidad.html">Reprogramar</a>
+        <a class="btn btn-primary" href="hold.html">Ver detalle</a>
+      </div>
+    </article>
+
+    <section class="stack" style="gap: 18px">
+      <h2 class="h2">Reservar un turno</h2>
+      <input class="input" type="search" aria-label="Buscar" placeholder="Buscar por especialidad, profesional o clínica" style="padding: 16px 20px">
+      <div class="chips" data-single-select>
+        <button class="chip" aria-pressed="true">Clínica médica</button>
+        <button class="chip" aria-pressed="false">Cardiología</button>
+        <button class="chip" aria-pressed="false">Dermatología</button>
+        <button class="chip" aria-pressed="false">Pediatría</button>
+        <button class="chip" aria-pressed="false">Telemedicina</button>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

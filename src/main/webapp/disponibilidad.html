@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Disponibilidad · MediConecta</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="home.html"><img src="assets/logo.svg" alt="">MediConecta</a>
+    <nav class="nav">
+      <a href="home.html" aria-current="page">Mis turnos</a>
+      <a href="#">Mi historia clínica</a>
+      <a href="#">Cobertura</a>
+      <img class="avatar" src="assets/avatar.svg" alt="Perfil">
+    </nav>
+    <img class="avatar m" src="assets/avatar.svg" alt="Perfil">
+  </header>
+
+  <main class="content avail">
+    <a class="muted" href="home.html" style="font-size: 14px; font-weight: 500">← Volver a la búsqueda</a>
+
+    <article class="card person">
+      <img class="avatar" src="assets/avatar.svg" alt="">
+      <div class="stack grow" style="gap: 5px">
+        <h1 class="person-name">Dra. Carla Benítez</h1>
+        <p class="muted" style="font-size: 14px">Clínica médica · Centro Médico Belgrano · MN 84512</p>
+      </div>
+      <span class="tag tag-soft" style="padding: 8px 14px; border-radius: 7px">Acepta OSDE 210</span>
+    </article>
+
+    <section class="stack" style="gap: 14px">
+      <h2 class="h2">Elegí un horario</h2>
+      <div class="days" data-single-select>
+        <button class="day-btn" aria-pressed="false"><small>LUN</small><span>15</span></button>
+        <button class="day-btn" aria-pressed="false"><small>MAR</small><span>16</span></button>
+        <button class="day-btn" aria-pressed="false"><small>MIE</small><span>17</span></button>
+        <button class="day-btn" aria-pressed="true"><small>JUE</small><span>18</span></button>
+        <button class="day-btn" aria-pressed="false"><small>VIE</small><span>19</span></button>
+        <button class="day-btn" aria-pressed="false"><small>SAB</small><span>20</span></button>
+      </div>
+    </section>
+
+    <section class="stack" style="gap: 14px">
+      <p class="muted" style="font-weight: 500">Jueves 18 de septiembre · 8 turnos disponibles</p>
+      <div class="slots" data-single-select>
+        <button class="slot" aria-pressed="false">09:00</button>
+        <button class="slot" disabled>09:30</button>
+        <button class="slot" aria-pressed="false">10:00</button>
+        <button class="slot" aria-pressed="false">10:30</button>
+        <button class="slot" disabled>11:00</button>
+        <button class="slot" aria-pressed="false">11:30</button>
+        <button class="slot" aria-pressed="false">14:00</button>
+        <button class="slot" aria-pressed="true">14:30</button>
+        <button class="slot" aria-pressed="false">15:00</button>
+        <button class="slot" disabled>15:30</button>
+        <button class="slot" aria-pressed="false">16:00</button>
+        <button class="slot" aria-pressed="false">16:30</button>
+      </div>
+    </section>
+
+    <a id="reserve" class="btn btn-primary btn-lg" href="hold.html" style="align-self: flex-start">Reservar 14:30 hs</a>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Historia clínica · MediConecta</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="agenda.html"><img src="assets/logo.svg" alt="">MediConecta</a>
+    <nav class="nav">
+      <a href="agenda.html">Mi agenda</a>
+      <a href="historia.html" aria-current="page">Pacientes</a>
+      <a href="#">Facturación</a>
+      <img class="avatar" src="assets/avatar.svg" alt="Perfil">
+    </nav>
+    <img class="avatar m" src="assets/avatar.svg" alt="Perfil">
+  </header>
+
+  <main class="content stack" style="gap: 26px">
+    <article class="card person" style="padding: 22px 24px">
+      <img class="avatar" src="assets/avatar.svg" alt="" style="width: 54px; height: 54px">
+      <div class="stack grow" style="gap: 5px">
+        <h1 class="person-name">Sofía Ramírez</h1>
+        <p class="muted" style="font-size: 14px">34 años · DNI 38.492.117 · OSDE 210 · Afiliada 4471-88</p>
+      </div>
+      <span class="tag" style="padding: 8px 14px; border-radius: 7px; background: var(--primary-soft); color: var(--primary)">Acceso restringido · rol PROFESIONAL</span>
+    </article>
+
+    <div class="row between page-head">
+      <h2 class="h2" style="font-size: 26px">Historia clínica</h2>
+      <button class="btn btn-primary">Registrar consulta</button>
+    </div>
+
+    <div class="stack" style="gap: 14px">
+      <article class="card entry">
+        <div class="row between entry-head">
+          <div class="row" style="gap: 12px">
+            <span class="type" style="background: var(--primary-soft); color: var(--primary)">DIAGNÓSTICO</span>
+            <span class="muted" style="font-size: 13px">Dra. Carla Benítez</span>
+          </div>
+          <time class="muted" style="font-size: 13px; font-weight: 500">18/09/2026</time>
+        </div>
+        <h3 class="entry-title">Hipertensión arterial esencial · CIE-10 I10</h3>
+        <p class="entry-body">Presión registrada 148/92 en dos tomas separadas. Se indica control domiciliario diario durante dos semanas y reducción de sodio en la dieta. Control en 30 días.</p>
+      </article>
+
+      <article class="card entry">
+        <div class="row between entry-head">
+          <div class="row" style="gap: 12px">
+            <span class="type" style="background: var(--accent-soft); color: var(--accent)">RECETA</span>
+            <span class="muted" style="font-size: 13px">Dra. Carla Benítez</span>
+          </div>
+          <time class="muted" style="font-size: 13px; font-weight: 500">18/09/2026</time>
+        </div>
+        <h3 class="entry-title">Enalapril 10 mg · 1 comprimido cada 12 horas</h3>
+        <p class="entry-body">Tratamiento por 30 días. Se advierte sobre posible tos seca como efecto adverso frecuente. Renovable una vez sin consulta presencial.</p>
+      </article>
+
+      <article class="card entry">
+        <div class="row between entry-head">
+          <div class="row" style="gap: 12px">
+            <span class="type" style="background: var(--ground); color: var(--muted)">ANTECEDENTE</span>
+            <span class="muted" style="font-size: 13px">Dr. Martín Sosa</span>
+          </div>
+          <time class="muted" style="font-size: 13px; font-weight: 500">02/03/2024</time>
+        </div>
+        <h3 class="entry-title">Alergia a penicilina</h3>
+        <p class="entry-body">Reacción cutánea documentada en 2019. Evitar betalactámicos. Registrado como antecedente permanente en la historia.</p>
+      </article>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confirmar turno · MediConecta</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark d" href="home.html"><img src="assets/logo.svg" alt="">MediConecta</a>
+    <a class="m" href="disponibilidad.html" style="font-weight: 500">← Turno</a>
+    <img class="avatar d" src="assets/avatar.svg" alt="Perfil">
+    <img class="m" src="assets/logo.svg" alt="MediConecta" style="width: 18px; height: 18px">
+  </header>
+
+  <main class="stage">
+    <article class="card hold">
+      <div class="counter" role="timer" aria-live="off">
+        <span class="label-caps">TU TURNO ESTÁ RESERVADO</span>
+        <time id="countdown" data-seconds="288">04:48</time>
+        <div class="progress"><div id="progress" style="width: 96%"></div></div>
+        <p>Si no confirmás <span class="d">antes de que llegue a cero</span><span class="m">a tiempo</span>, el turno vuelve a quedar disponible<span class="d"> para otro paciente</span>.</p>
+      </div>
+
+      <section class="summary">
+        <h1 class="summary-title"><span class="d">Revisá antes de confirmar</span><span class="m">Dra. Carla Benítez</span></h1>
+        <dl class="details">
+          <div class="d"><dt>Profesional</dt><dd>Dra. Carla Benítez</dd></div>
+          <div><dt>Fecha<span class="d"> y hora</span></dt><dd>Jue<span class="d">ves</span> 18/09 · 14:30<span class="d"> hs</span></dd></div>
+          <div><dt>Modalidad</dt><dd>Presencial · <span class="d">Consultorio </span>4B</dd></div>
+          <div><dt>Cobertura</dt><dd class="ok">Autorizada<span class="d"> · OSDE 210</span></dd></div>
+          <div><dt>Copago<span class="d"> a abonar</span></dt><dd class="strong">$ 4.800</dd></div>
+        </dl>
+      </section>
+
+      <div class="actions">
+        <a class="btn btn-primary" href="home.html">Confirmar y pagar<span class="d">&nbsp;el copago</span></a>
+        <a class="btn" href="disponibilidad.html">Liberar el turno</a>
+      </div>
+    </article>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
