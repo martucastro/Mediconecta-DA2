@@ -98,4 +98,21 @@
         </auth-constraint>
     </security-constraint>
 
+    <!--
+      Fallback del frontend: cualquier URL que no corresponda a un archivo ni a
+      la API devuelve index.html. El frontend es una SPA y sus rutas (por
+      ejemplo /mediconecta/agenda) no existen como archivos en el servidor:
+      sin esto, refrescar el navegador en una pantalla daria el 404 del
+      contenedor. Una URL que tampoco sea una pantalla la resuelve el router
+      del frontend con su propia pagina 404.
+
+      Los 404 de la API no pasan por aca: JAX-RS escribe la respuesta
+      directamente, asi que el cliente sigue recibiendo su mensaje de error y
+      no el HTML de la aplicacion.
+    -->
+    <error-page>
+        <error-code>404</error-code>
+        <location>/index.html</location>
+    </error-page>
+
 </web-app>
