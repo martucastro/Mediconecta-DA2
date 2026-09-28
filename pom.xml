@@ -18,6 +18,16 @@
             <version>11.0.0</version>
             <scope>provided</scope>
         </dependency>
+        <!--
+          JAX-WS salio de la API de plataforma en Jakarta EE 11. WildFly lo sigue
+          proveyendo (CXF), asi que alcanza con compilar contra la API.
+        -->
+        <dependency>
+            <groupId>jakarta.xml.ws</groupId>
+            <artifactId>jakarta.xml.ws-api</artifactId>
+            <version>4.0.2</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
     <build>
         <finalName>mediconecta</finalName>

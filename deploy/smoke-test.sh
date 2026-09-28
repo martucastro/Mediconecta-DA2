@@ -51,6 +51,35 @@ comprobar "la respuesta NO filtra el hash"    "si" "$(printf '%s' "$RESERVA" | g
 comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "$BASE/turnos/$ID/confirmar")"
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID/confirmar")"
 
+echo
+echo "Sistema legado de la obra social (SOAP)"
+SOAP="${SOAP:-${BASE%/api}/legado/obrasocial}"
+
+soap() { # operacion, dni, afiliado, prestacion
+  curl -s -H "Content-Type: text/xml; charset=utf-8" -H "SOAPAction: \"\"" --data-binary @- "$SOAP" <<EOF
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:os="http://legado.obrasocial.example/">
+  <soapenv:Body><os:$1><dni>$2</dni><numeroAfiliado>$3</numeroAfiliado><codigoPrestacion>$4</codigoPrestacion></os:$1></soapenv:Body>
+</soapenv:Envelope>
+EOF
+}
+campo() { sed -n "s/.*<$1>\([^<]*\)<\/$1>.*/\1/p"; } # extrae el valor de un elemento
+
+comprobar "el WSDL se descarga"               200 "$(codigo "$SOAP?wsdl")"
+comprobar "el WSDL publica validarCobertura"  "si" "$(curl -s "$SOAP?wsdl" | grep -q validarCobertura && echo si || echo no)"
+# dni, afiliado, cobertura, copago de una CONSULTA (arancel 20000), autorizado
+while read -r dni afiliado pct copago aut; do
+  R=$(soap autorizarPrestacion "$dni" "$afiliado" CONSULTA)
+  comprobar "afiliado $afiliado: cobertura/copago/autorizado" "$pct/$copago/$aut" \
+    "$(printf '%s' "$R" | campo porcentajeCobertura)/$(printf '%s' "$R" | campo copago)/$(printf '%s' "$R" | campo autorizado)"
+done <<'CASOS'
+30111222 OS-1001 100 0.00 true
+30333444 OS-2002 70 6000.00 true
+30444555 OS-3003 40 12000.00 true
+30555666 OS-4004 0 20000.00 false
+CASOS
+comprobar "afiliado inexistente da SOAP Fault" "si" \
+  "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -q 'Fault' && echo si || echo no)"
+
 if [ "${1:-}" != "--rapido" ]; then
   echo
   echo "Expiracion del hold (el contenedor libera el turno a los 5 minutos)"
