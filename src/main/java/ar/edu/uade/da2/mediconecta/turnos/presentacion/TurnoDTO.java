@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.turnos.presentacion;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
@@ -25,6 +26,12 @@ public class TurnoDTO {
     private Long pacienteId;
     private String pacienteNombre;
     private LocalDateTime inicioHold;
+    private String modalidad;
+    private String consultorio;
+    private Boolean coberturaAutorizada;
+    private BigDecimal coberturaPorcentaje;
+    private BigDecimal copago;
+    private String numeroAutorizacion;
 
     public TurnoDTO() {
     }
@@ -34,6 +41,12 @@ public class TurnoDTO {
         this.fechaHora = turno.getFechaHora();
         this.estado = turno.getEstado() != null ? turno.getEstado().name() : null;
         this.inicioHold = turno.getInicioHold();
+        this.modalidad = turno.getModalidad() != null ? turno.getModalidad().name() : null;
+        this.consultorio = turno.getConsultorio();
+        this.coberturaAutorizada = turno.getCoberturaAutorizada();
+        this.coberturaPorcentaje = turno.getCoberturaPorcentaje();
+        this.copago = turno.getCopago();
+        this.numeroAutorizacion = turno.getNumeroAutorizacion();
 
         if (turno.getProfesional() != null) {
             this.profesionalId = turno.getProfesional().getId();
@@ -107,5 +120,53 @@ public class TurnoDTO {
 
     public void setInicioHold(LocalDateTime inicioHold) {
         this.inicioHold = inicioHold;
+    }
+
+    public String getModalidad() {
+        return modalidad;
+    }
+
+    public void setModalidad(String modalidad) {
+        this.modalidad = modalidad;
+    }
+
+    public String getConsultorio() {
+        return consultorio;
+    }
+
+    public void setConsultorio(String consultorio) {
+        this.consultorio = consultorio;
+    }
+
+    public Boolean getCoberturaAutorizada() {
+        return coberturaAutorizada;
+    }
+
+    public void setCoberturaAutorizada(Boolean coberturaAutorizada) {
+        this.coberturaAutorizada = coberturaAutorizada;
+    }
+
+    public BigDecimal getCoberturaPorcentaje() {
+        return coberturaPorcentaje;
+    }
+
+    public void setCoberturaPorcentaje(BigDecimal coberturaPorcentaje) {
+        this.coberturaPorcentaje = coberturaPorcentaje;
+    }
+
+    public BigDecimal getCopago() {
+        return copago;
+    }
+
+    public void setCopago(BigDecimal copago) {
+        this.copago = copago;
+    }
+
+    public String getNumeroAutorizacion() {
+        return numeroAutorizacion;
+    }
+
+    public void setNumeroAutorizacion(String numeroAutorizacion) {
+        this.numeroAutorizacion = numeroAutorizacion;
     }
 }

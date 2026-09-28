@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
+import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
@@ -18,6 +19,7 @@ import jakarta.ejb.SessionContext;
 import jakarta.ejb.Stateful;
 import jakarta.ejb.TransactionAttribute;
 import jakarta.ejb.TransactionAttributeType;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.jms.JMSContext;
 import jakarta.jms.JMSException;
@@ -48,10 +50,18 @@ public class ServicioDeTurnos {
     private ExpiradorDeHolds expirador;
 
     // Facade hacia ServicioDeUsuarios: ServicioDeTurnos orquesta la validacion
-    // del paciente antes de reservar. Si en el futuro se suman ServicioDePagos
-    // o ServicioDeNotificaciones, este es el punto donde se orquestarian.
+    // del paciente antes de reservar.
     @Inject
     private ServicioDeUsuarios servicioDeUsuarios;
+
+    // Puntos de extension: obras sociales, pagos, telemedicina y el reclamo se
+    // enganchan observando estos eventos, no con una dependencia desde aca.
+    // Ver PuntosDeExtension para el orden y el porque.
+    @Inject
+    private Event<TurnoEnReserva> eventoReserva;
+
+    @Inject
+    private Event<TurnoEnConfirmacion> eventoConfirmacion;
 
     // JMSContext inyectado por el contenedor: participa de la misma transaccion
     // JTA que confirmarTurno (ver publicarTurnoConfirmado). No conoce el nombre
@@ -82,10 +92,15 @@ public class ServicioDeTurnos {
     /**
      * Abre una franja disponible en la agenda del profesional autenticado.
      * Sin esto no hay forma de que existan turnos para reservar.
+     *
+     * modalidad null equivale a PRESENCIAL. El consultorio solo aplica a las
+     * franjas presenciales: un turno de telemedicina con consultorio le diria al
+     * paciente que se presente en un lugar al que no tiene que ir.
      */
     @RolesAllowed(ServicioDeUsuarios.ROL_PROFESIONAL)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
-    public Turno abrirDisponibilidad(LocalDateTime fechaHora) {
+    public Turno abrirDisponibilidad(LocalDateTime fechaHora, ModalidadTurno modalidad,
+            String consultorio) {
         // La validacion vive aca y no en el recurso REST: es una regla del
         // negocio (una franja sin horario no es una franja), y tiene que valer
         // igual si manana se invoca al componente desde otro canal.
@@ -95,8 +110,17 @@ public class ServicioDeTurnos {
         if (fechaHora.isBefore(LocalDateTime.now())) {
             throw new DatosInvalidosException("No se puede abrir una franja en el pasado");
         }
+        ModalidadTurno modalidadEfectiva = modalidad != null ? modalidad : ModalidadTurno.PRESENCIAL;
+        String consultorioEfectivo = consultorio != null && !consultorio.isBlank()
+                ? consultorio.trim() : null;
+        if (modalidadEfectiva == ModalidadTurno.TELEMEDICINA && consultorioEfectivo != null) {
+            throw new DatosInvalidosException("Un turno de telemedicina no lleva consultorio");
+        }
+        if (consultorioEfectivo != null && consultorioEfectivo.length() > 60) {
+            throw new DatosInvalidosException("El consultorio admite hasta 60 caracteres");
+        }
         Usuario profesional = usuarioAutenticado();
-        Turno turno = new Turno(profesional, fechaHora);
+        Turno turno = new Turno(profesional, fechaHora, modalidadEfectiva, consultorioEfectivo);
         turnoDAO.guardar(turno);
         return turno;
     }
@@ -123,6 +147,14 @@ public class ServicioDeTurnos {
         }
 
         turno.setPaciente(paciente);
+
+        // PUNTO DE EXTENSION (reserva). Observadores previstos:
+        //   COBERTURA (SCRUM-91): valida la cobertura y completa los campos de
+        //   cobertura y copago del turno.
+        // Va despues de asignar el paciente (la cobertura es suya) y antes de
+        // retenerlo: si la cobertura rechaza, no queda ningun hold que liberar.
+        eventoReserva.fire(new TurnoEnReserva(turno));
+
         turno.setEstado(EstadoTurno.EN_HOLD);
         turno.setInicioHold(LocalDateTime.now());
         turnoDAO.actualizar(turno);
@@ -145,6 +177,17 @@ public class ServicioDeTurnos {
                     "El turno no tiene un hold activo: esta " + turno.getEstado());
         }
         verificarQueElHoldEsDelCaller(turno);
+
+        // PUNTO DE EXTENSION (confirmacion). Observadores, en este orden:
+        //   1. COBRO_COPAGO (SCRUM-93): cobra el copago. Pendiente.
+        //   2. SALA_DE_VIDEO (SCRUM-95): crea la sala si es TELEMEDICINA. Pendiente.
+        //   3. RECLAMO: encola el reclamo a la obra social. Pendiente.
+        // Se dispara antes de tocar el estado: si cualquiera falla, la
+        // excepcion revierte la transaccion, el turno sigue EN_HOLD con su
+        // temporizador vivo y el paciente puede reintentar mientras dure el
+        // hold. La sala va a crearse aca y nunca en reservarTurno: un hold que
+        // vence no tiene que dejar salas colgadas.
+        eventoConfirmacion.fire(new TurnoEnConfirmacion(turno));
 
         turno.setEstado(EstadoTurno.CONFIRMADO);
         expirador.cancelar(turnoId);

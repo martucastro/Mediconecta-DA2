@@ -1,7 +1,9 @@
 package ar.edu.uade.da2.mediconecta.turnos.datos;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -37,13 +39,52 @@ public class Turno {
 
     private LocalDateTime inicioHold;
 
+    /**
+     * Default PRESENCIAL en los dos niveles, y los dos hacen falta:
+     *
+     * - En Java, para que un Turno nuevo nunca quede sin modalidad.
+     * - En la base (columnDefinition), porque hbm2ddl.auto=update agrega la
+     *   columna con un ALTER TABLE sobre una tabla que ya tiene filas. Un NOT
+     *   NULL sin DEFAULT haria fallar ese ALTER en PostgreSQL; con el DEFAULT,
+     *   el motor completa los turnos existentes como PRESENCIAL al agregarla y
+     *   no hace falta ninguna migracion manual.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, columnDefinition = "varchar(20) not null default 'PRESENCIAL'")
+    private ModalidadTurno modalidad = ModalidadTurno.PRESENCIAL;
+
+    // Solo tiene sentido en los turnos presenciales (ver abrirDisponibilidad).
+    @Column(length = 60)
+    private String consultorio;
+
+    // Cobertura de la obra social. Quedan en null hasta que la complete
+    // ServicioDeObrasSociales (SCRUM-91) desde el punto de extension de la
+    // reserva; null significa "todavia no se consulto", no "sin cobertura".
+    private Boolean coberturaAutorizada;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal coberturaPorcentaje;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal copago;
+
+    @Column(length = 40)
+    private String numeroAutorizacion;
+
     // Constructor vacío (obligatorio para JPA)
     public Turno() {
     }
 
     public Turno(Usuario profesional, LocalDateTime fechaHora) {
+        this(profesional, fechaHora, ModalidadTurno.PRESENCIAL, null);
+    }
+
+    public Turno(Usuario profesional, LocalDateTime fechaHora, ModalidadTurno modalidad,
+            String consultorio) {
         this.profesional = profesional;
         this.fechaHora = fechaHora;
+        this.modalidad = modalidad;
+        this.consultorio = consultorio;
         this.estado = EstadoTurno.DISPONIBLE;
     }
 
@@ -94,5 +135,53 @@ public class Turno {
 
     public void setInicioHold(LocalDateTime inicioHold) {
         this.inicioHold = inicioHold;
+    }
+
+    public ModalidadTurno getModalidad() {
+        return modalidad;
+    }
+
+    public void setModalidad(ModalidadTurno modalidad) {
+        this.modalidad = modalidad;
+    }
+
+    public String getConsultorio() {
+        return consultorio;
+    }
+
+    public void setConsultorio(String consultorio) {
+        this.consultorio = consultorio;
+    }
+
+    public Boolean getCoberturaAutorizada() {
+        return coberturaAutorizada;
+    }
+
+    public void setCoberturaAutorizada(Boolean coberturaAutorizada) {
+        this.coberturaAutorizada = coberturaAutorizada;
+    }
+
+    public BigDecimal getCoberturaPorcentaje() {
+        return coberturaPorcentaje;
+    }
+
+    public void setCoberturaPorcentaje(BigDecimal coberturaPorcentaje) {
+        this.coberturaPorcentaje = coberturaPorcentaje;
+    }
+
+    public BigDecimal getCopago() {
+        return copago;
+    }
+
+    public void setCopago(BigDecimal copago) {
+        this.copago = copago;
+    }
+
+    public String getNumeroAutorizacion() {
+        return numeroAutorizacion;
+    }
+
+    public void setNumeroAutorizacion(String numeroAutorizacion) {
+        this.numeroAutorizacion = numeroAutorizacion;
     }
 }

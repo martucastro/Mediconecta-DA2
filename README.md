@@ -147,6 +147,12 @@ Recorre el flujo completo y comprueba la seguridad. El último caso espera cinco
 minutos a propósito, porque verifica que el contenedor libere el hold vencido.
 Para saltearlo: `bash deploy/smoke-test.sh --rapido`.
 
+Las pruebas de unidad de la capa de negocio corren sin servidor:
+
+```bash
+mvn test
+```
+
 ---
 
 ## Usuarios de prueba
@@ -197,15 +203,52 @@ HTTP Basic.
 | `PUT` | `/turnos/{id}/confirmar` | PACIENTE | Confirma su propio hold |
 | `PUT` | `/turnos/{id}/cancelar` | PACIENTE | Libera su propio hold |
 
+`POST /turnos/disponibilidad` acepta `modalidad` (`PRESENCIAL` o
+`TELEMEDICINA`, por defecto `PRESENCIAL`) y, solo para las presenciales,
+`consultorio`. Los turnos que ya existían quedan como `PRESENCIAL` sin
+migración: la columna se agrega con `DEFAULT 'PRESENCIAL'`.
+
+`TurnoDTO` también expone los campos de cobertura (`coberturaAutorizada`,
+`coberturaPorcentaje`, `copago`, `numeroAutorizacion`). Hoy vuelven en `null`:
+los completa la validación de cobertura (SCRUM-91).
+
+### Puntos de extensión del flujo de turnos
+
+Obras sociales, pagos, telemedicina y el reclamo **no** se llaman desde
+`ServicioDeTurnos`: se enganchan observando dos eventos CDI sincrónicos que
+dispara el servicio, `TurnoEnReserva` y `TurnoEnConfirmacion`. El orden lo fija
+`turnos/negocio/PuntosDeExtension`:
+
+| Evento | Prioridad | Qué | Card |
+|---|---|---|---|
+| `TurnoEnReserva` | `COBERTURA` (100) | Validar cobertura, completar copago | SCRUM-91 |
+| `TurnoEnConfirmacion` | `COBRO_COPAGO` (100) | Cobrar el copago | SCRUM-93 |
+| `TurnoEnConfirmacion` | `SALA_DE_VIDEO` (200) | Crear la sala si es telemedicina | SCRUM-95 |
+| `TurnoEnConfirmacion` | `RECLAMO` (300) | Encolar el reclamo a la obra social | pendiente |
+
+Para sumar un paso:
+
+```java
+@TransactionAttribute(TransactionAttributeType.MANDATORY)
+public void alConfirmar(
+        @Observes @Priority(PuntosDeExtension.COBRO_COPAGO) TurnoEnConfirmacion evento) {
+    // ... si lanza una excepcion con rollback, la confirmacion entera se revierte
+}
+```
+
+Siempre `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre
+fuera de la transacción y su falla ya no podría frenar la confirmación. El
+criterio completo está en `docs/documento-tecnico.md`, sección 9.2.
+
 ### Ejemplo del flujo completo
 
 ```bash
 BASE=http://localhost:8080/mediconecta/api
 
-# El profesional abre una franja
+# El profesional abre una franja (presencial, o "modalidad":"TELEMEDICINA")
 curl -u profesional@mediconecta.com:cambiar123 \
      -H "Content-Type: application/json" \
-     -d '{"fechaHora":"2026-09-18T14:30:00"}' \
+     -d '{"fechaHora":"2027-03-15T14:30:00","modalidad":"PRESENCIAL","consultorio":"Consultorio 3"}' \
      $BASE/turnos/disponibilidad
 
 # El paciente la reserva: queda EN_HOLD por 5 minutos
@@ -251,8 +294,8 @@ Están acá a propósito: son decisiones de alcance de esta entrega, no descuido
 - **Sin frontend.** El sistema se ejerce por HTTP, con las colecciones de Postman
   de `deploy/` y `postman/`. La primera entrega evalúa la arquitectura de capas y
   los componentes de negocio, no la interfaz.
-- **Sin pruebas automatizadas de unidad.** La verificación es de integración, con
-  `deploy/smoke-test.sh` contra el sistema desplegado.
+- **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
+  integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
 - **Un solo módulo Maven.** Los tres componentes conviven en un WAR. Separarlos en
   módulos es lo que corresponde cuando se despliegan por separado, y todavía no es
   el caso.
