@@ -79,8 +79,10 @@ $WILDFLY_HOME/bin/add-user.sh -u admin -p 'Admin123!' -s     # Linux y macOS
 %WILDFLY_HOME%\bin\add-user.bat -u admin -p Admin123! -s     # Windows
 ```
 
-Arrancá el servidor **con el perfil full**, que es el que incluye la mensajería
-que vamos a necesitar en las próximas entregas:
+Arrancá el servidor **con el perfil full (`standalone-full.xml`), es un
+requisito**: es el que incluye el subsistema de mensajería (`messaging-activemq`)
+donde el script de configuración crea el tópico JMS. Con `standalone.xml` el
+tópico no se puede crear:
 
 ```bash
 $WILDFLY_HOME/bin/standalone.sh -c standalone-full.xml     # Linux y macOS
@@ -100,9 +102,27 @@ Con el servidor arriba, desde la raíz del proyecto:
 $WILDFLY_HOME/bin/jboss-cli.sh --connect --file=deploy/mediconecta-setup.cli
 ```
 
-El script instala el driver, crea el datasource `java:/MediConectaDS` y ajusta
-la integración de Jakarta Security. Es idempotente: se puede correr de nuevo sin
-romper nada.
+El script instala el driver, crea el datasource `java:/MediConectaDS`, ajusta
+la integración de Jakarta Security y crea el tópico JMS `TurnoConfirmadoTopic`
+(JNDI `java:/jms/topic/TurnoConfirmado`), donde se publicará el evento de turno
+confirmado. Es idempotente: se puede correr de nuevo sin romper nada.
+
+#### Verificar que el tópico existe
+
+Por CLI:
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect \
+  "/subsystem=messaging-activemq/server=default/jms-topic=TurnoConfirmadoTopic:read-resource"
+```
+
+Debe responder `"outcome" => "success"` y en `entries` el valor
+`java:/jms/topic/TurnoConfirmado`.
+
+Por la consola de administración (http://localhost:9990):
+*Configuration → Subsystems → Messaging (ActiveMQ) → default → Destinations →
+View*, pestaña **Topic**. El estado en vivo está en *Runtime → (tu servidor) →
+Messaging (ActiveMQ) → default → Topic*.
 
 ### 4. Compilar y desplegar
 
@@ -217,7 +237,10 @@ El datasource no está creado o el nombre JNDI no coincide con el
 `<jta-data-source>` de `src/main/resources/META-INF/persistence.xml`.
 
 **El servidor arranca pero la mensajería no existe.**
-Se arrancó con `standalone.xml` en vez de `standalone-full.xml`.
+Se arrancó con `standalone.xml` en vez de `standalone-full.xml`. El paso del
+tópico en el script de configuración falla con `WFLYCTL0030` (no hay definición
+registrada para `messaging-activemq`): reiniciá con `-c standalone-full.xml` y
+volvé a correrlo.
 
 ---
 
