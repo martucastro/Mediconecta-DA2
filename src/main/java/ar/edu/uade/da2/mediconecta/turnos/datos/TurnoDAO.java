@@ -45,9 +45,10 @@ public class TurnoDAO {
     public List<Turno> listarDisponiblesPorProfesional(Long profesionalId) {
         return em.createQuery(
                 "SELECT t FROM Turno t WHERE t.profesional.id = :profesionalId "
-                        + "AND t.estado = ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno.DISPONIBLE",
+                        + "AND t.estado = :estado",
                 Turno.class)
                 .setParameter("profesionalId", profesionalId)
+                .setParameter("estado", EstadoTurno.DISPONIBLE)
                 .getResultList();
     }
 
@@ -61,10 +62,10 @@ public class TurnoDAO {
      */
     public List<Turno> listarHoldsVencidos(LocalDateTime limite) {
         return em.createQuery(
-                "SELECT t FROM Turno t WHERE t.estado = "
-                        + "ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno.EN_HOLD "
+                "SELECT t FROM Turno t WHERE t.estado = :estado "
                         + "AND t.inicioHold < :limite",
                 Turno.class)
+                .setParameter("estado", EstadoTurno.EN_HOLD)
                 .setParameter("limite", limite)
                 .getResultList();
     }
