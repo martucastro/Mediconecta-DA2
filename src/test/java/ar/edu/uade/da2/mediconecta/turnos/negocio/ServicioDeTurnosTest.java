@@ -26,6 +26,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
@@ -213,6 +215,33 @@ class ServicioDeTurnosTest {
         verify(expirador, never()).cancelar(anyLong());
         verify(turnoDAO, never()).actualizar(any());
         verify(jmsContext, never()).createProducer();
+    }
+
+    // ---- Validacion de turnoId ---------------------------------------------------
+    //
+    // Mismo criterio que abrirDisponibilidad: un turnoId nulo es un dato
+    // invalido del pedido, no un turno inexistente. Sin la validacion explicita,
+    // el id nulo llega hasta TurnoDAO.buscarParaActualizar y, en produccion
+    // (fuera de este mock), EntityManager.find rechaza una clave primaria nula
+    // con IllegalArgumentException, que el contenedor envuelve como error de
+    // sistema y el cliente recibe 500 en vez de 400.
+
+    @Test
+    void reservarConTurnoIdNuloLanzaDatosInvalidos() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.reservarTurno(null));
+        verify(turnoDAO, never()).buscarParaActualizar(any());
+    }
+
+    @Test
+    void confirmarConTurnoIdNuloLanzaDatosInvalidos() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.confirmarTurno(null));
+        verify(turnoDAO, never()).buscarParaActualizar(any());
+    }
+
+    @Test
+    void cancelarConTurnoIdNuloLanzaDatosInvalidos() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.cancelarTurno(null));
+        verify(turnoDAO, never()).buscarParaActualizar(any());
     }
 
     // ---- Liberar el turno ------------------------------------------------------

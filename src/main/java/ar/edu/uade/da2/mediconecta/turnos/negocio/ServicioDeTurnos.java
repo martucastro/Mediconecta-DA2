@@ -3,6 +3,8 @@ package ar.edu.uade.da2.mediconecta.turnos.negocio;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
@@ -147,6 +149,9 @@ public class ServicioDeTurnos {
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno reservarTurno(Long turnoId) {
+        if (turnoId == null) {
+            throw new DatosInvalidosException("El id del turno es obligatorio");
+        }
         Usuario paciente = usuarioAutenticado();
 
         Turno turno = turnoDAO.buscarParaActualizar(turnoId);
@@ -180,6 +185,9 @@ public class ServicioDeTurnos {
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno confirmarTurno(Long turnoId) {
+        if (turnoId == null) {
+            throw new DatosInvalidosException("El id del turno es obligatorio");
+        }
         Turno turno = turnoDAO.buscarParaActualizar(turnoId);
         if (turno == null) {
             throw new DatosInvalidosException("No existe el turno " + turnoId);
@@ -211,6 +219,9 @@ public class ServicioDeTurnos {
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno cancelarTurno(Long turnoId) {
+        if (turnoId == null) {
+            throw new DatosInvalidosException("El id del turno es obligatorio");
+        }
         Turno turno = turnoDAO.buscarParaActualizar(turnoId);
         if (turno == null) {
             throw new DatosInvalidosException("No existe el turno " + turnoId);

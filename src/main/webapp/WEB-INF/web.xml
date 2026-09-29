@@ -77,7 +77,6 @@
         </web-resource-collection>
         <auth-constraint>
             <role-name>PACIENTE</role-name>
-            <role-name>ADMINISTRADOR</role-name>
         </auth-constraint>
     </security-constraint>
 
