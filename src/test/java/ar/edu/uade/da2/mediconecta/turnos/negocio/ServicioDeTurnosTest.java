@@ -217,6 +217,33 @@ class ServicioDeTurnosTest {
         verify(jmsContext, never()).createProducer();
     }
 
+    // ---- Validacion de turnoId ---------------------------------------------------
+    //
+    // Mismo criterio que abrirDisponibilidad: un turnoId nulo es un dato
+    // invalido del pedido, no un turno inexistente. Sin la validacion explicita,
+    // el id nulo llega hasta TurnoDAO.buscarParaActualizar y, en produccion
+    // (fuera de este mock), EntityManager.find rechaza una clave primaria nula
+    // con IllegalArgumentException, que el contenedor envuelve como error de
+    // sistema y el cliente recibe 500 en vez de 400.
+
+    @Test
+    void reservarConTurnoIdNuloLanzaDatosInvalidos() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.reservarTurno(null));
+        verify(turnoDAO, never()).buscarParaActualizar(any());
+    }
+
+    @Test
+    void confirmarConTurnoIdNuloLanzaDatosInvalidos() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.confirmarTurno(null));
+        verify(turnoDAO, never()).buscarParaActualizar(any());
+    }
+
+    @Test
+    void cancelarConTurnoIdNuloLanzaDatosInvalidos() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.cancelarTurno(null));
+        verify(turnoDAO, never()).buscarParaActualizar(any());
+    }
+
     // ---- Liberar el turno ------------------------------------------------------
 
     @Test
