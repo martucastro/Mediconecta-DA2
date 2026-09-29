@@ -3,10 +3,10 @@ package ar.edu.uade.da2.mediconecta.pagos.negocio;
 import java.math.BigDecimal;
 import java.util.logging.Logger;
 
-import ar.edu.uade.da2.mediconecta.externos.pasarela.PagoExternoRequest;
-import ar.edu.uade.da2.mediconecta.externos.pasarela.PagoExternoResponse;
 import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.client.Client;
@@ -26,6 +26,12 @@ import jakarta.ws.rs.core.Response;
  *
  * La URL se configura por la propiedad de sistema mediconecta.pasarela.url; por
  * defecto apunta a la simulación desplegada en el mismo servidor.
+ *
+ * PagoExternoRequest/PagoExternoResponse son propias de este paquete, no las de
+ * externos.pasarela: esas modelan el contrato del lado de la simulación, un
+ * sistema aparte que se alcanza por HTTP. El Adapter no tiene que importar el
+ * tipo interno del partner para hablarle en su idioma; solo necesita el mismo
+ * shape JSON.
  */
 @ApplicationScoped
 public class PasarelaDePagoRestClient implements PasarelaDePagoAdapter {
@@ -36,11 +42,26 @@ public class PasarelaDePagoRestClient implements PasarelaDePagoAdapter {
     private static final String URL_BASE = System.getProperty("mediconecta.pasarela.url",
             "http://localhost:8080/mediconecta/api/externo/pagos");
 
+    // Un Client de JAX-RS es caro de crear (resuelve providers, arma el motor
+    // HTTP) y esta pensado para reutilizarse: se construye una sola vez cuando
+    // el contenedor crea la instancia @ApplicationScoped y se cierra recien
+    // cuando la destruye, en vez de abrir y cerrar uno por invocacion.
+    private Client cliente;
+
+    @PostConstruct
+    public void iniciar() {
+        cliente = ClientBuilder.newClient();
+    }
+
+    @PreDestroy
+    public void cerrar() {
+        cliente.close();
+    }
+
     @Override
     public ResultadoPasarela cobrar(BigDecimal monto, String moneda, String tokenMedioDePago) {
         PagoExternoRequest cuerpo = new PagoExternoRequest(monto, moneda, tokenMedioDePago);
 
-        Client cliente = ClientBuilder.newClient();
         try (Response respuesta = cliente.target(URL_BASE)
                 .request(MediaType.APPLICATION_JSON)
                 .post(Entity.json(cuerpo))) {
@@ -55,14 +76,11 @@ public class PasarelaDePagoRestClient implements PasarelaDePagoAdapter {
             LOGGER.warning(() -> "No se pudo contactar a la pasarela: " + e.getMessage());
             throw new PasarelaNoDisponibleException(
                     "No se pudo contactar a la pasarela de pago.", e);
-        } finally {
-            cliente.close();
         }
     }
 
     @Override
     public ResultadoPasarela reembolsar(String idTransaccionExterna) {
-        Client cliente = ClientBuilder.newClient();
         try (Response respuesta = cliente.target(URL_BASE)
                 .path(idTransaccionExterna)
                 .path("reembolsos")
@@ -80,8 +98,6 @@ public class PasarelaDePagoRestClient implements PasarelaDePagoAdapter {
             LOGGER.warning(() -> "No se pudo contactar a la pasarela: " + e.getMessage());
             throw new PasarelaNoDisponibleException(
                     "No se pudo contactar a la pasarela de pago.", e);
-        } finally {
-            cliente.close();
         }
     }
 
