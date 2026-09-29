@@ -3,6 +3,8 @@ package ar.edu.uade.da2.mediconecta.turnos.negocio;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;

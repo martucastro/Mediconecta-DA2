@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.historiaclinica.negocio;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.Antecedente;
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.Diagnostico;
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.EntradaClinica;

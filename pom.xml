@@ -32,6 +32,17 @@
             <version>5.7.0</version>
             <scope>test</scope>
         </dependency>
+        <!-- Los ExceptionMapper construyen jakarta.ws.rs.core.Response, que en
+             tiempo de ejecucion necesita un RuntimeDelegate; sin contenedor,
+             ese Provider no existe. Misma version de RESTEasy que empaqueta
+             WildFly, solo para que los tests puedan inspeccionar el Response
+             que arma cada mapper (status y cuerpo). -->
+        <dependency>
+            <groupId>org.jboss.resteasy</groupId>
+            <artifactId>resteasy-core</artifactId>
+            <version>7.0.2.Final</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <finalName>mediconecta</finalName>

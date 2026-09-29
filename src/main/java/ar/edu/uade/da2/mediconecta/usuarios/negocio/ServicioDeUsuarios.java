@@ -1,5 +1,7 @@
 package ar.edu.uade.da2.mediconecta.usuarios.negocio;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.UsuarioDAO;
 

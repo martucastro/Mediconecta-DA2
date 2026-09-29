@@ -2,8 +2,6 @@ package ar.edu.uade.da2.mediconecta.historiaclinica.presentacion;
 
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.EntradaClinica;
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.HistoriaClinica;
-import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.ConflictoDeNegocioException;
-import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.NuevaEntradaDTO;
 import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.RegistrarConsultaDTO;
 import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.ServicioDeHistoriaClinicaLocal;
@@ -46,39 +44,23 @@ public class HistoriaClinicaResource {
     @Path("/paciente/{pacienteId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response crear(@PathParam("pacienteId") Long pacienteId) {
-        try {
-            HistoriaClinica historia = servicio.crearHistoria(pacienteId);
-            return Response.status(Response.Status.CREATED)
-                    .entity(new HistoriaClinicaDTO(historia))
-                    .build();
-        } catch (DatosInvalidosException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(e.getMessage())
-                    .build();
-        } catch (ConflictoDeNegocioException e) {
-            return Response.status(Response.Status.CONFLICT)
-                    .entity(e.getMessage())
-                    .build();
-        }
+        HistoriaClinica historia = servicio.crearHistoria(pacienteId);
+        return Response.status(Response.Status.CREATED)
+                .entity(new HistoriaClinicaDTO(historia))
+                .build();
     }
 
     @GET
     @Path("/paciente/{pacienteId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response obtener(@PathParam("pacienteId") Long pacienteId) {
-        try {
-            HistoriaClinica historia = servicio.obtenerHistoriaDePaciente(pacienteId);
-            if (historia == null) {
-                return Response.status(Response.Status.NOT_FOUND)
-                        .entity("El paciente no tiene una historia clínica abierta")
-                        .build();
-            }
-            return Response.ok(new HistoriaClinicaDTO(historia)).build();
-        } catch (DatosInvalidosException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(e.getMessage())
+        HistoriaClinica historia = servicio.obtenerHistoriaDePaciente(pacienteId);
+        if (historia == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("El paciente no tiene una historia clínica abierta")
                     .build();
         }
+        return Response.ok(new HistoriaClinicaDTO(historia)).build();
     }
 
     @POST
@@ -87,20 +69,10 @@ public class HistoriaClinicaResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response agregarEntrada(@PathParam("pacienteId") Long pacienteId,
                                    NuevaEntradaDTO datos) {
-        try {
-            EntradaClinica entrada = servicio.agregarEntrada(pacienteId, datos);
-            return Response.status(Response.Status.CREATED)
-                    .entity(new EntradaClinicaDTO(entrada))
-                    .build();
-        } catch (DatosInvalidosException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(e.getMessage())
-                    .build();
-        } catch (ConflictoDeNegocioException e) {
-            return Response.status(Response.Status.CONFLICT)
-                    .entity(e.getMessage())
-                    .build();
-        }
+        EntradaClinica entrada = servicio.agregarEntrada(pacienteId, datos);
+        return Response.status(Response.Status.CREATED)
+                .entity(new EntradaClinicaDTO(entrada))
+                .build();
     }
 
     @POST
@@ -109,36 +81,20 @@ public class HistoriaClinicaResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response registrarConsulta(@PathParam("pacienteId") Long pacienteId,
                                       RegistrarConsultaDTO datos) {
-        try {
-            HistoriaClinica historia = servicio.registrarConsulta(pacienteId, datos);
-            return Response.status(Response.Status.CREATED)
-                    .entity(new HistoriaClinicaDTO(historia))
-                    .build();
-        } catch (DatosInvalidosException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(e.getMessage())
-                    .build();
-        } catch (ConflictoDeNegocioException e) {
-            return Response.status(Response.Status.CONFLICT)
-                    .entity(e.getMessage())
-                    .build();
-        }
+        HistoriaClinica historia = servicio.registrarConsulta(pacienteId, datos);
+        return Response.status(Response.Status.CREATED)
+                .entity(new HistoriaClinicaDTO(historia))
+                .build();
     }
 
     @GET
     @Path("/paciente/{pacienteId}/entradas")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listarEntradas(@PathParam("pacienteId") Long pacienteId) {
-        try {
-            List<EntradaClinicaDTO> entradas = servicio.listarEntradas(pacienteId)
-                    .stream()
-                    .map(EntradaClinicaDTO::new)
-                    .collect(Collectors.toList());
-            return Response.ok(entradas).build();
-        } catch (DatosInvalidosException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(e.getMessage())
-                    .build();
-        }
+        List<EntradaClinicaDTO> entradas = servicio.listarEntradas(pacienteId)
+                .stream()
+                .map(EntradaClinicaDTO::new)
+                .collect(Collectors.toList());
+        return Response.ok(entradas).build();
     }
 }
