@@ -209,7 +209,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2026-09-20T10:00:00\"\n}"
+              "raw": "{\n  \"fechaHora\": \"2027-03-20T10:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",
@@ -231,6 +231,10 @@
                   "    pm.expect([200,201]).to.include(pm.response.code);",
                   "});",
                   "var jsonData = pm.response.json();",
+                  "pm.test('Franja PRESENCIAL con consultorio', function () {",
+                  "    pm.expect(jsonData.modalidad).to.eql('PRESENCIAL');",
+                  "    pm.expect(jsonData.consultorio).to.eql('Consultorio 3');",
+                  "});",
                   "if (jsonData && jsonData.id) {",
                   "    pm.collectionVariables.set('turno_id', jsonData.id);",
                   "    console.log('turno_id guardado:', jsonData.id);",
@@ -255,7 +259,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2026-09-20T10:00:00\"\n}"
+              "raw": "{\n  \"fechaHora\": \"2027-03-20T10:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",
@@ -377,7 +381,7 @@
       "name": "02b - Camino feliz opcional (segundo turno, no interfiere con el cierre)",
       "item": [
         {
-          "name": "Abrir disponibilidad (turno B)",
+          "name": "Abrir disponibilidad de TELEMEDICINA (turno B)",
           "event": [
             {
               "listen": "test",
@@ -385,6 +389,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "var jsonData = pm.response.json();",
+                  "pm.test('Franja de TELEMEDICINA', function () {",
+                  "    pm.expect(jsonData.modalidad).to.eql('TELEMEDICINA');",
+                  "});",
                   "if (jsonData && jsonData.id) {",
                   "    pm.collectionVariables.set('turno_id_b', jsonData.id);",
                   "}"
@@ -406,7 +413,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2026-09-20T11:00:00\"\n}"
+              "raw": "{\n  \"fechaHora\": \"2027-03-20T11:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",

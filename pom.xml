@@ -27,9 +27,40 @@
             <artifactId>jakarta.xml.ws-api</artifactId>
             <version>4.0.2</version>
             <scope>provided</scope>
+        <!-- Pruebas de unidad de la capa de negocio: el contenedor se reemplaza
+             por dobles de Mockito, asi que no hace falta WildFly para correrlas. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.7.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Los ExceptionMapper construyen jakarta.ws.rs.core.Response, que en
+             tiempo de ejecucion necesita un RuntimeDelegate; sin contenedor,
+             ese Provider no existe. Misma version de RESTEasy que empaqueta
+             WildFly, solo para que los tests puedan inspeccionar el Response
+             que arma cada mapper (status y cuerpo). -->
+        <dependency>
+            <groupId>org.jboss.resteasy</groupId>
+            <artifactId>resteasy-core</artifactId>
+            <version>7.0.2.Final</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
     <build>
         <finalName>mediconecta</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+            </plugin>
+        </plugins>
     </build>
 </project>

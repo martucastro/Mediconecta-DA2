@@ -1,8 +1,6 @@
 package ar.edu.uade.da2.mediconecta.usuarios.presentacion;
 
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
-import ar.edu.uade.da2.mediconecta.usuarios.negocio.ConflictoDeNegocioException;
-import ar.edu.uade.da2.mediconecta.usuarios.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
 import java.util.List;
@@ -54,21 +52,11 @@ public class UsuariosResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response registrar(RegistroUsuarioDTO datos) {
-        try {
-            Usuario nuevoUsuario = servicio.registrarUsuario(
-                    datos.getNombre(), datos.getEmail(), datos.getRol(), datos.getContrasena());
-            return Response.status(Response.Status.CREATED)
-                    .entity(new UsuarioDTO(nuevoUsuario))
-                    .build();
-        } catch (DatosInvalidosException e) {
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(e.getMessage())
-                    .build();
-        } catch (ConflictoDeNegocioException e) {
-            return Response.status(Response.Status.CONFLICT)
-                    .entity(e.getMessage())
-                    .build();
-        }
+        Usuario nuevoUsuario = servicio.registrarUsuario(
+                datos.getNombre(), datos.getEmail(), datos.getRol(), datos.getContrasena());
+        return Response.status(Response.Status.CREATED)
+                .entity(new UsuarioDTO(nuevoUsuario))
+                .build();
     }
 
     @POST

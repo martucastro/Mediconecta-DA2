@@ -59,7 +59,7 @@ SOAP (JAX-WS) es **opcional** en Jakarta EE desde la versión 9, no obligatorio 
 
 ## 3. Arquitectura en capas
 
-El sistema se organiza en tres capas, con una regla de dependencia estricta: cada capa solo puede depender de la capa inmediatamente inferior, y las reglas de negocio viven exclusivamente en la capa de negocio.
+El sistema se organiza en tres capas: presentación, negocio y datos. La regla general es que cada capa depende de la inmediatamente inferior y que las reglas de negocio viven exclusivamente en la capa de negocio; la sección 3.1 aclara un matiz a esa regla.
 
 | Capa | Responsabilidad | Tecnologías | Qué NO hace |
 |---|---|---|---|
@@ -67,11 +67,15 @@ El sistema se organiza en tres capas, con una regla de dependencia estricta: cad
 | Negocio | Reglas del dominio, límites transaccionales, seguridad por rol | EJB (`@Stateless`, `@Stateful`, `@Singleton`), CDI, JTA, Jakarta Security | No conoce detalles de SQL ni de la SPA |
 | Datos | Traduce objetos de dominio a filas de base de datos | Patrón DAO, JPA/Hibernate, PostgreSQL | No contiene reglas de negocio |
 
-A diferencia de una entrega anterior, esta separación ya no depende del sufijo de una clase (`*Resource`, `Servicio*`, `*DAO`) conviviendo en un mismo paquete: hoy es una estructura de paquetes real. Bajo el paquete raíz `ar.edu.uade.da2.mediconecta`, cada uno de los tres componentes (`usuarios`, `turnos`, `historiaclinica`) se divide en tres subpaquetes homónimos de las capas: `presentacion`, `negocio` y `datos`. Son nueve subpaquetes, tres componentes por tres capas. El cuarto componente, `obrassociales`, sigue la misma estructura pero sólo con `negocio` y `datos`: no se expone por HTTP, lo invocan otros componentes a través de su fachada (sección 6.3).
+A diferencia de una entrega anterior, esta separación ya no depende del sufijo de una clase (`*Resource`, `Servicio*`, `*DAO`) conviviendo en un mismo paquete: hoy es una estructura de paquetes real. Bajo el paquete raíz `ar.edu.uade.da2.mediconecta`, los componentes que siguen esta estructura de tres subpaquetes homónimos de las capas (`presentacion`, `negocio`, `datos`) son `usuarios`, `turnos`, `historiaclinica` y `pagos`. A eso se suman `comun.negocio`, con las excepciones de negocio que comparten los cuatro componentes (`DatosInvalidosException`, `ConflictoDeNegocioException`), y `externos.pasarela`, que no es un componente de MediConecta sino la simulación del partner externo de pagos, expuesta como su propio recurso REST bajo `/api/externo/*` (sección 5).
 
 La regla de dependencia queda así verificable con sólo mirar los imports: una clase de `datos` que importara algo de `presentacion` sería visible de inmediato como una violación de la arquitectura, cosa que la convención de nombres anterior no permitía detectar.
 
-En el paquete raíz quedan tres clases fuera de esa estructura: `ApiActivator` (`Application` de JAX-RS) y los `ExceptionMapper` transversales `AccesoDenegadoMapper` y `ErrorInesperadoMapper`. Es deliberado: son infraestructura JAX-RS que atraviesa los tres componentes por igual (`AccesoDenegadoMapper` traduce a `403` cualquier `EJBAccessException`, venga del componente que venga), y ubicarlos dentro de un componente sugeriría una pertenencia que no existe.
+En el paquete raíz quedan las clases fuera de esa estructura: `ApiActivator` (`Application` de JAX-RS) y los `ExceptionMapper` transversales `AccesoDenegadoMapper`, `ErrorInesperadoMapper`, `DatosInvalidosMapper` y `ConflictoDeNegocioMapper` (estos dos últimos traducen las excepciones de `comun.negocio` a `400` y `409`). Es deliberado: son infraestructura JAX-RS que atraviesa los componentes de negocio por igual, y ubicarlos dentro de un componente sugeriría una pertenencia que no existe. `PasarelaNoDisponibleMapper`, en cambio, vive junto a la excepción que traduce, en `pagos.negocio`, porque es específica de ese componente.
+
+### 3.1 Un matiz sobre la regla de capas adyacentes: los DTO conocen la entidad
+
+La tabla de arriba describe la intención general, pero no es estrictamente "cada capa habla solo con la inmediata inferior": los DTO de presentación (`TurnoDTO`, `UsuarioDTO`, `HistoriaClinicaDTO`, entre otros) se construyen directamente a partir de la entidad JPA de `datos` (por ejemplo, `TurnoDTO(Turno turno)`), sin pasar por un objeto intermedio de `negocio`. La entidad hace de modelo compartido entre presentación y datos para ese propósito puntual. Presentación sigue sin importar `EntityManager` ni escribir SQL, y sigue sin decidir ninguna regla de negocio: lo único que cruza la capa de negocio es la forma del dato, no su comportamiento.
 
 Hay además un paquete que no es nuestro, aunque viva en el mismo WAR: `externos.obrasocial`, la simulación del sistema legado de la obra social (sección 6.2). No se divide en capas porque no es un componente que diseñamos, sino un tercero del que sólo nos importa el contrato SOAP. Ninguna clase de los componentes lo importa: la única forma de llegar a él es su WSDL, igual que con el sistema real.
 
@@ -125,7 +129,7 @@ Los *stateful* session beans no figuran en esa lista. En una iteración anterior
 
 Corregir esto dejó a la vista un segundo problema. La versión anterior cancelaba recorriendo todos los temporizadores devueltos por `getTimers()` y cancelándolos sin discriminar. El javadoc de ese método es explícito: devuelve "all active timers associated with this bean", es decir todos los del bean, no los de un paciente en particular. Esa implementación cancelaba también los holds de los demás pacientes, que quedaban retenidos para siempre. La versión actual identifica cada temporizador por el dato con el que fue creado, el identificador del turno, y cancela únicamente el que corresponde.
 
-Entidades: `Turno` (`paciente`/`profesional` `@ManyToOne`, `estado`, `inicioHold`), `EstadoTurno` (`DISPONIBLE`, `EN_HOLD`, `CONFIRMADO`, `CANCELADO`) y `TurnoDAO`. `TurnosResource` agrega `POST /api/turnos/disponibilidad`, con la restricción de rol en `ServicioDeTurnos.abrirDisponibilidad` (`@RolesAllowed("PROFESIONAL")`), no en el recurso JAX-RS, consistente con la sección 3.
+Entidades: `Turno` (`paciente`/`profesional` `@ManyToOne`, `estado`, `inicioHold`, `modalidad`, `consultorio` y los cuatro campos de cobertura: `coberturaAutorizada`, `coberturaPorcentaje`, `copago`, `numeroAutorizacion`), `ModalidadTurno` (`PRESENCIAL`, `TELEMEDICINA`), `EstadoTurno` (`DISPONIBLE`, `EN_HOLD`, `CONFIRMADO`, `CANCELADO`) y `TurnoDAO`. `TurnosResource` agrega `POST /api/turnos/disponibilidad`, con la restricción de rol en `ServicioDeTurnos.abrirDisponibilidad` (`@RolesAllowed("PROFESIONAL")`), no en el recurso JAX-RS, consistente con la sección 3.
 
 ### 6.2 Sistema legado de la obra social (simulado)
 
@@ -260,6 +264,37 @@ El mensaje es un `MapMessage` (no JSON) con cuatro campos: `turnoId`, `pacienteI
 
 `ServicioDeTurnos` no importa ninguna clase de `ServicioDeNotificaciones`: publica por nombre JNDI del tópico, sin saber si hay algún consumidor suscripto. La configuración del propio tópico en Artemis (WildFly) es una dependencia externa a este cambio, no algo que resuelva el código de la aplicación.
 
+### 9.2 Puntos de extensión: eventos CDI sincrónicos
+
+Cuatro integraciones se enganchan al flujo de turnos: la validación de cobertura (SCRUM-91), el cobro del copago (SCRUM-93), la sala de video (SCRUM-95) y el encolado del reclamo a la obra social. Había dos formas de conectarlas.
+
+| | Evento CDI sincrónico (elegida) | Llamadas directas a cada fachada |
+|---|---|---|
+| Acoplamiento | `ServicioDeTurnos` no importa a ninguno de los componentes: dispara el evento y no sabe quién lo observa. | `ServicioDeTurnos` inyecta e importa las cuatro fachadas. |
+| Trabajo en paralelo | Cada card agrega un observador en su propio componente; nadie más toca `confirmarTurno`. | Cada card edita el mismo método, con conflictos de merge entre ramas. |
+| Orden | Lo fija `@Priority` sobre el observador, con las constantes de `PuntosDeExtension`. Es menos visible: hay que ir a esa clase para verlo. | Es el orden de las líneas. |
+| Resultados | El observador escribe sobre el `Turno` que viaja en el evento (cobertura, copago). Es implícito. | Valores de retorno. |
+| Transacción y errores | Un observador `@Observes` corre en el mismo hilo y la misma transacción JTA; su excepción sale por `fire()` y revierte todo. | Idéntico. |
+
+La transaccionalidad es la misma en las dos; la diferencia es quién conoce a quién. Se eligió el evento porque el problema concreto de este sprint era que cuatro ramas tocaran `Turno` y `ServicioDeTurnos` a la vez, y porque mantiene la dirección de dependencias que el sistema ya usaba con `TurnoConfirmado`: el componente de turnos anuncia, los demás reaccionan.
+
+Hay dos eventos:
+
+- `TurnoEnReserva`, dentro de `reservarTurno`, después de asignar el paciente y antes de retener el turno. Si la cobertura rechaza, no queda ningún hold que liberar.
+- `TurnoEnConfirmacion`, dentro de `confirmarTurno`, después de validar el hold y antes de marcar el turno `CONFIRMADO` y cancelar su temporizador. Si un observador falla, el turno sigue `EN_HOLD`, el temporizador sigue vivo y el paciente puede reintentar.
+
+`PuntosDeExtension` fija el orden: `COBRO_COPAGO` (100), `SALA_DE_VIDEO` (200), `RECLAMO` (300). El cobro va antes que la sala por decisión de producto, y los huecos permiten intercalar un paso sin renumerar. La sala se crea en la confirmación y nunca en la reserva: un hold que vence no tiene que dejar salas creadas.
+
+Tres reglas para quien agregue un observador:
+
+1. **Sincrónico, siempre.** `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre en otro hilo y fuera de la transacción, así que su falla ya no podría impedir la confirmación.
+2. **`MANDATORY`.** El observador se declara `@TransactionAttribute(MANDATORY)`: su paso solo tiene sentido dentro de la transacción del turno, y si alguien disparara el evento fuera de una, el contenedor lo rechaza en vez de ejecutarlo suelto.
+3. **Errores con rollback.** Para cortar el flujo se lanza una excepción `@ApplicationException(rollback = true)`, que atraviesa `ServicioDeTurnos` sin envolverse y llega intacta a presentación.
+
+Un límite a tener presente: el rollback JTA solo alcanza a los recursos transaccionales (base de datos, JMS). Un pedido REST a un sistema externo, como la pasarela de pago o el proveedor de video, no se deshace si un paso posterior falla. Cada card que llame a un sistema externo tiene que decidir cómo compensarlo.
+
+Esto no reemplaza al tópico `TurnoConfirmado` (sección 9.1): los eventos CDI son para los pasos que deciden si el turno se confirma; el tópico JMS, para lo que reacciona después, fuera de la transacción del paciente.
+
 ## 10. Verificación en ejecución
 
 El sistema se desplegó en WildFly 41 con PostgreSQL 18 y se verificó endpoint por endpoint, con el usuario autenticado que corresponde a cada caso.
@@ -308,7 +343,7 @@ Las seis brechas que este documento listaba como abiertas están resueltas, y ca
 
 **Contraseñas del sembrado inicial.** Ninguna queda escrita en el código: cada usuario inicial toma la suya de una variable de entorno y, si no está definida, el arranque genera una al azar y la registra una sola vez. Una contraseña fija en el fuente es idéntica en todas las instalaciones y queda publicada en el repositorio.
 
-Lo que sigue abierto es alcance, no deuda: no hay interfaz de usuario, la verificación es de integración contra el sistema desplegado y no de unidad, y los tres componentes conviven en un único módulo Maven, que es lo correcto mientras se desplieguen juntos.
+Lo que sigue abierto es alcance, no deuda: no hay interfaz de usuario, la verificación de integración contra el sistema desplegado sigue siendo la principal (las pruebas de unidad, con JUnit y Mockito, cubren por ahora el flujo de turnos), y los tres componentes conviven en un único módulo Maven, que es lo correcto mientras se desplieguen juntos.
 
 ## 12. Uso de inteligencia artificial generativa
 

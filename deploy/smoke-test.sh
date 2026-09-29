@@ -42,6 +42,16 @@ NUEVO=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
         -d '{"fechaHora":"2027-01-15T10:00:00"}' "$BASE/turnos/disponibilidad")
 ID=$(printf '%s' "$NUEVO" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 comprobar "profesional abre disponibilidad"   "si" "$([ -n "$ID" ] && echo si || echo no)"
+comprobar "sin modalidad la franja es PRESENCIAL" "si" "$(printf '%s' "$NUEVO" | grep -q '"modalidad":"PRESENCIAL"' && echo si || echo no)"
+TELE=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
+       -d '{"fechaHora":"2027-01-15T12:00:00","modalidad":"TELEMEDICINA"}' "$BASE/turnos/disponibilidad")
+comprobar "abre una franja de telemedicina"   "si" "$(printf '%s' "$TELE" | grep -q '"modalidad":"TELEMEDICINA"' && echo si || echo no)"
+comprobar "telemedicina con consultorio"      400 "$(codigo -u "$PROF" -H "Content-Type: application/json" \
+                                                     -d '{"fechaHora":"2027-01-15T13:00:00","modalidad":"TELEMEDICINA","consultorio":"3"}' \
+                                                     "$BASE/turnos/disponibilidad")"
+comprobar "modalidad desconocida"             400 "$(codigo -u "$PROF" -H "Content-Type: application/json" \
+                                                     -d '{"fechaHora":"2027-01-15T14:00:00","modalidad":"DOMICILIO"}' \
+                                                     "$BASE/turnos/disponibilidad")"
 comprobar "paciente NO abre disponibilidad"   403 "$(codigo -u "$PACI" -H "Content-Type: application/json" \
                                                      -d '{"fechaHora":"2027-01-15T11:00:00"}' "$BASE/turnos/disponibilidad")"
 

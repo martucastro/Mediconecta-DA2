@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta.usuarios.negocio;
+package ar.edu.uade.da2.mediconecta.comun.negocio;
 
 import jakarta.ejb.ApplicationException;
 
@@ -7,9 +7,14 @@ import jakarta.ejb.ApplicationException;
  *
  * Va anotada con @ApplicationException para que el contenedor la propague tal
  * cual hasta la capa de presentacion. Sin esa anotacion, una RuntimeException
- * que sale de un EJB se considera "system exception", el contenedor la envuelve
- * en EJBException, el catch del resource no la reconoce y el cliente termina
- * recibiendo un 500 por un error que en realidad es suyo.
+ * que sale de un EJB se considera "system exception" y el contenedor la
+ * envuelve en EJBException, con lo que el mapper ya no podria distinguirla y
+ * el cliente recibiria un 500 por un error que en realidad es suyo.
+ * rollback = true mantiene el comportamiento transaccional: la operacion se
+ * deshace.
+ *
+ * Compartida por los cuatro componentes de negocio (usuarios, turnos,
+ * historia clinica y pagos): antes cada uno tenia su propia copia identica.
  */
 @ApplicationException(rollback = true)
 public class DatosInvalidosException extends RuntimeException {
