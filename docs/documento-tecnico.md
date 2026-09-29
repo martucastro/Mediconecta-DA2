@@ -59,7 +59,7 @@ SOAP (JAX-WS) es **opcional** en Jakarta EE desde la versión 9, no obligatorio 
 
 ## 3. Arquitectura en capas
 
-El sistema se organiza en tres capas, con una regla de dependencia estricta: cada capa solo puede depender de la capa inmediatamente inferior, y las reglas de negocio viven exclusivamente en la capa de negocio.
+El sistema se organiza en tres capas: presentación, negocio y datos. La regla general es que cada capa depende de la inmediatamente inferior y que las reglas de negocio viven exclusivamente en la capa de negocio; la sección 3.1 aclara un matiz a esa regla.
 
 | Capa | Responsabilidad | Tecnologías | Qué NO hace |
 |---|---|---|---|
@@ -67,11 +67,15 @@ El sistema se organiza en tres capas, con una regla de dependencia estricta: cad
 | Negocio | Reglas del dominio, límites transaccionales, seguridad por rol | EJB (`@Stateless`, `@Stateful`, `@Singleton`), CDI, JTA, Jakarta Security | No conoce detalles de SQL ni de la SPA |
 | Datos | Traduce objetos de dominio a filas de base de datos | Patrón DAO, JPA/Hibernate, PostgreSQL | No contiene reglas de negocio |
 
-A diferencia de una entrega anterior, esta separación ya no depende del sufijo de una clase (`*Resource`, `Servicio*`, `*DAO`) conviviendo en un mismo paquete: hoy es una estructura de paquetes real. Bajo el paquete raíz `ar.edu.uade.da2.mediconecta`, cada uno de los tres componentes (`usuarios`, `turnos`, `historiaclinica`) se divide en tres subpaquetes homónimos de las capas: `presentacion`, `negocio` y `datos`. Son nueve subpaquetes, tres componentes por tres capas.
+A diferencia de una entrega anterior, esta separación ya no depende del sufijo de una clase (`*Resource`, `Servicio*`, `*DAO`) conviviendo en un mismo paquete: hoy es una estructura de paquetes real. Bajo el paquete raíz `ar.edu.uade.da2.mediconecta`, los componentes que siguen esta estructura de tres subpaquetes homónimos de las capas (`presentacion`, `negocio`, `datos`) son `usuarios`, `turnos`, `historiaclinica` y `pagos`. A eso se suman `comun.negocio`, con las excepciones de negocio que comparten los cuatro componentes (`DatosInvalidosException`, `ConflictoDeNegocioException`), y `externos.pasarela`, que no es un componente de MediConecta sino la simulación del partner externo de pagos, expuesta como su propio recurso REST bajo `/api/externo/*` (sección 5).
 
 La regla de dependencia queda así verificable con sólo mirar los imports: una clase de `datos` que importara algo de `presentacion` sería visible de inmediato como una violación de la arquitectura, cosa que la convención de nombres anterior no permitía detectar.
 
-En el paquete raíz quedan tres clases fuera de esa estructura: `ApiActivator` (`Application` de JAX-RS) y los `ExceptionMapper` transversales `AccesoDenegadoMapper` y `ErrorInesperadoMapper`. Es deliberado: son infraestructura JAX-RS que atraviesa los tres componentes por igual (`AccesoDenegadoMapper` traduce a `403` cualquier `EJBAccessException`, venga del componente que venga), y ubicarlos dentro de un componente sugeriría una pertenencia que no existe.
+En el paquete raíz quedan las clases fuera de esa estructura: `ApiActivator` (`Application` de JAX-RS) y los `ExceptionMapper` transversales `AccesoDenegadoMapper`, `ErrorInesperadoMapper`, `DatosInvalidosMapper` y `ConflictoDeNegocioMapper` (estos dos últimos traducen las excepciones de `comun.negocio` a `400` y `409`). Es deliberado: son infraestructura JAX-RS que atraviesa los componentes de negocio por igual, y ubicarlos dentro de un componente sugeriría una pertenencia que no existe. `PasarelaNoDisponibleMapper`, en cambio, vive junto a la excepción que traduce, en `pagos.negocio`, porque es específica de ese componente.
+
+### 3.1 Un matiz sobre la regla de capas adyacentes: los DTO conocen la entidad
+
+La tabla de arriba describe la intención general, pero no es estrictamente "cada capa habla solo con la inmediata inferior": los DTO de presentación (`TurnoDTO`, `UsuarioDTO`, `HistoriaClinicaDTO`, entre otros) se construyen directamente a partir de la entidad JPA de `datos` (por ejemplo, `TurnoDTO(Turno turno)`), sin pasar por un objeto intermedio de `negocio`. La entidad hace de modelo compartido entre presentación y datos para ese propósito puntual. Presentación sigue sin importar `EntityManager` ni escribir SQL, y sigue sin decidir ninguna regla de negocio: lo único que cruza la capa de negocio es la forma del dato, no su comportamiento.
 
 ## 4. Los ocho componentes del sistema
 
