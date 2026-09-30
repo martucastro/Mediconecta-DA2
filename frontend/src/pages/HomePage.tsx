@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import BotonCerrarSesion from './BotonCerrarSesion'
 
 export default function HomePage() {
   return (
@@ -13,6 +14,7 @@ export default function HomePage() {
           <a href="#">Mi historia clínica</a>
           <a href="#">Cobertura</a>
           <img className="avatar" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+          <BotonCerrarSesion />
         </nav>
         <img className="avatar m" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
       </header>
