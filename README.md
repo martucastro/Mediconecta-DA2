@@ -9,19 +9,21 @@ Trabajo Práctico Integrador de Desarrollo de Aplicaciones II, comisión Lunes T
 
 ## Qué hay implementado
 
-Tres componentes de negocio, cada uno con su arquitectura en capas:
+Cuatro componentes de negocio, cada uno con su arquitectura en capas:
 
 | Componente | Tipo | Responsabilidad |
 |---|---|---|
 | `ServicioDeUsuarios` | `@Stateless` | Registro, autenticación, perfiles y credenciales |
 | `ServicioDeTurnos` | `@Stateful` | Disponibilidad, reserva, hold de 5 minutos, confirmación |
 | `ServicioDeHistoriaClinica` | `@Stateless` | Antecedentes, diagnósticos y recetas |
+| `ServicioDeNotificaciones` | `@Stateless` (con `NotificacionMDB` como `@MessageDriven` colaborador) | Recordatorio de turno confirmado, consumido del tópico JMS |
 
 ```
 ar.edu.uade.da2.mediconecta
   usuarios/{presentacion, negocio, datos}
   turnos/{presentacion, negocio, datos}
   historiaclinica/{presentacion, negocio, datos}
+  notificaciones/{presentacion, negocio, datos}
 ```
 
 ---
@@ -153,6 +155,37 @@ Las pruebas de unidad de la capa de negocio corren sin servidor:
 mvn test
 ```
 
+### 6. Frontend (React + Vite)
+
+El frontend vive en `frontend/`, separado del backend Java, y compila hacia
+`src/main/webapp` para que lo sirva el mismo WAR.
+
+Para trabajar en las pantallas sin recompilar y redesplegar en WildFly cada vez:
+
+```bash
+cd frontend
+npm install   # solo la primera vez, o si cambiaron las dependencias
+npm run dev
+```
+
+Esto levanta un servidor en `http://localhost:5173/mediconecta/`, con recarga
+automática al guardar cualquier archivo. Los pedidos a `/mediconecta/api/*` se
+redirigen automáticamente hacia `http://localhost:8080` (donde tiene que estar
+corriendo WildFly con el backend desplegado), así que no hay problemas de CORS
+al probar el login u otras pantallas conectadas a la API real.
+
+Cuando los cambios están listos para desplegarse de verdad:
+
+```bash
+cd frontend
+npm run build
+```
+
+Esto deja los archivos compilados en `src/main/webapp`, listos para que
+`mvn clean package` los empaquete junto con el resto del proyecto en el `.war`.
+Este build **no** borra `WEB-INF` (`web.xml`, `beans.xml`), solo reemplaza los
+archivos que genera Vite.
+
 ---
 
 ## Usuarios de prueba
@@ -240,6 +273,50 @@ Siempre `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre
 fuera de la transacción y su falla ya no podría frenar la confirmación. El
 criterio completo está en `docs/documento-tecnico.md`, sección 9.2.
 
+### Notificaciones
+
+A diferencia de los puntos de extensión de arriba (sincrónicos, dentro de la
+misma transacción), el recordatorio de turno confirmado es **asincrónico**:
+`ServicioDeTurnos.confirmarTurno` publica un `MapMessage` en el tópico JMS
+`java:/jms/topic/TurnoConfirmado` (campos `turnoId`, `pacienteId`,
+`profesionalId`, `fechaHora`) dentro de la misma transacción que la
+confirmación, pero **quien lo procesa no**: `NotificacionMDB`
+(`notificaciones/presentacion`) lo consume en un hilo propio del contenedor,
+después de que la transacción de `confirmarTurno` ya cerró. La respuesta HTTP
+del `PUT /turnos/{id}/confirmar` no espera a que el mensaje se procese.
+
+`NotificacionMDB` solo traduce el mensaje y delega en
+`ServicioDeNotificaciones` (`@Stateless`), que arma el recordatorio, lo "envía"
+(simulado por ahora: un log, porque no hay proveedor de email/SMS todavía — el
+método `enviar()` es el punto de extensión pensado para un Strategy por canal
+el día que lo haya) y persiste un registro de `Notificacion`, para que la demo
+tenga evidencia de que el mensaje se consumió sin depender del log.
+
+#### Política de redelivery
+
+No hay configuración propia de redelivery en `mediconecta-setup.cli`: se usa
+la que trae WildFly por defecto en `standalone-full.xml` para el
+address-setting comodín (`#`), que aplica a este tópico igual que a cualquier
+otro:
+
+- **Hasta 10 reintentos** (`max-delivery-attempts`), sin demora entre uno y
+  el siguiente (`redelivery-delay=0`).
+- Agotados los reintentos, el mensaje se mueve a la **cola de mensajes
+  muertos** (`jms.queue.DLQ`), en vez de perderse.
+
+Si `NotificacionMDB.onMessage` lanza una excepción sin capturarla (por
+ejemplo, porque la base no responde), el contenedor no confirma el mensaje:
+Artemis lo reintenta solo, sin que el componente tenga que programar nada.
+Verificar los mensajes en la DLQ, por CLI:
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect \
+  "/subsystem=messaging-activemq/server=default/jms-queue=DLQ:count-messages"
+```
+
+O por la consola de administración: *Runtime → (tu servidor) → Messaging
+(ActiveMQ) → default → Queue → DLQ*.
+
 ### Ejemplo del flujo completo
 
 ```bash
@@ -291,12 +368,15 @@ volvé a correrlo.
 
 Están acá a propósito: son decisiones de alcance de esta entrega, no descuidos.
 
-- **Sin frontend.** El sistema se ejerce por HTTP, con las colecciones de Postman
-  de `deploy/` y `postman/`. La primera entrega evalúa la arquitectura de capas y
-  los componentes de negocio, no la interfaz.
+- **Frontend con datos de prototipo.** Las pantallas de React ya están migradas
+  y desplegadas, pero todavía muestran datos fijos: conectarlas a la API real es
+  SCRUM-83 a 87.
+- **Notificaciones sin canal real.** El envío de recordatorios es simulado (log);
+  no hay proveedor de email/SMS integrado. El endpoint `GET /api/notificaciones/mias`
+  para verlas desde Postman o el frontend queda pendiente, es opcional en el alcance.
 - **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
   integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
-- **Un solo módulo Maven.** Los tres componentes conviven en un WAR. Separarlos en
+- **Un solo módulo Maven.** Los cuatro componentes conviven en un WAR. Separarlos en
   módulos es lo que corresponde cuando se despliegan por separado, y todavía no es
   el caso.
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
