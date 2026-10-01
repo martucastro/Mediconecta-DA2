@@ -36,7 +36,7 @@ ar.edu.uade.da2.mediconecta
 
 | | Versión usada | De dónde |
 |---|---|---|
-| JDK | 17 o superior | cualquier distribución |
+| JDK | 21 | cualquier distribución. El código compila con `release 17`, pero las pruebas usan Mockito 5.7, que no funciona con JDK 25 |
 | Maven | 3.9+ | para `mvn package` |
 | WildFly | 41.0.0.Final | https://www.wildfly.org/downloads/ |
 | PostgreSQL | 18.x | https://www.postgresql.org/download/ |
