@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta.obrassociales.datos.soap;
+package ar.edu.uade.da2.mediconecta.obrassociales.negocio.soap;
 
 import java.util.Map;
 import java.util.function.Function;
@@ -7,10 +7,11 @@ import java.util.logging.Logger;
 
 import javax.xml.namespace.QName;
 
-import ar.edu.uade.da2.mediconecta.obrassociales.datos.LegadoNoDisponibleException;
-import ar.edu.uade.da2.mediconecta.obrassociales.datos.PedidoRechazadoPorLegadoException;
-import ar.edu.uade.da2.mediconecta.obrassociales.datos.RespuestaDelLegado;
-import ar.edu.uade.da2.mediconecta.obrassociales.datos.SistemaDeObraSocial;
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Cobertura;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Prestacion;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.SistemaDeObraSocial;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.xml.ws.BindingProvider;
 import jakarta.xml.ws.Service;
@@ -21,7 +22,8 @@ import jakarta.xml.ws.soap.SOAPFaultException;
 /**
  * Patrón Adapter, lado de afuera: traduce la interfaz SistemaDeObraSocial a
  * llamadas SOAP contra el legado, y las respuestas y errores SOAP de vuelta a
- * tipos propios. Es la única clase del componente que conoce JAX-WS.
+ * Cobertura y a excepciones de negocio. Es la única clase del componente que
+ * conoce JAX-WS (junto con el port y el espejo JAXB de este paquete).
  *
  * El Service se crea sin pedir el WSDL al legado (el contrato sale de las
  * anotaciones de ObraSocialLegadoPort). Si lo descargara, construir el cliente
@@ -34,6 +36,11 @@ import jakarta.xml.ws.soap.SOAPFaultException;
  * URL y timeouts se leen de propiedades de sistema en cada llamada, así que se
  * pueden cambiar en caliente desde jboss-cli (por ejemplo, para simular el
  * legado caído apuntando a un puerto cerrado).
+ *
+ * Los faults SOAP se clasifican por su código, no todos son lo mismo: un fault
+ * del cliente (Client en SOAP 1.1, Sender en 1.2) dice que el legado entendió el
+ * pedido y lo rechaza, y es un dato inválido; cualquier otro (Server, por
+ * ejemplo) es una falla del legado y se trata como no disponible.
  */
 @ApplicationScoped
 public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
@@ -43,6 +50,9 @@ public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
     static final String PROPIEDAD_URL = "mediconecta.obrasocial.url";
     static final String PROPIEDAD_TIMEOUT_CONEXION = "mediconecta.obrasocial.timeoutConexionMs";
     static final String PROPIEDAD_TIMEOUT_RESPUESTA = "mediconecta.obrasocial.timeoutRespuestaMs";
+
+    static final String MENSAJE_NO_DISPONIBLE =
+            "El sistema de la obra social no respondió. Intentá de nuevo en unos minutos.";
 
     private static final String URL_POR_DEFECTO = "http://localhost:8080/mediconecta/legado/obrasocial";
     private static final int TIMEOUT_CONEXION_POR_DEFECTO_MS = 2000;
@@ -63,41 +73,61 @@ public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
     private volatile Service servicio;
 
     @Override
-    public RespuestaDelLegado consultarCobertura(String dni, String numeroAfiliado, String codigoPrestacion) {
+    public Cobertura consultar(String dni, String numeroAfiliado, Prestacion prestacion) {
         return invocar("validarCobertura",
-                puerto -> puerto.validarCobertura(dni, numeroAfiliado, codigoPrestacion));
+                puerto -> puerto.validarCobertura(dni, numeroAfiliado, prestacion.name()));
     }
 
     @Override
-    public RespuestaDelLegado solicitarAutorizacion(String dni, String numeroAfiliado, String codigoPrestacion) {
+    public Cobertura autorizar(String dni, String numeroAfiliado, Prestacion prestacion) {
         return invocar("autorizarPrestacion",
-                puerto -> puerto.autorizarPrestacion(dni, numeroAfiliado, codigoPrestacion));
+                puerto -> puerto.autorizarPrestacion(dni, numeroAfiliado, prestacion.name()));
     }
 
-    private RespuestaDelLegado invocar(String operacion,
+    private Cobertura invocar(String operacion,
             Function<ObraSocialLegadoPort, RespuestaCoberturaXml> llamada) {
         String url = System.getProperty(PROPIEDAD_URL, URL_POR_DEFECTO);
         try {
-            RespuestaCoberturaXml respuesta = llamada.apply(nuevoPuerto(url));
-            return traducir(respuesta);
+            return traducir(llamada.apply(nuevoPuerto(url)));
         } catch (SOAPFaultException e) {
-            // El legado respondió: el pedido le resulta inválido.
-            throw new PedidoRechazadoPorLegadoException(e.getFault().getFaultString());
+            if (esFaultDelCliente(e)) {
+                // El legado respondió y dice que el pedido no es válido.
+                throw new DatosInvalidosException(
+                        "La obra social rechazó el pedido: " + e.getFault().getFaultString());
+            }
+            throw noDisponible(operacion, url, e);
         } catch (WebServiceException e) {
             // No hubo respuesta utilizable: conexión rechazada, timeout, etc.
-            // La causa técnica queda en el log; hacia arriba sube un mensaje limpio.
-            LOGGER.log(Level.WARNING, "El legado de la obra social no respondió a " + operacion
-                    + " en " + url + ": " + e.getMessage(), e);
-            throw new LegadoNoDisponibleException(
-                    "El sistema de la obra social no respondió a tiempo.", e);
+            throw noDisponible(operacion, url, e);
         }
     }
 
     /**
-     * Un puerto por llamada: el request context de un proxy JAX-WS no es seguro
-     * para usar desde varios hilos, y este bean es compartido.
+     * La causa técnica queda en el log y como causa de la excepción; hacia
+     * arriba sube un mensaje limpio, apto para mostrarse tal cual.
      */
-    private ObraSocialLegadoPort nuevoPuerto(String url) {
+    private static ObraSocialNoDisponibleException noDisponible(String operacion, String url,
+            WebServiceException causa) {
+        LOGGER.log(Level.WARNING, "El legado de la obra social no respondió a " + operacion
+                + " en " + url + ": " + causa.getMessage(), causa);
+        return new ObraSocialNoDisponibleException(MENSAJE_NO_DISPONIBLE, causa);
+    }
+
+    private static boolean esFaultDelCliente(SOAPFaultException e) {
+        QName codigo = e.getFault().getFaultCodeAsQName();
+        if (codigo == null) {
+            return false;
+        }
+        String local = codigo.getLocalPart();
+        return local.startsWith("Client") || local.equals("Sender");
+    }
+
+    /**
+     * Un puerto por llamada: el request context de un proxy JAX-WS no es seguro
+     * para usar desde varios hilos, y este bean es compartido. Es la única parte
+     * que necesita un runtime de JAX-WS, y por eso los tests la reemplazan.
+     */
+    ObraSocialLegadoPort nuevoPuerto(String url) {
         ObraSocialLegadoPort puerto = servicio().getPort(PUERTO, ObraSocialLegadoPort.class);
         Map<String, Object> contexto = ((BindingProvider) puerto).getRequestContext();
         contexto.put(BindingProvider.ENDPOINT_ADDRESS_PROPERTY, url);
@@ -127,12 +157,13 @@ public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
         return actual;
     }
 
-    private static RespuestaDelLegado traducir(RespuestaCoberturaXml xml) {
+    /** Del contrato SOAP al dominio: de acá para adentro ya no hay tipos del WSDL. */
+    static Cobertura traducir(RespuestaCoberturaXml xml) {
         if (xml == null) {
-            throw new LegadoNoDisponibleException("El sistema de la obra social respondió vacío.", null);
+            throw new ObraSocialNoDisponibleException(MENSAJE_NO_DISPONIBLE);
         }
-        return new RespuestaDelLegado(xml.autorizado, xml.plan, xml.porcentajeCobertura,
-                xml.copago, xml.numeroAutorizacion, xml.mensaje);
+        return new Cobertura(xml.autorizado, xml.porcentajeCobertura, xml.copago,
+                xml.numeroAutorizacion, xml.mensaje);
     }
 
     private static int entero(String propiedad, int porDefecto) {

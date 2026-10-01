@@ -1,4 +1,4 @@
-package ar.edu.uade.da2.mediconecta.obrassociales.datos.soap;
+package ar.edu.uade.da2.mediconecta.obrassociales.negocio.soap;
 
 import java.math.BigDecimal;
 

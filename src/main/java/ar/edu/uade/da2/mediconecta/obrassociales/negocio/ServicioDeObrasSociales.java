@@ -1,7 +1,6 @@
 package ar.edu.uade.da2.mediconecta.obrassociales.negocio;
 
 import java.time.LocalDateTime;
-import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
@@ -9,10 +8,6 @@ import ar.edu.uade.da2.mediconecta.obrassociales.datos.AfiliacionDAO;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AfiliacionDePaciente;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDAO;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDePrestacion;
-import ar.edu.uade.da2.mediconecta.obrassociales.datos.LegadoNoDisponibleException;
-import ar.edu.uade.da2.mediconecta.obrassociales.datos.PedidoRechazadoPorLegadoException;
-import ar.edu.uade.da2.mediconecta.obrassociales.datos.RespuestaDelLegado;
-import ar.edu.uade.da2.mediconecta.obrassociales.datos.SistemaDeObraSocial;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 import jakarta.annotation.security.PermitAll;
@@ -43,10 +38,6 @@ public class ServicioDeObrasSociales {
 
     private static final String ROL_PACIENTE = "PACIENTE";
 
-    static final String MENSAJE_NO_DISPONIBLE =
-            "El sistema de la obra social no respondió. Intentá de nuevo en unos minutos; "
-                    + "no se registró ninguna autorización.";
-
     @Inject
     private SistemaDeObraSocial obraSocial;
 
@@ -68,9 +59,7 @@ public class ServicioDeObrasSociales {
     @TransactionAttribute(TransactionAttributeType.NOT_SUPPORTED)
     public Cobertura validarCobertura(Long pacienteId, Prestacion prestacion) {
         AfiliacionDePaciente afiliacion = afiliacionDe(pacienteId, prestacion);
-        RespuestaDelLegado respuesta = preguntarAlLegado(() -> obraSocial.consultarCobertura(
-                afiliacion.getDni(), afiliacion.getNumeroAfiliado(), prestacion.name()));
-        return aCobertura(respuesta);
+        return obraSocial.consultar(afiliacion.getDni(), afiliacion.getNumeroAfiliado(), prestacion);
     }
 
     /**
@@ -85,21 +74,23 @@ public class ServicioDeObrasSociales {
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Cobertura autorizarPrestacion(Long pacienteId, Prestacion prestacion) {
         AfiliacionDePaciente afiliacion = afiliacionDe(pacienteId, prestacion);
-        RespuestaDelLegado respuesta = preguntarAlLegado(() -> obraSocial.solicitarAutorizacion(
-                afiliacion.getDni(), afiliacion.getNumeroAfiliado(), prestacion.name()));
+        Cobertura cobertura = obraSocial.autorizar(
+                afiliacion.getDni(), afiliacion.getNumeroAfiliado(), prestacion);
 
-        if (respuesta.autorizado()) {
-            if (respuesta.numeroAutorizacion() == null || respuesta.numeroAutorizacion().isBlank()) {
+        if (cobertura.autorizada()) {
+            // Una autorización sin número no sirve para facturar: se trata como
+            // una respuesta inutilizable del legado, no como un éxito.
+            if (cobertura.numeroAutorizacion() == null || cobertura.numeroAutorizacion().isBlank()) {
                 throw new ObraSocialNoDisponibleException(
                         "La obra social autorizó la prestación pero no informó número de autorización.");
             }
             autorizacionDAO.guardar(new AutorizacionDePrestacion(pacienteId, prestacion.name(),
-                    respuesta.numeroAutorizacion(), LocalDateTime.now(),
-                    respuesta.porcentajeCobertura(), respuesta.copago()));
-            LOGGER.info("Autorización " + respuesta.numeroAutorizacion() + " registrada para el paciente "
+                    cobertura.numeroAutorizacion(), LocalDateTime.now(),
+                    cobertura.porcentaje(), cobertura.copago()));
+            LOGGER.info("Autorización " + cobertura.numeroAutorizacion() + " registrada para el paciente "
                     + pacienteId + " (" + prestacion + ").");
         }
-        return aCobertura(respuesta);
+        return cobertura;
     }
 
     /**
@@ -136,25 +127,6 @@ public class ServicioDeObrasSociales {
                     "El paciente " + pacienteId + " no tiene una obra social registrada.");
         }
         return afiliacion;
-    }
-
-    /**
-     * Único punto donde los errores de integración se vuelven errores de
-     * negocio. Nada de datos.soap ni de JAX-WS pasa de acá.
-     */
-    private RespuestaDelLegado preguntarAlLegado(Supplier<RespuestaDelLegado> llamada) {
-        try {
-            return llamada.get();
-        } catch (LegadoNoDisponibleException e) {
-            throw new ObraSocialNoDisponibleException(MENSAJE_NO_DISPONIBLE);
-        } catch (PedidoRechazadoPorLegadoException e) {
-            throw new DatosInvalidosException("La obra social rechazó el pedido: " + e.getMessage());
-        }
-    }
-
-    private static Cobertura aCobertura(RespuestaDelLegado respuesta) {
-        return new Cobertura(respuesta.autorizado(), respuesta.porcentajeCobertura(), respuesta.copago(),
-                respuesta.numeroAutorizacion(), respuesta.mensaje());
     }
 
     private void validarPaciente(Long pacienteId) {
