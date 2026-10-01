@@ -88,7 +88,7 @@ La tabla de arriba describe la intención general, pero no es estrictamente "cad
 | 5 | ServicioDePagos | REST | Cobro de copagos contra pasarela de pago | No implementado |
 | 6 | ServicioDeTelemedicina | REST | Integración con proveedor de video | No implementado |
 | 7 | ServicioDeNotificaciones | `@MessageDriven` (tópico JMS) | Notificación asincrónica de eventos | No implementado |
-| 8 | ServicioDeFacturacion | `@MessageDriven` (cola JMS) | Facturación a obras sociales/prepagas | No implementado |
+| 8 | ServicioDeFacturacion | `@MessageDriven` (tópico y cola JMS) | Reclamo de facturación a obras sociales/prepagas por turnos con cobertura autorizada | Implementado (parcial: pendiente el canal real hacia la obra social, SCRUM-90) |
 
 Que los tres componentes ya convivan integrados y desplegados juntos fue justamente lo que permitió detectar y corregir la incompatibilidad entre `@Stateful` y `TimerService` descrita en la sección 6.1: un problema que solo se manifiesta con el sistema desplegado, no en aislamiento.
 
@@ -239,6 +239,23 @@ Tres reglas para quien agregue un observador:
 Un límite a tener presente: el rollback JTA solo alcanza a los recursos transaccionales (base de datos, JMS). Un pedido REST a un sistema externo, como la pasarela de pago o el proveedor de video, no se deshace si un paso posterior falla. Cada card que llame a un sistema externo tiene que decidir cómo compensarlo.
 
 Esto no reemplaza al tópico `TurnoConfirmado` (sección 9.1): los eventos CDI son para los pasos que deciden si el turno se confirma; el tópico JMS, para lo que reacciona después, fuera de la transacción del paciente.
+
+### 9.3 Facturación: por qué un segundo suscriptor del tópico, y no `PuntosDeExtension.RECLAMO`
+
+El encolado del reclamo a la obra social aparece en la tabla de la sección 9.2 como el tercer paso de `TurnoEnConfirmacion` (`PuntosDeExtension.RECLAMO`, prioridad 300), pero `ServicioDeFacturacion` finalmente **no** se implementó como observador de ese evento. Se lo conectó como un segundo consumidor independiente del tópico `TurnoConfirmado` (`TurnoConfirmadoFacturacionMDB`; `NotificacionMDB`, sección 4, es el primero), publicado por `ServicioDeTurnos.confirmarTurno` dentro de su propia transacción (sección 9.1).
+
+Dos razones, ambas de aislamiento entre componentes:
+
+1. **`facturacion` no toca código de `turnos`.** Un observador CDI vive en el componente que lo declara, pero igual exige que `ServicioDeTurnos` dispare el evento `TurnoEnConfirmacion` en el punto correcto y que `PuntosDeExtension` reserve el número de prioridad; nada de eso cambia con el tópico, pero evita que esta tarjeta edite o revise el flujo transaccional de confirmación mientras otras tarjetas (SCRUM-91, 93, 95) hacen lo mismo en paralelo sobre el mismo evento.
+2. **El reclamo solo tiene sentido para una confirmación que ya es un hecho.** Un observador `@Observes TurnoEnConfirmacion` corre *antes* de que `confirmarTurno` marque el turno `CONFIRMADO` (sección 9.2): si la transacción hace rollback por otro motivo posterior, un observador ya habría encolado un reclamo para un turno que nunca se confirmó. El tópico, en cambio, se publica después de que la transacción de confirmación cerró con éxito (sección 9.1): no hay forma de recibir `TurnoConfirmado` para un turno que no esté `CONFIRMADO`.
+
+`PuntosDeExtension.RECLAMO` queda sin usar, a propósito: no se borra la constante, porque documenta la prioridad relativa que se había previsto para este paso frente a los otros tres, aunque la implementación final haya tomado un camino distinto.
+
+**Reintentos, cola muerta y revisión manual.** `ReclamoMDB` consume `java:/jms/queue/ReclamosFacturacion` (cola punto a punto, a diferencia del tópico: el reclamo lo tiene que procesar exactamente un consumidor una sola vez). El puerto `CanalDeReclamos` distingue dos tipos de falla: `CanalDeReclamosNoDisponibleException` es transitoria (el canal no respondió) y `ReclamoRechazadoException` es un rechazo determinístico de la obra social. Una falla transitoria con intentos disponibles registra el intento en una transacción `REQUIRES_NEW` propia (mismo patrón que `PagoDAO.guardarEnNuevaTransaccion`, para que sobreviva el rollback) y relanza, dejando que el contenedor no confirme el mensaje y Artemis lo reentregue según la política de `mediconecta-setup.cli` (hasta 5 intentos, 2s→30s de backoff, después `ReclamosFacturacionDLQ`). En el intento número 5 (`ServicioDeFacturacion.MAX_INTENTOS`, que tiene que coincidir con `max-delivery-attempts` del script), o ante un rechazo definitivo desde el primer intento, el reclamo pasa a `EN_REVISION_MANUAL` y el método ya no relanza: no tiene sentido pedirle a Artemis una reentrega que la cola ya no va a dar, y reintentar un rechazo determinístico tampoco cambiaría el resultado. Un reclamo ya `ENVIADO` o `EN_REVISION_MANUAL` se ignora, para que una reentrega (por ejemplo, si el contenedor se reinicia antes de confirmar un mensaje ya procesado) no lo reabra.
+
+**`@RunAs`.** `ServicioDeFacturacion.registrarReclamo` necesita leer el turno con `ServicioDeTurnos.obtenerTurno`, que hereda el `@RolesAllowed({PACIENTE, PROFESIONAL, ADMINISTRADOR})` de clase (sección 7). Un `@MessageDriven` no tiene un `Principal` autenticado: sin nada más, esa llamada falla con `EJBAccessException`. `TurnoConfirmadoFacturacionMDB` se anota `@RunAs(ServicioDeUsuarios.ROL_ADMINISTRADOR)`, que le da al bean una identidad propagada con ese rol para las llamadas que hace a otros EJB. En este WildFly 41, con la configuración de seguridad que ya traía `mediconecta-setup.cli` (sección 7, `integrated-jaspi=false`), funcionó sin necesitar ningún mapeo adicional de Elytron: la evidencia de la verificación está en la sección 10.
+
+**Lo que falta: el canal real.** `CanalDeReclamos` todavía no tiene una implementación que hable con la obra social. El adapter de SCRUM-90 (PR #10) no está mergeado, y el simulador SOAP del legado solo expone `validarCobertura` y `autorizarPrestacion`, no una operación de reclamo. `CanalDeReclamosPendiente`, la única implementación de hoy, informa honestamente que el canal no está disponible en vez de simular un envío exitoso; con ella, todo reclamo termina en `EN_REVISION_MANUAL` tras agotar los reintentos. El seguimiento, una vez que mergee SCRUM-90, es agregar `presentarReclamo` al simulador y al adapter, e implementar el puerto con el cliente SOAP real.
 
 ## 10. Verificación en ejecución
 
