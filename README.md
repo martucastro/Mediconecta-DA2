@@ -9,13 +9,15 @@ Trabajo Práctico Integrador de Desarrollo de Aplicaciones II, comisión Lunes T
 
 ## Qué hay implementado
 
-Componentes de negocio, cada uno con su arquitectura en capas:
+Seis componentes de negocio, cada uno con su arquitectura en capas:
 
 | Componente | Tipo | Responsabilidad |
 |---|---|---|
 | `ServicioDeUsuarios` | `@Stateless` | Registro, autenticación, perfiles y credenciales |
 | `ServicioDeTurnos` | `@Stateful` | Disponibilidad, reserva, hold de 5 minutos, confirmación |
 | `ServicioDeHistoriaClinica` | `@Stateless` | Antecedentes, diagnósticos y recetas |
+| `ServicioDeObrasSociales` | `@Stateless`, Adapter SOAP | Cobertura y autorización contra el legado de la obra social |
+| `ServicioDePagos` | `@Stateless`, Adapter REST | Cobro de copagos y reembolsos contra la pasarela de pago externa |
 | `ServicioDeFacturacion` | `@Stateless` | Reclamo de facturación a la obra social por turnos con cobertura autorizada |
 
 ```
@@ -23,7 +25,11 @@ ar.edu.uade.da2.mediconecta
   usuarios/{presentacion, negocio, datos}
   turnos/{presentacion, negocio, datos}
   historiaclinica/{presentacion, negocio, datos}
+  obrassociales/{negocio, datos}       sin HTTP: lo invocan otros componentes
+  pagos/{presentacion, negocio, datos}
   facturacion/{presentacion, negocio, datos}
+  externos/obrasocial                  el legado SOAP simulado, un tercero
+  externos/pasarela                    la pasarela de pago REST simulada, otro tercero
 ```
 
 ---
@@ -32,7 +38,7 @@ ar.edu.uade.da2.mediconecta
 
 | | Versión usada | De dónde |
 |---|---|---|
-| JDK | 17 o superior | cualquier distribución |
+| JDK | 21 | cualquier distribución. El código compila con `release 17`, pero las pruebas usan Mockito 5.7, que no funciona con JDK 25 |
 | Maven | 3.9+ | para `mvn package` |
 | WildFly | 41.0.0.Final | https://www.wildfly.org/downloads/ |
 | PostgreSQL | 18.x | https://www.postgresql.org/download/ |
@@ -340,6 +346,55 @@ del contenedor a través de `turnos/negocio/ExpiradorDeHolds`.
 
 ---
 
+## Sistema legado de obra social (SOAP)
+
+Simulación de un tercero, no un componente nuestro: vive en
+`externos/obrasocial` y se publica con el CXF de WildFly, sin autenticación.
+
+WSDL: http://localhost:8080/mediconecta/legado/obrasocial?wsdl
+
+Operaciones `validarCobertura` y `autorizarPrestacion`, ambas con `dni`,
+`numeroAfiliado` y `codigoPrestacion` (`CONSULTA` o `TELECONSULTA`):
+
+| DNI | Afiliado | Plan | Cobertura |
+|---|---|---|---|
+| 30111222 | OS-1001 | `PLAN_ALTO` | 100 % |
+| 30333444 | OS-2002 | `PLAN_MEDIO` | 70 % |
+| 30444555 | OS-3003 | `PLAN_BASICO` | 40 % |
+| 30555666 | OS-4004 | `SIN_COBERTURA` | 0 % (no autoriza) |
+| 30777888 | OS-5005 | `PLAN_ALTO` | 100 %, pero tarda 30 s en responder |
+
+Cualquier otro afiliado devuelve un SOAP Fault. OS-5005 existe para mostrar que
+MediConecta no se queda colgado: el Adapter corta a los 5 segundos. Los pedidos listos para usar
+están en la carpeta `05` de `postman/MediConecta-Demo.postman_collection.json`;
+también se puede importar el WSDL en SoapUI.
+
+### El cliente: `ServicioDeObrasSociales`
+
+El paciente de prueba (`paciente@mediconecta.com`) queda afiliado como OS-2002
+en el primer arranque. Dónde está el legado y cuánto se lo espera se configura
+con propiedades de sistema, que se leen en cada llamada:
+
+| Propiedad | Por defecto |
+|---|---|
+| `mediconecta.obrasocial.url` | `http://localhost:8080/mediconecta/legado/obrasocial` |
+| `mediconecta.obrasocial.timeoutConexionMs` | `2000` |
+| `mediconecta.obrasocial.timeoutRespuestaMs` | `5000` |
+
+Para simular el legado caído sin bajar nada, apuntá la URL a un puerto cerrado:
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect '/system-property=mediconecta.obrasocial.url:add(value="http://127.0.0.1:1/x")'
+```
+
+Y para volver al comportamiento normal:
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect '/system-property=mediconecta.obrasocial.url:remove'
+```
+
+---
+
 ## Si algo no arranca
 
 **Todos los endpoints devuelven 500, pero una credencial incorrecta devuelve 401.**
@@ -369,7 +424,7 @@ Están acá a propósito: son decisiones de alcance de esta entrega, no descuido
   los componentes de negocio, no la interfaz.
 - **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
   integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
-- **Un solo módulo Maven.** Los tres componentes conviven en un WAR. Separarlos en
+- **Un solo módulo Maven.** Los seis componentes conviven en un WAR. Separarlos en
   módulos es lo que corresponde cuando se despliegan por separado, y todavía no es
   el caso.
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
