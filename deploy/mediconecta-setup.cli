@@ -102,15 +102,22 @@ end-if
 # darle tiempo a la obra social a volver si estaba caida.
 # ---------------------------------------------------------------------------
 if (outcome != success) of /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionDLQ:read-resource
-    /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionDLQ:add(         entries=["java:/jms/queue/ReclamosFacturacionDLQ"])
+    /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionDLQ:add( \
+        entries=["java:/jms/queue/ReclamosFacturacionDLQ"])
 end-if
 
 if (outcome != success) of /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionQueue:read-resource
-    /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionQueue:add(         entries=["java:/jms/queue/ReclamosFacturacion"])
+    /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionQueue:add( \
+        entries=["java:/jms/queue/ReclamosFacturacion"])
 end-if
 
 if (outcome != success) of /subsystem=messaging-activemq/server=default/address-setting=jms.queue.ReclamosFacturacionQueue:read-resource
-    /subsystem=messaging-activemq/server=default/address-setting=jms.queue.ReclamosFacturacionQueue:add(         dead-letter-address=jms.queue.ReclamosFacturacionDLQ,         max-delivery-attempts=5,         redelivery-delay=2000,         redelivery-multiplier=2.0,         max-redelivery-delay=30000)
+    /subsystem=messaging-activemq/server=default/address-setting=jms.queue.ReclamosFacturacionQueue:add( \
+        dead-letter-address=jms.queue.ReclamosFacturacionDLQ, \
+        max-delivery-attempts=5, \
+        redelivery-delay=2000, \
+        redelivery-multiplier=2.0, \
+        max-redelivery-delay=30000)
 end-if
 
 # ---------------------------------------------------------------------------
