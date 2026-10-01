@@ -9,7 +9,7 @@ Trabajo Práctico Integrador de Desarrollo de Aplicaciones II, comisión Lunes T
 
 ## Qué hay implementado
 
-Cinco componentes de negocio, cada uno con su arquitectura en capas:
+Seis componentes de negocio, cada uno con su arquitectura en capas:
 
 | Componente | Tipo | Responsabilidad |
 |---|---|---|
@@ -18,6 +18,7 @@ Cinco componentes de negocio, cada uno con su arquitectura en capas:
 | `ServicioDeHistoriaClinica` | `@Stateless` | Antecedentes, diagnósticos y recetas |
 | `ServicioDeObrasSociales` | `@Stateless`, Adapter SOAP | Cobertura y autorización contra el legado de la obra social |
 | `ServicioDePagos` | `@Stateless`, Adapter REST | Cobro de copagos y reembolsos contra la pasarela de pago externa |
+| `ServicioDeFacturacion` | `@Stateless` | Reclamo de facturación a la obra social por turnos con cobertura autorizada |
 
 ```
 ar.edu.uade.da2.mediconecta
@@ -26,6 +27,7 @@ ar.edu.uade.da2.mediconecta
   historiaclinica/{presentacion, negocio, datos}
   obrassociales/{negocio, datos}       sin HTTP: lo invocan otros componentes
   pagos/{presentacion, negocio, datos}
+  facturacion/{presentacion, negocio, datos}
   externos/obrasocial                  el legado SOAP simulado, un tercero
   externos/pasarela                    la pasarela de pago REST simulada, otro tercero
 ```
@@ -87,8 +89,8 @@ $WILDFLY_HOME/bin/add-user.sh -u admin -p 'Admin123!' -s     # Linux y macOS
 
 Arrancá el servidor **con el perfil full (`standalone-full.xml`), es un
 requisito**: es el que incluye el subsistema de mensajería (`messaging-activemq`)
-donde el script de configuración crea el tópico JMS. Con `standalone.xml` el
-tópico no se puede crear:
+donde el script de configuración crea el tópico y la cola JMS. Con
+`standalone.xml` no se pueden crear:
 
 ```bash
 $WILDFLY_HOME/bin/standalone.sh -c standalone-full.xml     # Linux y macOS
@@ -109,11 +111,30 @@ $WILDFLY_HOME/bin/jboss-cli.sh --connect --file=deploy/mediconecta-setup.cli
 ```
 
 El script instala el driver, crea el datasource `java:/MediConectaDS`, ajusta
-la integración de Jakarta Security y crea el tópico JMS `TurnoConfirmadoTopic`
-(JNDI `java:/jms/topic/TurnoConfirmado`), donde se publicará el evento de turno
-confirmado. Es idempotente: se puede correr de nuevo sin romper nada.
+la integración de Jakarta Security y crea los destinos JMS:
 
-#### Verificar que el tópico existe
+| Destino | Tipo | JNDI | Para qué |
+|---|---|---|---|
+| `TurnoConfirmadoTopic` | Tópico | `java:/jms/topic/TurnoConfirmado` | Evento de turno confirmado |
+| `ReclamosFacturacionQueue` | Cola | `java:/jms/queue/ReclamosFacturacion` | Reclamos de facturación a la obra social |
+| `ReclamosFacturacionDLQ` | Cola | `java:/jms/queue/ReclamosFacturacionDLQ` | Reclamos que fallaron en todos los reintentos |
+
+Es idempotente: se puede correr de nuevo sin romper nada.
+
+**Por qué uno es un tópico y el otro una cola.** El turno confirmado es un
+evento: le puede interesar a más de un componente a la vez (notificaciones hoy,
+otros mañana), y cada suscriptor recibe su propia copia. El reclamo de
+facturación es un trabajo: lo tiene que procesar exactamente un consumidor, una
+sola vez; si dos lo tomaran, la obra social recibiría el reclamo duplicado. Eso
+es una cola punto a punto.
+
+**Reintentos de la cola de reclamos.** Si el consumidor falla, Artemis
+reintenta la entrega hasta 5 veces, esperando 2 s, 4 s, 8 s… (máximo 30 s)
+entre intentos, para dar tiempo a que la obra social vuelva si estaba caída.
+Después del quinto fallo el reclamo pasa a `ReclamosFacturacionDLQ`, donde
+queda para revisarlo o reenviarlo a mano en vez de reintentarse para siempre.
+
+#### Verificar los destinos JMS
 
 Por CLI:
 
@@ -123,12 +144,20 @@ $WILDFLY_HOME/bin/jboss-cli.sh --connect \
 ```
 
 Debe responder `"outcome" => "success"` y en `entries` el valor
-`java:/jms/topic/TurnoConfirmado`.
+`java:/jms/topic/TurnoConfirmado`. Para la cola y su política de reintentos:
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect   "/subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionQueue:read-resource"
+$WILDFLY_HOME/bin/jboss-cli.sh --connect   "/subsystem=messaging-activemq/server=default:resolve-address-setting(activemq-address=jms.queue.ReclamosFacturacionQueue)"
+```
+
+El segundo comando debe mostrar `max-delivery-attempts => 5` y
+`dead-letter-address => "jms.queue.ReclamosFacturacionDLQ"`.
 
 Por la consola de administración (http://localhost:9990):
 *Configuration → Subsystems → Messaging (ActiveMQ) → default → Destinations →
-View*, pestaña **Topic**. El estado en vivo está en *Runtime → (tu servidor) →
-Messaging (ActiveMQ) → default → Topic*.
+View*, pestañas **Topic** y **Queue**. El estado en vivo está en *Runtime →
+(tu servidor) → Messaging (ActiveMQ) → default*.
 
 ### 4. Compilar y desplegar
 
@@ -246,6 +275,50 @@ Siempre `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre
 fuera de la transacción y su falla ya no podría frenar la confirmación. El
 criterio completo está en `docs/documento-tecnico.md`, sección 9.2.
 
+### Facturación: reclamo a la obra social
+
+`ServicioDeFacturacion` **no** es un observador de `PuntosDeExtension.RECLAMO`
+ni se llama desde `ServicioDeTurnos.confirmarTurno`: es un segundo suscriptor
+independiente del tópico `TurnoConfirmado` (`TurnoConfirmadoFacturacionMDB`,
+el primero es `NotificacionMDB`). Así `facturacion` nunca toca código de
+`turnos` y el reclamo solo se crea para confirmaciones que ya cerraron su
+transacción. `PuntosDeExtension.RECLAMO` queda sin usar a propósito, no se
+borra.
+
+Flujo: `TurnoConfirmadoFacturacionMDB` lee el turno (`coberturaAutorizada`,
+`coberturaPorcentaje`, `numeroAutorizacion`) con `ServicioDeTurnos.obtenerTurno`
+y, si la cobertura está autorizada, `ServicioDeFacturacion.registrarReclamo`
+persiste un `Reclamo` en `PENDIENTE` (idempotente por `turnoId`) y encola su id
+en `ReclamosFacturacionQueue`. `ReclamoMDB` consume esa cola y llama al puerto
+`CanalDeReclamos`:
+
+| Resultado del canal | Reclamo queda | Reintenta |
+|---|---|---|
+| Éxito | `ENVIADO`, con `monto` y `numeroPresentacion` | — |
+| `CanalDeReclamosNoDisponibleException` (transitorio), intento < 5 | `PENDIENTE`, con el intento y el error registrados | Sí: se relanza y Artemis reentrega |
+| `CanalDeReclamosNoDisponibleException`, intento = 5 (ver tabla de reintentos más arriba) | `EN_REVISION_MANUAL` | No |
+| `ReclamoRechazadoException` (rechazo definitivo de la obra social) | `EN_REVISION_MANUAL`, de inmediato | No: reintentar un rechazo determinístico no tiene sentido |
+| Reclamo ya `ENVIADO` o `EN_REVISION_MANUAL` | sin cambios | No: reentrega idempotente |
+
+**`@RunAs`.** `obtenerTurno` exige uno de los roles PACIENTE/PROFESIONAL/
+ADMINISTRADOR y un MDB no tiene caller autenticado, así que
+`TurnoConfirmadoFacturacionMDB` lleva `@RunAs(ServicioDeUsuarios.ROL_ADMINISTRADOR)`
+para que el contenedor le propague esa identidad a la llamada. Funcionó sin
+configuración adicional de Elytron contra este WildFly 41 (ver evidencia de la
+verificación funcional en `odd/tasks/scrum-97-facturacion.md`, sección T3).
+
+**Pendiente: el envío real.** El puerto `CanalDeReclamos` no tiene todavía una
+implementación que hable con la obra social: el adapter de SCRUM-90 (PR #10)
+no está mergeado y el simulador SOAP del legado solo tiene `validarCobertura`
+y `autorizarPrestacion`, no una operación de reclamo. La única implementación
+de hoy, `CanalDeReclamosPendiente`, informa honestamente que el canal no está
+disponible (nunca inventa un envío exitoso). Seguimiento, una vez que mergee
+SCRUM-90: agregar `presentarReclamo` al simulador y al adapter, e implementar
+el puerto con el cliente SOAP real.
+
+**Visibilidad.** `GET /api/reclamos` (solo ADMINISTRADOR, `web.xml` +
+`@RolesAllowed`) lista los reclamos con su estado, intentos y último error.
+
 ### Ejemplo del flujo completo
 
 ```bash
@@ -351,9 +424,14 @@ Están acá a propósito: son decisiones de alcance de esta entrega, no descuido
   los componentes de negocio, no la interfaz.
 - **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
   integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
-- **Un solo módulo Maven.** Los tres componentes conviven en un WAR. Separarlos en
+- **Un solo módulo Maven.** Los seis componentes conviven en un WAR. Separarlos en
   módulos es lo que corresponde cuando se despliegan por separado, y todavía no es
   el caso.
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
   profesional y un paciente de ejemplo. Fuera de un entorno de desarrollo esos dos
   no deberían existir.
+- **Reclamo de facturación sin canal real.** `CanalDeReclamos` todavía no tiene
+  una implementación que hable con la obra social (depende de SCRUM-90, no
+  mergeado): con la única implementación de hoy, cualquier reclamo termina en
+  `EN_REVISION_MANUAL` tras agotar los reintentos. No hay forma de demostrar un
+  reclamo `ENVIADO` hasta que ese adapter exista.

@@ -113,6 +113,23 @@
     </security-constraint>
 
     <!--
+      Operacion sensible 5: el listado de reclamos de facturacion es solo del
+      administrador (visibilidad de la demo, ver docs/documento-tecnico.md).
+      Quien puede operar sobre un reclamo puntual lo decide @RolesAllowed
+      sobre ServicioDeFacturacion; aca se restringe toda la URL porque hoy la
+      unica operacion expuesta es el listado completo.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Reclamos de facturacion</web-resource-name>
+            <url-pattern>/api/reclamos</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
       Fallback del frontend: cualquier URL que no corresponda a un archivo ni a
       la API devuelve index.html. El frontend es una SPA y sus rutas (por
       ejemplo /mediconecta/agenda) no existen como archivos en el servidor:
