@@ -27,6 +27,7 @@
             <artifactId>jakarta.xml.ws-api</artifactId>
             <version>4.0.2</version>
             <scope>provided</scope>
+        </dependency>
         <!-- Pruebas de unidad de la capa de negocio: el contenedor se reemplaza
              por dobles de Mockito, asi que no hace falta WildFly para correrlas. -->
         <dependency>
