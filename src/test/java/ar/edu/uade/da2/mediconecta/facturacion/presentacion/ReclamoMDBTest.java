@@ -63,4 +63,17 @@ class ReclamoMDBTest {
 
         verify(servicio, never()).procesarReclamo(anyLong(), org.mockito.ArgumentMatchers.anyInt());
     }
+
+    @Test
+    void unMapMessageSinReclamoIdSeDescartaSinExcepcion() throws JMSException {
+        // Es lo que hace un MapMessage real cuando la clave no existe: getLong
+        // convierte null con Long.valueOf y tira NumberFormatException, que no
+        // es JMSException.
+        MapMessage mensaje = org.mockito.Mockito.mock(MapMessage.class);
+        when(mensaje.getLong("reclamoId")).thenThrow(new NumberFormatException("null"));
+
+        assertDoesNotThrow(() -> mdb.onMessage(mensaje));
+
+        verify(servicio, never()).procesarReclamo(anyLong(), org.mockito.ArgumentMatchers.anyInt());
+    }
 }

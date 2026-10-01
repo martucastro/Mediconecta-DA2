@@ -60,7 +60,9 @@ public class TurnoConfirmadoFacturacionMDB implements MessageListener {
         try {
             MapMessage mapa = (MapMessage) mensaje;
             turnoId = mapa.getLong("turnoId");
-        } catch (JMSException | ClassCastException e) {
+        } catch (JMSException | ClassCastException | NumberFormatException e) {
+            // NumberFormatException: un MapMessage real sin "turnoId" la tira en
+            // getLong. Sin este catch el mensaje reintentaria hasta la DLQ.
             LOG.log(Level.SEVERE, "Mensaje de TurnoConfirmado malformado, se descarta", e);
             return;
         }

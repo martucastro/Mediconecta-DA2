@@ -60,4 +60,15 @@ class TurnoConfirmadoFacturacionMDBTest {
 
         verify(servicio, never()).registrarReclamo(anyLong());
     }
+
+    @Test
+    void unMapMessageSinTurnoIdSeDescartaSinExcepcion() throws JMSException {
+        // Un MapMessage real sin la clave tira NumberFormatException en getLong.
+        MapMessage mensaje = mock(MapMessage.class);
+        when(mensaje.getLong("turnoId")).thenThrow(new NumberFormatException("null"));
+
+        assertDoesNotThrow(() -> mdb.onMessage(mensaje));
+
+        verify(servicio, never()).registrarReclamo(anyLong());
+    }
 }

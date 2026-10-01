@@ -50,7 +50,9 @@ public class ReclamoMDB implements MessageListener {
             MapMessage mapa = (MapMessage) mensaje;
             reclamoId = mapa.getLong("reclamoId");
             intento = mensaje.getIntProperty("JMSXDeliveryCount");
-        } catch (JMSException | ClassCastException e) {
+        } catch (JMSException | ClassCastException | NumberFormatException e) {
+            // NumberFormatException: un MapMessage real sin "reclamoId" la tira
+            // en getLong. Sin este catch el mensaje reintentaria hasta la DLQ.
             LOG.log(Level.SEVERE, "Mensaje de ReclamosFacturacion malformado, se descarta", e);
             return;
         }
