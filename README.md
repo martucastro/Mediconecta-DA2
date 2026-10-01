@@ -81,8 +81,8 @@ $WILDFLY_HOME/bin/add-user.sh -u admin -p 'Admin123!' -s     # Linux y macOS
 
 Arrancá el servidor **con el perfil full (`standalone-full.xml`), es un
 requisito**: es el que incluye el subsistema de mensajería (`messaging-activemq`)
-donde el script de configuración crea el tópico JMS. Con `standalone.xml` el
-tópico no se puede crear:
+donde el script de configuración crea el tópico y la cola JMS. Con
+`standalone.xml` no se pueden crear:
 
 ```bash
 $WILDFLY_HOME/bin/standalone.sh -c standalone-full.xml     # Linux y macOS
@@ -103,11 +103,30 @@ $WILDFLY_HOME/bin/jboss-cli.sh --connect --file=deploy/mediconecta-setup.cli
 ```
 
 El script instala el driver, crea el datasource `java:/MediConectaDS`, ajusta
-la integración de Jakarta Security y crea el tópico JMS `TurnoConfirmadoTopic`
-(JNDI `java:/jms/topic/TurnoConfirmado`), donde se publicará el evento de turno
-confirmado. Es idempotente: se puede correr de nuevo sin romper nada.
+la integración de Jakarta Security y crea los destinos JMS:
 
-#### Verificar que el tópico existe
+| Destino | Tipo | JNDI | Para qué |
+|---|---|---|---|
+| `TurnoConfirmadoTopic` | Tópico | `java:/jms/topic/TurnoConfirmado` | Evento de turno confirmado |
+| `ReclamosFacturacionQueue` | Cola | `java:/jms/queue/ReclamosFacturacion` | Reclamos de facturación a la obra social |
+| `ReclamosFacturacionDLQ` | Cola | `java:/jms/queue/ReclamosFacturacionDLQ` | Reclamos que fallaron en todos los reintentos |
+
+Es idempotente: se puede correr de nuevo sin romper nada.
+
+**Por qué uno es un tópico y el otro una cola.** El turno confirmado es un
+evento: le puede interesar a más de un componente a la vez (notificaciones hoy,
+otros mañana), y cada suscriptor recibe su propia copia. El reclamo de
+facturación es un trabajo: lo tiene que procesar exactamente un consumidor, una
+sola vez; si dos lo tomaran, la obra social recibiría el reclamo duplicado. Eso
+es una cola punto a punto.
+
+**Reintentos de la cola de reclamos.** Si el consumidor falla, Artemis
+reintenta la entrega hasta 5 veces, esperando 2 s, 4 s, 8 s… (máximo 30 s)
+entre intentos, para dar tiempo a que la obra social vuelva si estaba caída.
+Después del quinto fallo el reclamo pasa a `ReclamosFacturacionDLQ`, donde
+queda para revisarlo o reenviarlo a mano en vez de reintentarse para siempre.
+
+#### Verificar los destinos JMS
 
 Por CLI:
 
@@ -117,12 +136,20 @@ $WILDFLY_HOME/bin/jboss-cli.sh --connect \
 ```
 
 Debe responder `"outcome" => "success"` y en `entries` el valor
-`java:/jms/topic/TurnoConfirmado`.
+`java:/jms/topic/TurnoConfirmado`. Para la cola y su política de reintentos:
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect   "/subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionQueue:read-resource"
+$WILDFLY_HOME/bin/jboss-cli.sh --connect   "/subsystem=messaging-activemq/server=default:resolve-address-setting(activemq-address=jms.queue.ReclamosFacturacionQueue)"
+```
+
+El segundo comando debe mostrar `max-delivery-attempts => 5` y
+`dead-letter-address => "jms.queue.ReclamosFacturacionDLQ"`.
 
 Por la consola de administración (http://localhost:9990):
 *Configuration → Subsystems → Messaging (ActiveMQ) → default → Destinations →
-View*, pestaña **Topic**. El estado en vivo está en *Runtime → (tu servidor) →
-Messaging (ActiveMQ) → default → Topic*.
+View*, pestañas **Topic** y **Queue**. El estado en vivo está en *Runtime →
+(tu servidor) → Messaging (ActiveMQ) → default*.
 
 ### 4. Compilar y desplegar
 
