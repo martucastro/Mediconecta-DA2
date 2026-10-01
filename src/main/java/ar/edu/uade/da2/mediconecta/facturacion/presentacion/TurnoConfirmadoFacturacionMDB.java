@@ -6,6 +6,7 @@ import java.util.logging.Logger;
 import ar.edu.uade.da2.mediconecta.facturacion.negocio.ServicioDeFacturacion;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
+import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RunAs;
 import jakarta.ejb.ActivationConfigProperty;
 import jakarta.ejb.MessageDriven;
@@ -28,12 +29,24 @@ import jakarta.jms.MessageListener;
  * este bean hacia las llamadas que hace, con el rol ADMINISTRADOR (el mismo
  * que ya usan los administradores para operar sobre cualquier turno). Sin
  * esta anotacion, la llamada a obtenerTurno falla con EJBAccessException.
+ *
+ * @PermitAll tambien hace falta, y no es descuido (mismo caso que
+ * ServicioDeUsuarios, ver documento-tecnico.md seccion 6): en WildFly, con
+ * default-missing-method-permissions-deny-access en true (el valor por
+ * defecto del subsistema ejb3), un bean que lleva CUALQUIER anotacion de
+ * jakarta.annotation.security (en este caso @RunAs) pero ningun
+ * @RolesAllowed/@PermitAll explicito sobre el metodo invocado queda
+ * denegado por defecto. Sin @PermitAll, Artemis nunca llega a entregar el
+ * mensaje: falla con EJBAccessException "Invocation on method ... is not
+ * allowed" sobre el propio onMessage, antes incluso de que @RunAs entre en
+ * juego. Verificado en WildFly 41 (ver T3 en odd/tasks/scrum-97-facturacion.md).
  */
 @MessageDriven(activationConfig = {
         @ActivationConfigProperty(propertyName = "destinationType", propertyValue = "jakarta.jms.Topic"),
         @ActivationConfigProperty(propertyName = "destinationLookup", propertyValue = "java:/jms/topic/TurnoConfirmado")
 })
 @RunAs(ServicioDeUsuarios.ROL_ADMINISTRADOR)
+@PermitAll
 public class TurnoConfirmadoFacturacionMDB implements MessageListener {
 
     private static final Logger LOG = Logger.getLogger(TurnoConfirmadoFacturacionMDB.class.getName());
