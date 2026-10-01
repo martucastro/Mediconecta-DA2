@@ -9,7 +9,7 @@ Trabajo Práctico Integrador de Desarrollo de Aplicaciones II, comisión Lunes T
 
 ## Qué hay implementado
 
-Cuatro componentes de negocio, cada uno con su arquitectura en capas:
+Cinco componentes de negocio, cada uno con su arquitectura en capas:
 
 | Componente | Tipo | Responsabilidad |
 |---|---|---|
@@ -17,6 +17,7 @@ Cuatro componentes de negocio, cada uno con su arquitectura en capas:
 | `ServicioDeTurnos` | `@Stateful` | Disponibilidad, reserva, hold de 5 minutos, confirmación |
 | `ServicioDeHistoriaClinica` | `@Stateless` | Antecedentes, diagnósticos y recetas |
 | `ServicioDeObrasSociales` | `@Stateless`, Adapter SOAP | Cobertura y autorización contra el legado de la obra social |
+| `ServicioDePagos` | `@Stateless`, Adapter REST | Cobro de copagos y reembolsos contra la pasarela de pago externa |
 
 ```
 ar.edu.uade.da2.mediconecta
@@ -24,7 +25,9 @@ ar.edu.uade.da2.mediconecta
   turnos/{presentacion, negocio, datos}
   historiaclinica/{presentacion, negocio, datos}
   obrassociales/{negocio, datos}       sin HTTP: lo invocan otros componentes
-  externos/obrasocial                  el legado simulado, un tercero
+  pagos/{presentacion, negocio, datos}
+  externos/obrasocial                  el legado SOAP simulado, un tercero
+  externos/pasarela                    la pasarela de pago REST simulada, otro tercero
 ```
 
 ---

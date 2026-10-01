@@ -154,7 +154,7 @@ Las respuestas son deterministas, con un afiliado por plan para poder mostrar ca
 | 30555666 | OS-4004 | `SIN_COBERTURA` | 0 % | no autorizado, copago 20000.00 |
 | 30777888 | OS-5005 | `PLAN_ALTO` | 100 % | tarda 30 s en responder: existe para demostrar el timeout del Adapter (6.3) |
 
-Se distinguen dos tipos de negativa. "Sin cobertura" es una respuesta válida del legado: el afiliado existe y el plan no cubre. Un afiliado inexistente, un DNI que no corresponde al número de afiliado o una prestación desconocida son en cambio pedidos que el legado no puede evaluar, y vuelven como SOAP Fault (`afiliadoInexistente`). El Adapter trata la primera como un resultado de negocio y la segunda como un pedido inválido (sección 6.3).
+Se distinguen dos tipos de negativa. "Sin cobertura" es una respuesta válida del legado: el afiliado existe y el plan no cubre. Un afiliado inexistente, un DNI que no corresponde al número de afiliado o una prestación desconocida son en cambio pedidos que el legado no puede evaluar, y vuelven como SOAP Fault de código `Client`, porque el error es del cliente y no del legado; el WSDL no declara un `wsdl:fault` propio. Una falla interna del legado sería, en cambio, un fault `Server`. El Adapter trata la primera como un resultado de negocio, el fault `Client` como un pedido inválido (`400`) y cualquier otra falla como legado no disponible (`503`), ver sección 6.3.
 
 Una consecuencia del caveat de la sección 2.3: `jakarta.jakartaee-api` 11 ya no incluye JAX-WS, así que el `pom.xml` declara `jakarta.xml.ws-api` 4.0 con alcance `provided`. En tiempo de ejecución la implementación la pone WildFly; la dependencia sólo existe para compilar.
 
@@ -166,23 +166,40 @@ Es el caso de libro del patrón Adapter. Hacia adentro, el sistema pregunta en s
 |---|---|---|
 | Negocio | `ServicioDeObrasSociales` (`@Stateless`) | Fachada: `validarCobertura`, `autorizarPrestacion`, `registrarAfiliacion` |
 | Negocio | `Cobertura`, `Prestacion` | Objeto de dominio devuelto y enum de prestaciones |
-| Negocio | `ObraSocialNoDisponibleException`, `DatosInvalidosException` | Los dos errores que ve el resto del sistema |
+| Negocio | `SistemaDeObraSocial` | El port del Adapter: interfaz propia, sin ningún tipo SOAP, que devuelve `Cobertura` |
+| Negocio | `negocio.soap.SistemaDeObraSocialSoap` (con `ObraSocialLegadoPort` y `RespuestaCoberturaXml`) | Única implementación: el cliente JAX-WS |
+| Negocio | `ObraSocialNoDisponibleException` y `ObraSocialNoDisponibleMapper` | El legado no responde; se traduce a `503` |
 | Negocio | `SeedDeAfiliaciones` | Afilia al paciente de prueba (OS-2002) en el arranque |
-| Datos | `SistemaDeObraSocial` | Interfaz propia hacia la obra social, sin ningún tipo SOAP |
-| Datos | `datos.soap.SistemaDeObraSocialSoap` | Única implementación: el cliente JAX-WS |
 | Datos | `AfiliacionDePaciente`, `AutorizacionDePrestacion` y sus DAO | Tablas `afiliaciones_obra_social` y `autorizaciones_prestacion` |
 
-**Dónde vive SOAP.** Sólo en el subpaquete `obrassociales.datos.soap`: el contrato del lado cliente (`ObraSocialLegadoPort`, un SEI escrito a mano con los mismos nombres y namespace que el WSDL), el espejo JAXB de la respuesta y el cliente. El negocio depende de la interfaz `SistemaDeObraSocial`, que habla con tipos planos (`RespuestaDelLegado`) y excepciones propias. Si mañana la obra social migrara a REST, cambiaría una clase de datos y nada de negocio. Se verifica con los imports: fuera de `externos.obrasocial` y `obrassociales.datos.soap` ningún archivo importa `jakarta.xml.ws`, `jakarta.jws` ni `jakarta.xml.bind`.
+Los pedidos inválidos usan `comun.negocio.DatosInvalidosException`, la misma que el resto de los componentes, que el mapper del paquete raíz ya traduce a `400`.
+
+**Dónde vive SOAP.** Sólo en el subpaquete `obrassociales.negocio.soap`: el contrato del lado cliente (`ObraSocialLegadoPort`, un SEI escrito a mano con los mismos nombres y namespace que el WSDL), el espejo JAXB de la respuesta y el cliente. El port y su implementación viven en `negocio`, igual que `PasarelaDePagoAdapter` y su cliente REST en pagos: la fachada habla contra la interfaz `SistemaDeObraSocial`, que recibe y devuelve tipos de dominio y falla con excepciones de negocio. Así hay una sola traducción, de SOAP al dominio, y no dos encadenadas. Si mañana la obra social migrara a REST, cambiaría una clase y la fachada no se enteraría; la capa de datos del componente queda sólo con lo que se persiste. Se verifica con los imports: fuera de `externos.obrasocial` y `obrassociales.negocio.soap` ningún archivo importa `jakarta.xml.ws`, `jakarta.jws`, `jakarta.xml.soap` ni `jakarta.xml.bind`.
 
 **Por qué `Service.create` sin descargar el WSDL.** El cliente se construye con el nombre del servicio y las anotaciones del SEI, sin pedirle el WSDL al legado. Si lo pidiera, crear el cliente ya dependería de que el legado esté vivo, y esa descarga ocurriría fuera de los timeouts configurados.
 
 **Timeouts explícitos.** Conexión 2 s y respuesta 5 s, puestos en el request context de cada llamada. Sin ellos, un legado que acepta la conexión y no contesta retiene indefinidamente el hilo del pedido, y con él la transacción y al usuario. URL y timeouts son propiedades de sistema (`mediconecta.obrasocial.url`, `mediconecta.obrasocial.timeoutConexionMs`, `mediconecta.obrasocial.timeoutRespuestaMs`) que se leen en cada llamada, así que se pueden cambiar con `jboss-cli` sin redesplegar.
 
-**Dos familias de error.** El adaptador distingue si el legado *no respondió* (conexión rechazada, timeout: `LegadoNoDisponibleException`) o si *respondió que no* (SOAP Fault: `PedidoRechazadoPorLegadoException`). La fachada las convierte en `ObraSocialNoDisponibleException`, con un mensaje pensado para mostrarse tal cual ("El sistema de la obra social no respondió. Intentá de nuevo en unos minutos; no se registró ninguna autorización."), y en `DatosInvalidosException`. El detalle técnico queda en el log del adaptador, no en el mensaje. "Sin cobertura" no es un error: es una `Cobertura` con `autorizada = false`.
+**Tres desenlaces.** El adaptador clasifica lo que vuelve del legado:
 
-**Transacciones y persistencia.** `validarCobertura` es `NOT_SUPPORTED`: no escribe nada y no tiene sentido retener una transacción durante una llamada remota. `autorizarPrestacion` es `REQUIRED`: si el legado autoriza, guarda número y fecha de autorización, porcentaje y copago en `autorizaciones_prestacion`, que es lo que facturación va a necesitar. Al participar de la transacción de quien lo invoca, si la reserva del turno falla después, la autorización guardada se deshace con ella. Las negativas y los errores no generan filas.
+1. Una respuesta, con o sin cobertura, es una `Cobertura`. "Sin cobertura" no es un error: es `autorizada = false`.
+2. Un SOAP Fault de código `Client` (`Sender` en SOAP 1.2) significa que el legado entendió el pedido y lo rechaza: `DatosInvalidosException`, `400`. Reintentar no sirve.
+3. Cualquier otra cosa, es decir un fault `Server`, una conexión rechazada, un timeout o una respuesta vacía, es `ObraSocialNoDisponibleException`, `503`. Se puede reintentar.
+
+El mensaje de la tercera está pensado para mostrarse tal cual ("El sistema de la obra social no respondió. Intentá de nuevo en unos minutos."); el detalle técnico queda en el log del adaptador y como causa de la excepción, no en el mensaje. Separar el segundo caso del tercero por el código del fault importa: si todo fault fuera "pedido rechazado", una falla interna del legado le diría al usuario que sus datos son inválidos. Una autorización que el legado da por buena pero sin número también cae en el tercero: sin número no sirve para facturar.
+
+**Transacciones y persistencia.** `validarCobertura` es `NOT_SUPPORTED`: no escribe nada y no tiene sentido retener una transacción durante una llamada remota. `autorizarPrestacion` es `REQUIRED`: si el legado autoriza, guarda número y fecha de autorización, porcentaje y copago en `autorizaciones_prestacion`, que es lo que facturación va a necesitar. Al participar de la transacción de quien lo invoca, si la reserva del turno falla después, la fila local se deshace con ella (la autorización remota no, ver más abajo). Las negativas y los errores no generan filas.
 
 **Afiliación.** `Usuario` no tiene DNI ni número de afiliado, y no le corresponde: son datos de la relación con la obra social. Viven en `AfiliacionDePaciente`, tabla propia del componente, que referencia al paciente por id y no con `@ManyToOne`, con el mismo criterio que `HistoriaClinica`. `registrarAfiliacion` es `@RolesAllowed("ADMINISTRADOR")`. El resto de la fachada es `@PermitAll`: quién puede reservar o autorizar lo decide el componente que la invoca, que es el que conoce el caso de uso.
+
+**Pruebas.** La lógica se prueba sin contenedor ni red. La fachada, con el port y los DAO como dobles: qué se guarda y cuándo (sólo si se autorizó, y con número), y qué se rechaza (paciente inexistente o que no es paciente, sin afiliación, prestación nula). El adaptador, con un spy que reemplaza `nuevoPuerto`, la única parte que necesita un runtime de JAX-WS, y un `SOAPFault` simulado: traducción de la respuesta, respuesta nula y cada tipo de falla contra la excepción que corresponde. También tienen pruebas el mapper a `503` y el cálculo de copago del simulador. Lo que sí requiere el servidor desplegado (el cableado de CDI y CXF, los timeouts reales y el código `Client` del fault) se verifica en la sección 10.
+
+**Para SCRUM-91 (integración con la reserva).** Cuatro cosas que conviene tener presentes al engancharlo en el evento `TurnoEnReserva`:
+
+- Un timeout no es un rechazo. Si el legado autorizó pero la respuesta se perdió, queda una autorización remota que no figura en `autorizaciones_prestacion`. Y si la reserva hace rollback después de que el legado autorizó, la fila local se deshace pero la autorización remota queda sin compensar. Hace falta una baja o idempotencia por turno.
+- La transacción de la reserva puede esperar al legado hasta 7 s (2 de conexión más 5 de respuesta), con la fila del turno bloqueada.
+- La fachada no verifica que el paciente le pertenezca a quien llama: debe recibir siempre el paciente del turno, nunca un id que venga del cliente.
+- Sólo el paciente de prueba tiene afiliación. Sin una, la reserva fallaría con `400` ("no tiene una obra social registrada"). `registrarAfiliacion` existe pero todavía no tiene llamadores ni está expuesta.
 
 ## 7. Autenticación y autorización
 
@@ -311,15 +328,15 @@ El sistema se desplegó en WildFly 41 con PostgreSQL 18 y se verificó endpoint 
 | Confirmar el turno reservado | pasa a `CONFIRMADO` |
 | `GET /mediconecta/legado/obrasocial?wsdl` desde el navegador | `200`, WSDL con `validarCobertura` y `autorizarPrestacion` |
 | `autorizarPrestacion` para `CONSULTA` con los cuatro afiliados de prueba | `100 %`/`0.00`, `70 %`/`6000.00`, `40 %`/`12000.00` autorizados; `0 %`/`20000.00` no autorizado |
-| `validarCobertura` con un afiliado inexistente | `500` con SOAP Fault `afiliadoInexistente` |
+| `validarCobertura` con un afiliado inexistente, un DNI que no corresponde o una prestación desconocida | `500` HTTP con un SOAP Fault de código `Client`; el WSDL ya no declara `wsdl:fault` |
 | `ServicioDeObrasSociales.validarCobertura` del paciente de prueba (OS-2002) | `Cobertura` autorizada, 70 %, copago 6000.00, sin número; nada persistido |
 | `ServicioDeObrasSociales.autorizarPrestacion` del mismo paciente | número `AUT-OS-2002-CONSULTA` y una fila en `autorizaciones_prestacion` con fecha, 70 % y 6000.00 |
-| `autorizarPrestacion` con afiliación OS-4004 / OS-9999 | no autorizada sin persistir / `DatosInvalidosException` "La obra social rechazó el pedido: No existe el afiliado OS-9999" |
-| `autorizarPrestacion` con afiliación OS-5005 (legado lento) | `ObraSocialNoDisponibleException` a los 5016 ms, sin fila persistida |
-| URL del legado apuntando a un puerto cerrado / a una IP que no responde | la misma `ObraSocialNoDisponibleException`, a los 22 ms / 2016 ms |
+| `autorizarPrestacion` con afiliación OS-4004 / OS-9999 | no autorizada y sin fila persistida / `400` "La obra social rechazó el pedido: No existe el afiliado OS-9999" |
+| `autorizarPrestacion` con afiliación OS-5005 (legado lento) | `503` "El sistema de la obra social no respondió. Intentá de nuevo en unos minutos." a los 5,02 s, sin fila persistida |
+| URL del legado apuntando a un puerto cerrado | el mismo `503`, a los 21 ms |
 | Hold sin confirmar, transcurrido el tiempo de expiración | a los 303 segundos, el turno volvió a `DISPONIBLE`, con `paciente` e `inicioHold` en `null`, y el log del contenedor registró "Hold vencido: el turno 2 vuelve a estar disponible" |
 
-Como `ServicioDeObrasSociales` no se expone por HTTP, sus filas se verificaron con un recurso JAX-RS provisorio que invocaba la fachada, retirado del código una vez hecha la verificación. Las tablas se comprobaron directamente en PostgreSQL.
+Como `ServicioDeObrasSociales` no se expone por HTTP, esas filas (y los `400` y `503`) se observaron a través de un recurso JAX-RS provisorio que invocaba la fachada sin capturar excepciones, para que las tradujeran los mappers reales. Se retiró del código una vez hecha la verificación, y las tablas se comprobaron directamente en PostgreSQL.
 
 Este último resultado es, junto con la corrección de la sección 6.1, la evidencia más fuerte de que el mecanismo de timers funciona como se lo diseñó: nadie liberó el turno manualmente, lo hizo el `@Timeout` de `ExpiradorDeHolds` por su cuenta, sin ninguna solicitud HTTP en curso.
 
