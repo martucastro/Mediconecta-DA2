@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AfiliacionDAO;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AfiliacionDePaciente;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDAO;
