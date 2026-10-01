@@ -40,20 +40,20 @@ class PadronDeAfiliados {
     private static final BigDecimal CIEN = new BigDecimal("100");
 
     static RespuestaCobertura evaluar(String dni, String numeroAfiliado, String codigoPrestacion)
-            throws AfiliadoInexistenteFault {
+            throws PedidoInvalidoException {
         if (AFILIADO_LENTO.equals(numeroAfiliado)) {
             demorar();
         }
         Afiliado afiliado = numeroAfiliado == null ? null : AFILIADOS.get(numeroAfiliado);
         if (afiliado == null) {
-            throw new AfiliadoInexistenteFault("No existe el afiliado " + numeroAfiliado);
+            throw new PedidoInvalidoException("No existe el afiliado " + numeroAfiliado);
         }
         if (!afiliado.dni().equals(dni)) {
-            throw new AfiliadoInexistenteFault("El DNI " + dni + " no corresponde al afiliado " + numeroAfiliado);
+            throw new PedidoInvalidoException("El DNI " + dni + " no corresponde al afiliado " + numeroAfiliado);
         }
         BigDecimal arancel = codigoPrestacion == null ? null : ARANCELES.get(codigoPrestacion);
         if (arancel == null) {
-            throw new AfiliadoInexistenteFault("No existe la prestación " + codigoPrestacion);
+            throw new PedidoInvalidoException("No existe la prestación " + codigoPrestacion);
         }
 
         PlanDeCobertura plan = afiliado.plan();
