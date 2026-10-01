@@ -26,4 +26,10 @@ public interface SistemaDeObraSocial {
 
     /** Pide la autorizacion: si queda autorizada, trae el numero emitido por el legado. */
     Cobertura autorizar(String dni, String numeroAfiliado, Prestacion prestacion);
+
+    /**
+     * Presenta ante la obra social una prestacion ya autorizada, para que
+     * facturacion pueda cobrarle su parte.
+     */
+    ResultadoPresentacion presentar(String dni, String numeroAfiliado, String numeroAutorizacion);
 }

@@ -73,6 +73,49 @@ class PadronDeAfiliados {
         return respuesta;
     }
 
+    /**
+     * Resuelve lo que presentarReclamo necesita: valida el afiliado y el DNI
+     * igual que evaluar, y además que numeroAutorizacion corresponda a ese
+     * afiliado (formato AUT-&lt;afiliado&gt;-&lt;prestación&gt;, el mismo que
+     * emite autorizarPrestacion) y a una prestación con arancel conocido.
+     * montoReconocido es lo que paga la obra social por esa prestación:
+     * arancel x porcentaje del plan, el complemento del copago.
+     */
+    static RespuestaReclamo presentarReclamo(String dni, String numeroAfiliado, String numeroAutorizacion)
+            throws PedidoInvalidoException {
+        Afiliado afiliado = numeroAfiliado == null ? null : AFILIADOS.get(numeroAfiliado);
+        if (afiliado == null) {
+            throw new PedidoInvalidoException("No existe el afiliado " + numeroAfiliado);
+        }
+        if (!afiliado.dni().equals(dni)) {
+            throw new PedidoInvalidoException("El DNI " + dni + " no corresponde al afiliado " + numeroAfiliado);
+        }
+        String codigoPrestacion = codigoPrestacionAutorizada(numeroAfiliado, numeroAutorizacion);
+        BigDecimal arancel = codigoPrestacion == null ? null : ARANCELES.get(codigoPrestacion);
+        if (arancel == null) {
+            throw new PedidoInvalidoException(
+                    "La autorización " + numeroAutorizacion + " no corresponde al afiliado " + numeroAfiliado);
+        }
+
+        BigDecimal montoReconocido = arancel
+                .multiply(BigDecimal.valueOf(afiliado.plan().getPorcentaje()))
+                .divide(CIEN, 2, RoundingMode.HALF_UP);
+
+        RespuestaReclamo respuesta = new RespuestaReclamo();
+        respuesta.setMontoReconocido(montoReconocido);
+        respuesta.setNumeroPresentacion("PRES-" + numeroAutorizacion);
+        return respuesta;
+    }
+
+    /** Extrae la prestación de una autorización con el formato esperado, o null si no corresponde al afiliado. */
+    private static String codigoPrestacionAutorizada(String numeroAfiliado, String numeroAutorizacion) {
+        String prefijo = "AUT-" + numeroAfiliado + "-";
+        if (numeroAutorizacion == null || !numeroAutorizacion.startsWith(prefijo)) {
+            return null;
+        }
+        return numeroAutorizacion.substring(prefijo.length());
+    }
+
     private static void demorar() {
         try {
             Thread.sleep(DEMORA_AFILIADO_LENTO_MS);

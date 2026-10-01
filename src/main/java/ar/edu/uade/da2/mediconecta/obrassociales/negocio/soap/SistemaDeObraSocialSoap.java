@@ -11,6 +11,7 @@ import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Cobertura;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Prestacion;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ResultadoPresentacion;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.SistemaDeObraSocial;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.xml.ws.BindingProvider;
@@ -82,6 +83,28 @@ public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
     public Cobertura autorizar(String dni, String numeroAfiliado, Prestacion prestacion) {
         return invocar("autorizarPrestacion",
                 puerto -> puerto.autorizarPrestacion(dni, numeroAfiliado, prestacion.name()));
+    }
+
+    /**
+     * Presenta una autorizacion emitida antes (autorizarPrestacion). No usa
+     * invocar() porque esa funcion traduce siempre a Cobertura; la traduccion
+     * de ida y vuelta es la misma lógica con otro tipo de respuesta, asi que
+     * se repite acá en vez de generalizar invocar() con un tipo genérico.
+     */
+    @Override
+    public ResultadoPresentacion presentar(String dni, String numeroAfiliado, String numeroAutorizacion) {
+        String url = System.getProperty(PROPIEDAD_URL, URL_POR_DEFECTO);
+        try {
+            return traducirPresentacion(nuevoPuerto(url).presentarReclamo(dni, numeroAfiliado, numeroAutorizacion));
+        } catch (SOAPFaultException e) {
+            if (esFaultDelCliente(e)) {
+                throw new DatosInvalidosException(
+                        "La obra social rechazó el reclamo: " + e.getFault().getFaultString());
+            }
+            throw noDisponible("presentarReclamo", url, e);
+        } catch (WebServiceException e) {
+            throw noDisponible("presentarReclamo", url, e);
+        }
     }
 
     private Cobertura invocar(String operacion,
@@ -164,6 +187,14 @@ public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
         }
         return new Cobertura(xml.autorizado, xml.porcentajeCobertura, xml.copago,
                 xml.numeroAutorizacion, xml.mensaje);
+    }
+
+    /** Lo mismo que traducir, para la respuesta de presentarReclamo. */
+    static ResultadoPresentacion traducirPresentacion(RespuestaReclamoXml xml) {
+        if (xml == null) {
+            throw new ObraSocialNoDisponibleException(MENSAJE_NO_DISPONIBLE);
+        }
+        return new ResultadoPresentacion(xml.numeroPresentacion, xml.montoReconocido);
     }
 
     private static int entero(String propiedad, int porDefecto) {

@@ -24,6 +24,7 @@ import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Cobertura;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Prestacion;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ResultadoPresentacion;
 import jakarta.xml.soap.SOAPFault;
 import jakarta.xml.ws.WebServiceException;
 import jakarta.xml.ws.soap.SOAPFaultException;
@@ -160,6 +161,58 @@ class SistemaDeObraSocialSoapTest {
         assertTrue(e.getMessage().contains("no respondi"));
     }
 
+    // ---- presentar (presentarReclamo) ------------------------------------
+
+    @Test
+    void presentarLlamaAPresentarReclamoYTraduceLaRespuesta() {
+        when(puerto.presentarReclamo(DNI, AFILIADO, "AUT-OS-2002-CONSULTA"))
+                .thenReturn(respuestaReclamo("PRES-AUT-OS-2002-CONSULTA", "14000.00"));
+
+        ResultadoPresentacion resultado = sistema.presentar(DNI, AFILIADO, "AUT-OS-2002-CONSULTA");
+
+        assertEquals("PRES-AUT-OS-2002-CONSULTA", resultado.numeroPresentacion());
+        assertEquals(new BigDecimal("14000.00"), resultado.monto());
+    }
+
+    @Test
+    void traducirPresentacionDeUnaRespuestaNulaEsUnLegadoNoDisponible() {
+        assertThrows(ObraSocialNoDisponibleException.class,
+                () -> SistemaDeObraSocialSoap.traducirPresentacion(null));
+    }
+
+    @Test
+    void presentarConUnFaultDelClienteEsUnReclamoRechazado() {
+        SOAPFaultException rechazo = fault(NS_SOAP_11, "Client", "La autorización AUT-FALSO no corresponde al afiliado OS-2002");
+        when(puerto.presentarReclamo(DNI, AFILIADO, "AUT-FALSO")).thenThrow(rechazo);
+
+        DatosInvalidosException e = assertThrows(DatosInvalidosException.class,
+                () -> sistema.presentar(DNI, AFILIADO, "AUT-FALSO"));
+
+        assertTrue(e.getMessage().contains("AUT-FALSO"));
+    }
+
+    @Test
+    void presentarConUnFaultDelServidorEsUnLegadoNoDisponible() {
+        SOAPFaultException interno = fault(NS_SOAP_11, "Server", "NullPointerException en el legado");
+        when(puerto.presentarReclamo(DNI, AFILIADO, "AUT-OS-2002-CONSULTA")).thenThrow(interno);
+
+        ObraSocialNoDisponibleException e = assertThrows(ObraSocialNoDisponibleException.class,
+                () -> sistema.presentar(DNI, AFILIADO, "AUT-OS-2002-CONSULTA"));
+
+        assertSame(interno, e.getCause());
+    }
+
+    @Test
+    void presentarConUnTimeoutEsUnLegadoNoDisponibleConSuCausa() {
+        WebServiceException timeout = new WebServiceException("Could not receive Message.");
+        when(puerto.presentarReclamo(DNI, AFILIADO, "AUT-OS-2002-CONSULTA")).thenThrow(timeout);
+
+        ObraSocialNoDisponibleException e = assertThrows(ObraSocialNoDisponibleException.class,
+                () -> sistema.presentar(DNI, AFILIADO, "AUT-OS-2002-CONSULTA"));
+
+        assertSame(timeout, e.getCause());
+    }
+
     // ---- ayudas ---------------------------------------------------------------
 
     private static RespuestaCoberturaXml respuesta(boolean autorizado, int porcentaje, String copago,
@@ -172,6 +225,13 @@ class SistemaDeObraSocialSoapTest {
         xml.copago = new BigDecimal(copago);
         xml.numeroAutorizacion = numeroAutorizacion;
         xml.mensaje = mensaje;
+        return xml;
+    }
+
+    private static RespuestaReclamoXml respuestaReclamo(String numeroPresentacion, String montoReconocido) {
+        RespuestaReclamoXml xml = new RespuestaReclamoXml();
+        xml.numeroPresentacion = numeroPresentacion;
+        xml.montoReconocido = new BigDecimal(montoReconocido);
         return xml;
     }
 

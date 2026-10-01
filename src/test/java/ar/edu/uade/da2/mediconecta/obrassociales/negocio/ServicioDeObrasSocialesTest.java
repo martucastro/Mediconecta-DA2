@@ -196,6 +196,43 @@ class ServicioDeObrasSocialesTest {
         verifyNoInteractions(autorizacionDAO);
     }
 
+    // ---- presentarReclamo -------------------------------------------------
+
+    @Test
+    void presentarReclamoResuelveLaAfiliacionYDelegaEnElPort() {
+        pacienteAfiliado();
+        ResultadoPresentacion esperado = new ResultadoPresentacion("PRES-AUT-OS-2002-CONSULTA",
+                new BigDecimal("14000.00"));
+        when(obraSocial.presentar(DNI, AFILIADO, "AUT-OS-2002-CONSULTA")).thenReturn(esperado);
+
+        ResultadoPresentacion obtenido = servicio.presentarReclamo(PACIENTE_ID, "AUT-OS-2002-CONSULTA");
+
+        assertSame(esperado, obtenido);
+    }
+
+    @Test
+    void presentarReclamoDeUnPacienteSinAfiliacionEsDatoInvalidoYNoLlamaAlLegado() {
+        when(servicioDeUsuarios.obtenerUsuario(PACIENTE_ID))
+                .thenReturn(usuario(PACIENTE_ID, ServicioDeUsuarios.ROL_PACIENTE));
+        when(afiliacionDAO.buscarPorPaciente(PACIENTE_ID)).thenReturn(null);
+
+        assertThrows(DatosInvalidosException.class,
+                () -> servicio.presentarReclamo(PACIENTE_ID, "AUT-OS-2002-CONSULTA"));
+
+        verifyNoInteractions(obraSocial);
+    }
+
+    @Test
+    void presentarReclamoPropagaElRechazoDelLegadoSinCapturarlo() {
+        pacienteAfiliado();
+        ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException rechazo =
+                new ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException("autorizacion invalida");
+        when(obraSocial.presentar(DNI, AFILIADO, "AUT-FALSO")).thenThrow(rechazo);
+
+        assertSame(rechazo, assertThrows(ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException.class,
+                () -> servicio.presentarReclamo(PACIENTE_ID, "AUT-FALSO")));
+    }
+
     // ---- registrarAfiliacion --------------------------------------------------
 
     @Test
