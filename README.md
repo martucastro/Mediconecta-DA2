@@ -9,19 +9,21 @@ Trabajo Práctico Integrador de Desarrollo de Aplicaciones II, comisión Lunes T
 
 ## Qué hay implementado
 
-Tres componentes de negocio, cada uno con su arquitectura en capas:
+Componentes de negocio, cada uno con su arquitectura en capas:
 
 | Componente | Tipo | Responsabilidad |
 |---|---|---|
 | `ServicioDeUsuarios` | `@Stateless` | Registro, autenticación, perfiles y credenciales |
 | `ServicioDeTurnos` | `@Stateful` | Disponibilidad, reserva, hold de 5 minutos, confirmación |
 | `ServicioDeHistoriaClinica` | `@Stateless` | Antecedentes, diagnósticos y recetas |
+| `ServicioDeFacturacion` | `@Stateless` | Reclamo de facturación a la obra social por turnos con cobertura autorizada |
 
 ```
 ar.edu.uade.da2.mediconecta
   usuarios/{presentacion, negocio, datos}
   turnos/{presentacion, negocio, datos}
   historiaclinica/{presentacion, negocio, datos}
+  facturacion/{presentacion, negocio, datos}
 ```
 
 ---
@@ -267,6 +269,50 @@ Siempre `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre
 fuera de la transacción y su falla ya no podría frenar la confirmación. El
 criterio completo está en `docs/documento-tecnico.md`, sección 9.2.
 
+### Facturación: reclamo a la obra social
+
+`ServicioDeFacturacion` **no** es un observador de `PuntosDeExtension.RECLAMO`
+ni se llama desde `ServicioDeTurnos.confirmarTurno`: es un segundo suscriptor
+independiente del tópico `TurnoConfirmado` (`TurnoConfirmadoFacturacionMDB`,
+el primero es `NotificacionMDB`). Así `facturacion` nunca toca código de
+`turnos` y el reclamo solo se crea para confirmaciones que ya cerraron su
+transacción. `PuntosDeExtension.RECLAMO` queda sin usar a propósito, no se
+borra.
+
+Flujo: `TurnoConfirmadoFacturacionMDB` lee el turno (`coberturaAutorizada`,
+`coberturaPorcentaje`, `numeroAutorizacion`) con `ServicioDeTurnos.obtenerTurno`
+y, si la cobertura está autorizada, `ServicioDeFacturacion.registrarReclamo`
+persiste un `Reclamo` en `PENDIENTE` (idempotente por `turnoId`) y encola su id
+en `ReclamosFacturacionQueue`. `ReclamoMDB` consume esa cola y llama al puerto
+`CanalDeReclamos`:
+
+| Resultado del canal | Reclamo queda | Reintenta |
+|---|---|---|
+| Éxito | `ENVIADO`, con `monto` y `numeroPresentacion` | — |
+| `CanalDeReclamosNoDisponibleException` (transitorio), intento < 5 | `PENDIENTE`, con el intento y el error registrados | Sí: se relanza y Artemis reentrega |
+| `CanalDeReclamosNoDisponibleException`, intento = 5 (ver tabla de reintentos más arriba) | `EN_REVISION_MANUAL` | No |
+| `ReclamoRechazadoException` (rechazo definitivo de la obra social) | `EN_REVISION_MANUAL`, de inmediato | No: reintentar un rechazo determinístico no tiene sentido |
+| Reclamo ya `ENVIADO` o `EN_REVISION_MANUAL` | sin cambios | No: reentrega idempotente |
+
+**`@RunAs`.** `obtenerTurno` exige uno de los roles PACIENTE/PROFESIONAL/
+ADMINISTRADOR y un MDB no tiene caller autenticado, así que
+`TurnoConfirmadoFacturacionMDB` lleva `@RunAs(ServicioDeUsuarios.ROL_ADMINISTRADOR)`
+para que el contenedor le propague esa identidad a la llamada. Funcionó sin
+configuración adicional de Elytron contra este WildFly 41 (ver evidencia de la
+verificación funcional en `odd/tasks/scrum-97-facturacion.md`, sección T3).
+
+**Pendiente: el envío real.** El puerto `CanalDeReclamos` no tiene todavía una
+implementación que hable con la obra social: el adapter de SCRUM-90 (PR #10)
+no está mergeado y el simulador SOAP del legado solo tiene `validarCobertura`
+y `autorizarPrestacion`, no una operación de reclamo. La única implementación
+de hoy, `CanalDeReclamosPendiente`, informa honestamente que el canal no está
+disponible (nunca inventa un envío exitoso). Seguimiento, una vez que mergee
+SCRUM-90: agregar `presentarReclamo` al simulador y al adapter, e implementar
+el puerto con el cliente SOAP real.
+
+**Visibilidad.** `GET /api/reclamos` (solo ADMINISTRADOR, `web.xml` +
+`@RolesAllowed`) lista los reclamos con su estado, intentos y último error.
+
 ### Ejemplo del flujo completo
 
 ```bash
@@ -329,3 +375,8 @@ Están acá a propósito: son decisiones de alcance de esta entrega, no descuido
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
   profesional y un paciente de ejemplo. Fuera de un entorno de desarrollo esos dos
   no deberían existir.
+- **Reclamo de facturación sin canal real.** `CanalDeReclamos` todavía no tiene
+  una implementación que hable con la obra social (depende de SCRUM-90, no
+  mergeado): con la única implementación de hoy, cualquier reclamo termina en
+  `EN_REVISION_MANUAL` tras agotar los reintentos. No hay forma de demostrar un
+  reclamo `ENVIADO` hasta que ese adapter exista.
