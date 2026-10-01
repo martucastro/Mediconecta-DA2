@@ -180,6 +180,37 @@ Las pruebas de unidad de la capa de negocio corren sin servidor:
 mvn test
 ```
 
+### 6. Frontend (React + Vite)
+
+El frontend vive en `frontend/`, separado del backend Java, y compila hacia
+`src/main/webapp` para que lo sirva el mismo WAR.
+
+Para trabajar en las pantallas sin recompilar y redesplegar en WildFly cada vez:
+
+```bash
+cd frontend
+npm install   # solo la primera vez, o si cambiaron las dependencias
+npm run dev
+```
+
+Esto levanta un servidor en `http://localhost:5173/mediconecta/`, con recarga
+automática al guardar cualquier archivo. Los pedidos a `/mediconecta/api/*` se
+redirigen automáticamente hacia `http://localhost:8080` (donde tiene que estar
+corriendo WildFly con el backend desplegado), así que no hay problemas de CORS
+al probar el login u otras pantallas conectadas a la API real.
+
+Cuando los cambios están listos para desplegarse de verdad:
+
+```bash
+cd frontend
+npm run build
+```
+
+Esto deja los archivos compilados en `src/main/webapp`, listos para que
+`mvn clean package` los empaquete junto con el resto del proyecto en el `.war`.
+Este build **no** borra `WEB-INF` (`web.xml`, `beans.xml`), solo reemplaza los
+archivos que genera Vite.
+
 ---
 
 ## Usuarios de prueba
@@ -318,9 +349,9 @@ volvé a correrlo.
 
 Están acá a propósito: son decisiones de alcance de esta entrega, no descuidos.
 
-- **Sin frontend.** El sistema se ejerce por HTTP, con las colecciones de Postman
-  de `deploy/` y `postman/`. La primera entrega evalúa la arquitectura de capas y
-  los componentes de negocio, no la interfaz.
+- **Frontend con datos de prototipo.** Las pantallas de React ya están migradas
+  y desplegadas, pero todavía muestran datos fijos: conectarlas a la API real es
+  SCRUM-82 a 87.
 - **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
   integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
 - **Un solo módulo Maven.** Los tres componentes conviven en un WAR. Separarlos en

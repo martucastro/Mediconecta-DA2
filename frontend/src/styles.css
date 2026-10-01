@@ -17,6 +17,7 @@
 
 * { box-sizing: border-box; margin: 0; }
 html, body { min-height: 100%; }
+#root { display: flex; flex-direction: column; min-height: 100vh; }
 body {
   display: flex;
   flex-direction: column;
