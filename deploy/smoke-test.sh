@@ -89,6 +89,10 @@ done <<'CASOS'
 CASOS
 comprobar "afiliado inexistente da SOAP Fault" "si" \
   "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -q 'Fault' && echo si || echo no)"
+# Un pedido invalido es error del cliente: el Adapter lo distingue de una falla
+# del legado (faultcode Server) por este codigo.
+comprobar "ese Fault tiene codigo Client" "si" \
+  "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -Eq '<faultcode[^>]*>[^<]*Client</faultcode>' && echo si || echo no)"
 
 if [ "${1:-}" != "--rapido" ]; then
   echo
