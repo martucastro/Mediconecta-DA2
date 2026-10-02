@@ -30,4 +30,11 @@ public interface ObraSocialLegadoPort {
             @WebParam(name = "dni") String dni,
             @WebParam(name = "numeroAfiliado") String numeroAfiliado,
             @WebParam(name = "codigoPrestacion") String codigoPrestacion);
+
+    @WebMethod
+    @WebResult(name = "respuesta")
+    RespuestaReclamoXml presentarReclamo(
+            @WebParam(name = "dni") String dni,
+            @WebParam(name = "numeroAfiliado") String numeroAfiliado,
+            @WebParam(name = "numeroAutorizacion") String numeroAutorizacion);
 }

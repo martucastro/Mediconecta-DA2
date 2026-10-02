@@ -90,7 +90,7 @@ Hay además un paquete que no es nuestro, aunque viva en el mismo WAR: `externos
 | 5 | ServicioDePagos | REST | Cobro de copagos contra pasarela de pago | No implementado |
 | 6 | ServicioDeTelemedicina | REST | Integración con proveedor de video | No implementado |
 | 7 | ServicioDeNotificaciones | `@MessageDriven` (tópico JMS) | Notificación asincrónica de eventos | No implementado |
-| 8 | ServicioDeFacturacion | `@MessageDriven` (tópico y cola JMS) | Reclamo de facturación a obras sociales/prepagas por turnos con cobertura autorizada | Implementado (parcial: pendiente el canal real hacia la obra social, SCRUM-90) |
+| 8 | ServicioDeFacturacion | `@MessageDriven` (tópico y cola JMS) | Reclamo de facturación a obras sociales/prepagas por turnos con cobertura autorizada | Implementado, con el canal real hacia la obra social (sección 9.3) |
 
 Que los componentes ya convivan integrados y desplegados juntos fue justamente lo que permitió detectar y corregir la incompatibilidad entre `@Stateful` y `TimerService` descrita en la sección 6.1: un problema que solo se manifiesta con el sistema desplegado, no en aislamiento.
 
@@ -139,10 +139,12 @@ El sistema legado de la obra social no existe, pero la integración tiene que se
 
 La URL se fija con un mapeo explícito en `web.xml` en vez de depender del nombre que JBossWS asigna por defecto, para que el contrato tenga una dirección estable. El endpoint no tiene `security-constraint`: representa a un tercero, que no conoce a los usuarios de MediConecta.
 
-Las dos operaciones reciben `dni`, `numeroAfiliado` y `codigoPrestacion` y devuelven una `respuestaCobertura` con `autorizado`, `plan`, `porcentajeCobertura`, `arancel`, `copago`, `numeroAutorizacion` y `mensaje`:
+Las dos primeras operaciones reciben `dni`, `numeroAfiliado` y `codigoPrestacion` y devuelven una `respuestaCobertura` con `autorizado`, `plan`, `porcentajeCobertura`, `arancel`, `copago`, `numeroAutorizacion` y `mensaje`:
 
 - `validarCobertura`: consulta; nunca devuelve número de autorización.
 - `autorizarPrestacion`: misma evaluación y, si queda autorizada, un número de autorización (`AUT-<afiliado>-<prestación>`).
+
+Una tercera operación, agregada para SCRUM-97, presenta ante la obra social una prestación ya autorizada: `presentarReclamo(dni, numeroAfiliado, numeroAutorizacion)` devuelve una `respuestaReclamo` con `numeroPresentacion` y `montoReconocido`. A diferencia de las otras dos, no evalúa plan ni cobertura: valida que `numeroAutorizacion` tenga el formato determinista que emite `autorizarPrestacion` y corresponda al afiliado (y al DNI), y reconoce `arancel × porcentaje del plan` (el complemento del copago). Una autorización que no corresponda al afiliado, con formato desconocido o para un afiliado inexistente es, igual que en las otras operaciones, un pedido inválido que vuelve como SOAP Fault `Client`.
 
 Las respuestas son deterministas, con un afiliado por plan para poder mostrar cada caso. El porcentaje depende del plan, y el copago es `arancel × (100 − porcentaje) / 100`. Las prestaciones son `CONSULTA` (arancel 20000.00) y `TELECONSULTA` (15000.00).
 
@@ -164,9 +166,9 @@ Es el caso de libro del patrón Adapter. Hacia adentro, el sistema pregunta en s
 
 | Capa | Clase | Qué hace |
 |---|---|---|
-| Negocio | `ServicioDeObrasSociales` (`@Stateless`) | Fachada: `validarCobertura`, `autorizarPrestacion`, `registrarAfiliacion` |
-| Negocio | `Cobertura`, `Prestacion` | Objeto de dominio devuelto y enum de prestaciones |
-| Negocio | `SistemaDeObraSocial` | El port del Adapter: interfaz propia, sin ningún tipo SOAP, que devuelve `Cobertura` |
+| Negocio | `ServicioDeObrasSociales` (`@Stateless`) | Fachada: `validarCobertura`, `autorizarPrestacion`, `presentarReclamo`, `registrarAfiliacion` |
+| Negocio | `Cobertura`, `Prestacion`, `ResultadoPresentacion` | Objetos de dominio devueltos y enum de prestaciones |
+| Negocio | `SistemaDeObraSocial` | El port del Adapter: interfaz propia, sin ningún tipo SOAP, que devuelve `Cobertura` o `ResultadoPresentacion` |
 | Negocio | `negocio.soap.SistemaDeObraSocialSoap` (con `ObraSocialLegadoPort` y `RespuestaCoberturaXml`) | Única implementación: el cliente JAX-WS |
 | Negocio | `ObraSocialNoDisponibleException` y `ObraSocialNoDisponibleMapper` | El legado no responde; se traduce a `503` |
 | Negocio | `SeedDeAfiliaciones` | Afilia al paciente de prueba (OS-2002) en el arranque |
@@ -188,7 +190,7 @@ Los pedidos inválidos usan `comun.negocio.DatosInvalidosException`, la misma qu
 
 El mensaje de la tercera está pensado para mostrarse tal cual ("El sistema de la obra social no respondió. Intentá de nuevo en unos minutos."); el detalle técnico queda en el log del adaptador y como causa de la excepción, no en el mensaje. Separar el segundo caso del tercero por el código del fault importa: si todo fault fuera "pedido rechazado", una falla interna del legado le diría al usuario que sus datos son inválidos. Una autorización que el legado da por buena pero sin número también cae en el tercero: sin número no sirve para facturar.
 
-**Transacciones y persistencia.** `validarCobertura` es `NOT_SUPPORTED`: no escribe nada y no tiene sentido retener una transacción durante una llamada remota. `autorizarPrestacion` es `REQUIRED`: si el legado autoriza, guarda número y fecha de autorización, porcentaje y copago en `autorizaciones_prestacion`, que es lo que facturación va a necesitar. Al participar de la transacción de quien lo invoca, si la reserva del turno falla después, la fila local se deshace con ella (la autorización remota no, ver más abajo). Las negativas y los errores no generan filas.
+**Transacciones y persistencia.** `validarCobertura` es `NOT_SUPPORTED`: no escribe nada y no tiene sentido retener una transacción durante una llamada remota. `autorizarPrestacion` es `REQUIRED`: si el legado autoriza, guarda número y fecha de autorización, porcentaje y copago en `autorizaciones_prestacion`, que es lo que facturación va a necesitar. Al participar de la transacción de quien lo invoca, si la reserva del turno falla después, la fila local se deshace con ella (la autorización remota no, ver más abajo). Las negativas y los errores no generan filas. `presentarReclamo` es `NOT_SUPPORTED`, por la misma razón que `validarCobertura`: no persiste nada local (eso lo hace `facturacion`, sección 9.3) y su llamada remota no tiene por qué arrastrar la transacción de quien la invoca (`ServicioDeFacturacion.procesarReclamo`); además, al correr fuera de esa transacción, su propia excepción de negocio (`@ApplicationException(rollback = true)`) no puede arriesgarse a hacer rollback de una transacción que no es suya.
 
 **Afiliación.** `Usuario` no tiene DNI ni número de afiliado, y no le corresponde: son datos de la relación con la obra social. Viven en `AfiliacionDePaciente`, tabla propia del componente, que referencia al paciente por id y no con `@ManyToOne`, con el mismo criterio que `HistoriaClinica`. `registrarAfiliacion` es `@RolesAllowed("ADMINISTRADOR")`. El resto de la fachada es `@PermitAll`: quién puede reservar o autorizar lo decide el componente que la invoca, que es el que conoce el caso de uso.
 
@@ -329,7 +331,7 @@ Dos razones, ambas de aislamiento entre componentes:
 
 Verificado en este WildFly 41 (sección 10), `@RunAs` solo no alcanzó: Artemis entregaba el mensaje y el propio `onMessage` quedaba rechazado con `EJBAccessException` ("... is not allowed"), *antes* de llegar siquiera a `obtenerTurno`. La causa es la misma que ya documenta la sección 6 para `ServicioDeUsuarios`: con `default-missing-method-permissions-deny-access` en `true` (el valor por defecto del subsistema `ejb3` de WildFly), un bean que lleva **cualquier** anotación de `jakarta.annotation.security` (acá, `@RunAs`) pero ningún `@RolesAllowed`/`@PermitAll` explícito sobre el método invocado queda denegado por defecto. Agregar `@PermitAll` junto a `@RunAs` lo resolvió, sin tocar ninguna configuración de Elytron ni del script `mediconecta-setup.cli`: es una anotación de la aplicación, no una configuración del servidor.
 
-**Lo que falta: el canal real.** `CanalDeReclamos` todavía no tiene una implementación que hable con la obra social. El adapter de SCRUM-90 (PR #10) no está mergeado, y el simulador SOAP del legado solo expone `validarCobertura` y `autorizarPrestacion`, no una operación de reclamo. `CanalDeReclamosPendiente`, la única implementación de hoy, informa honestamente que el canal no está disponible en vez de simular un envío exitoso; con ella, todo reclamo termina en `EN_REVISION_MANUAL` tras agotar los reintentos. El seguimiento, una vez que mergee SCRUM-90, es agregar `presentarReclamo` al simulador y al adapter, e implementar el puerto con el cliente SOAP real.
+**El canal real.** `CanalDeReclamos` tiene una única implementación, `CanalDeReclamosSoap` (bean CDI simple, `@ApplicationScoped`, no EJB: no necesita ninguna transacción propia porque `ServicioDeObrasSociales.presentarReclamo` ya es `NOT_SUPPORTED`), que presenta el reclamo llamando a esa fachada (sección 6.3) y traduce sus dos excepciones de negocio a las del puerto de facturación: `DatosInvalidosException` (la autorización no corresponde al afiliado, o es desconocida) se vuelve `ReclamoRechazadoException` (rechazo definitivo, directo a `EN_REVISION_MANUAL`), y `ObraSocialNoDisponibleException` (el legado no respondió) se vuelve `CanalDeReclamosNoDisponibleException` (transitorio, con reintentos). Reemplaza a `CanalDeReclamosPendiente`, que se eliminó: con una sola implementación del puerto no hay ambigüedad de CDI que resolver.
 
 ## 10. Verificación en ejecución
 

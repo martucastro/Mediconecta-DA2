@@ -307,14 +307,17 @@ para que el contenedor le propague esa identidad a la llamada. Funcionó sin
 configuración adicional de Elytron contra este WildFly 41 (ver evidencia de la
 verificación funcional en `odd/tasks/scrum-97-facturacion.md`, sección T3).
 
-**Pendiente: el envío real.** El puerto `CanalDeReclamos` no tiene todavía una
-implementación que hable con la obra social: el adapter de SCRUM-90 (PR #10)
-no está mergeado y el simulador SOAP del legado solo tiene `validarCobertura`
-y `autorizarPrestacion`, no una operación de reclamo. La única implementación
-de hoy, `CanalDeReclamosPendiente`, informa honestamente que el canal no está
-disponible (nunca inventa un envío exitoso). Seguimiento, una vez que mergee
-SCRUM-90: agregar `presentarReclamo` al simulador y al adapter, e implementar
-el puerto con el cliente SOAP real.
+**El envío real.** `CanalDeReclamos` tiene una única implementación,
+`CanalDeReclamosSoap`, que presenta el reclamo a través de
+`ServicioDeObrasSociales.presentarReclamo(pacienteId, numeroAutorizacion)`
+(SCRUM-90) y traduce sus excepciones: `DatosInvalidosException` (la
+autorización no corresponde al afiliado o es desconocida) se vuelve
+`ReclamoRechazadoException`, y `ObraSocialNoDisponibleException` (el legado
+no respondió) se vuelve `CanalDeReclamosNoDisponibleException`. Es un bean
+CDI simple (`@ApplicationScoped`), no un EJB: la llamada remota ya corre
+`NOT_SUPPORTED` del lado de la fachada, así que no hay ninguna transacción
+propia que proteger acá. Ver la sección del sistema legado más abajo para el
+formato de la operación `presentarReclamo`.
 
 **Visibilidad.** `GET /api/reclamos` (solo ADMINISTRADOR, `web.xml` +
 `@RolesAllowed`) lista los reclamos con su estado, intentos y último error.
@@ -368,6 +371,15 @@ Cualquier otro afiliado devuelve un SOAP Fault. OS-5005 existe para mostrar que
 MediConecta no se queda colgado: el Adapter corta a los 5 segundos. Los pedidos listos para usar
 están en la carpeta `05` de `postman/MediConecta-Demo.postman_collection.json`;
 también se puede importar el WSDL en SoapUI.
+
+Una tercera operación, `presentarReclamo` (`dni`, `numeroAfiliado`,
+`numeroAutorizacion`), presenta una prestación ya autorizada: no vuelve a
+evaluar el plan, solo valida que la autorización corresponda al afiliado
+(mismo formato determinista `AUT-<afiliado>-<prestación>` que emite
+`autorizarPrestacion`) y devuelve `montoReconocido` (`arancel x porcentaje`
+del plan, lo que paga la obra social) y `numeroPresentacion`. Una
+autorización que no corresponda al afiliado, o que no exista, también
+vuelve como SOAP Fault de código `Client`.
 
 ### El cliente: `ServicioDeObrasSociales`
 
@@ -430,8 +442,3 @@ Están acá a propósito: son decisiones de alcance de esta entrega, no descuido
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
   profesional y un paciente de ejemplo. Fuera de un entorno de desarrollo esos dos
   no deberían existir.
-- **Reclamo de facturación sin canal real.** `CanalDeReclamos` todavía no tiene
-  una implementación que hable con la obra social (depende de SCRUM-90, no
-  mergeado): con la única implementación de hoy, cualquier reclamo termina en
-  `EN_REVISION_MANUAL` tras agotar los reintentos. No hay forma de demostrar un
-  reclamo `ENVIADO` hasta que ese adapter exista.

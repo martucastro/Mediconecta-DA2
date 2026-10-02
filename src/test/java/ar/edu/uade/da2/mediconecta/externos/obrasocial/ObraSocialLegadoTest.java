@@ -39,4 +39,12 @@ class ObraSocialLegadoTest {
         assertTrue(respuesta.isAutorizado());
         assertNull(respuesta.getNumeroAutorizacion());
     }
+
+    @Test
+    void presentarReclamoDevuelveElMontoReconocidoYUnNumeroDePresentacion() {
+        RespuestaReclamo respuesta = legado.presentarReclamo("30333444", "OS-2002", "AUT-OS-2002-CONSULTA");
+
+        assertEquals(new java.math.BigDecimal("14000.00"), respuesta.getMontoReconocido());
+        assertEquals("PRES-AUT-OS-2002-CONSULTA", respuesta.getNumeroPresentacion());
+    }
 }

@@ -74,6 +74,14 @@ EOF
 }
 campo() { sed -n "s/.*<$1>\([^<]*\)<\/$1>.*/\1/p"; } # extrae el valor de un elemento
 
+soapReclamo() { # dni, afiliado, numeroAutorizacion
+  curl -s -H "Content-Type: text/xml; charset=utf-8" -H "SOAPAction: \"\"" --data-binary @- "$SOAP" <<EOF
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:os="http://legado.obrasocial.example/">
+  <soapenv:Body><os:presentarReclamo><dni>$1</dni><numeroAfiliado>$2</numeroAfiliado><numeroAutorizacion>$3</numeroAutorizacion></os:presentarReclamo></soapenv:Body>
+</soapenv:Envelope>
+EOF
+}
+
 comprobar "el WSDL se descarga"               200 "$(codigo "$SOAP?wsdl")"
 comprobar "el WSDL publica validarCobertura"  "si" "$(curl -s "$SOAP?wsdl" | grep -q validarCobertura && echo si || echo no)"
 # dni, afiliado, cobertura, copago de una CONSULTA (arancel 20000), autorizado
@@ -93,6 +101,13 @@ comprobar "afiliado inexistente da SOAP Fault" "si" \
 # del legado (faultcode Server) por este codigo.
 comprobar "ese Fault tiene codigo Client" "si" \
   "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -Eq '<faultcode[^>]*>[^<]*Client</faultcode>' && echo si || echo no)"
+# presentarReclamo (SCRUM-97 T4): presenta una autorizacion ya emitida, no
+# evalua cobertura de nuevo.
+R=$(soapReclamo 30333444 OS-2002 AUT-OS-2002-CONSULTA)
+comprobar "presentarReclamo reconoce arancel x porcentaje del plan" "14000.00" \
+  "$(printf '%s' "$R" | campo montoReconocido)"
+comprobar "autorizacion desconocida en presentarReclamo da SOAP Fault Client" "si" \
+  "$(soapReclamo 30333444 OS-2002 AUT-FALSO | grep -Eq '<faultcode[^>]*>[^<]*Client</faultcode>' && echo si || echo no)"
 
 if [ "${1:-}" != "--rapido" ]; then
   echo

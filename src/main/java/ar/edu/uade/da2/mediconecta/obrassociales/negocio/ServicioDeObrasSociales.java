@@ -94,6 +94,35 @@ public class ServicioDeObrasSociales {
     }
 
     /**
+     * Presenta ante la obra social una prestación ya autorizada, para que
+     * facturación pueda cobrarle su parte. NOT_SUPPORTED por el mismo motivo
+     * que validarCobertura: es una llamada remota que no tiene por qué
+     * arrastrar la transacción de quien la invoca (ServicioDeFacturacion), y
+     * su propia excepción de negocio no puede arriesgarse a hacer rollback de
+     * una transacción que no es suya.
+     */
+    @TransactionAttribute(TransactionAttributeType.NOT_SUPPORTED)
+    public ResultadoPresentacion presentarReclamo(Long pacienteId, String numeroAutorizacion) {
+        AfiliacionDePaciente afiliacion = afiliacionDelPaciente(pacienteId);
+        return obraSocial.presentar(afiliacion.getDni(), afiliacion.getNumeroAfiliado(), numeroAutorizacion);
+    }
+
+    /**
+     * Resuelve la afiliación del paciente sin exigir una Prestación: a
+     * diferencia de afiliacionDe, presentarReclamo ya recibe el número de
+     * autorización y no necesita volver a consultar el plan.
+     */
+    private AfiliacionDePaciente afiliacionDelPaciente(Long pacienteId) {
+        validarPaciente(pacienteId);
+        AfiliacionDePaciente afiliacion = afiliacionDAO.buscarPorPaciente(pacienteId);
+        if (afiliacion == null) {
+            throw new DatosInvalidosException(
+                    "El paciente " + pacienteId + " no tiene una obra social registrada.");
+        }
+        return afiliacion;
+    }
+
+    /**
      * Registra o corrige con qué DNI y número de afiliado conoce la obra social
      * al paciente.
      */

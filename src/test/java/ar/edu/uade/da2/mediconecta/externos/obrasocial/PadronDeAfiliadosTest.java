@@ -94,4 +94,52 @@ class PadronDeAfiliadosTest {
         assertThrows(PedidoInvalidoException.class,
                 () -> PadronDeAfiliados.evaluar("30333444", "OS-2002", null));
     }
+
+    // ---- presentarReclamo ------------------------------------------------
+
+    // dni, afiliado, prestacion, numeroAutorizacion, montoReconocido
+    @ParameterizedTest
+    @CsvSource({
+            "30111222, OS-1001, CONSULTA,     AUT-OS-1001-CONSULTA,     20000.00",
+            "30333444, OS-2002, CONSULTA,     AUT-OS-2002-CONSULTA,     14000.00",
+            "30444555, OS-3003, CONSULTA,     AUT-OS-3003-CONSULTA,      8000.00",
+            "30111222, OS-1001, TELECONSULTA, AUT-OS-1001-TELECONSULTA, 15000.00",
+            "30333444, OS-2002, TELECONSULTA, AUT-OS-2002-TELECONSULTA, 10500.00",
+            "30444555, OS-3003, TELECONSULTA, AUT-OS-3003-TELECONSULTA,  6000.00"
+    })
+    void presentarReclamoReconoceElArancelPorElPorcentajeDelPlan(String dni, String afiliado,
+            String prestacion, String numeroAutorizacion, String montoReconocido) throws PedidoInvalidoException {
+        RespuestaReclamo respuesta = PadronDeAfiliados.presentarReclamo(dni, afiliado, numeroAutorizacion);
+
+        assertEquals(new BigDecimal(montoReconocido), respuesta.getMontoReconocido());
+        assertEquals("PRES-" + numeroAutorizacion, respuesta.getNumeroPresentacion());
+    }
+
+    @Test
+    void presentarReclamoConUnaAutorizacionDeOtroAfiliadoEsUnPedidoInvalido() {
+        PedidoInvalidoException e = assertThrows(PedidoInvalidoException.class,
+                () -> PadronDeAfiliados.presentarReclamo("30333444", "OS-2002", "AUT-OS-9999-CONSULTA"));
+
+        assertTrue(e.getMessage().contains("AUT-OS-9999-CONSULTA"));
+    }
+
+    @Test
+    void presentarReclamoConUnaAutorizacionDeFormatoDesconocidoEsUnPedidoInvalido() {
+        assertThrows(PedidoInvalidoException.class,
+                () -> PadronDeAfiliados.presentarReclamo("30333444", "OS-2002", "AUT-FALSO"));
+    }
+
+    @Test
+    void presentarReclamoConUnAfiliadoInexistenteEsUnPedidoInvalido() {
+        assertThrows(PedidoInvalidoException.class,
+                () -> PadronDeAfiliados.presentarReclamo("1", "OS-9999", "AUT-OS-9999-CONSULTA"));
+    }
+
+    @Test
+    void presentarReclamoConUnDniQueNoCorrespondeAlAfiliadoEsUnPedidoInvalido() {
+        PedidoInvalidoException e = assertThrows(PedidoInvalidoException.class,
+                () -> PadronDeAfiliados.presentarReclamo("30111222", "OS-2002", "AUT-OS-2002-CONSULTA"));
+
+        assertTrue(e.getMessage().contains("30111222"));
+    }
 }

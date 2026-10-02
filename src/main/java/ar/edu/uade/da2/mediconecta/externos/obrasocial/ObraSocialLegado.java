@@ -67,6 +67,29 @@ public class ObraSocialLegado {
         return respuesta;
     }
 
+    /**
+     * Presenta ante la obra social una prestación ya autorizada
+     * (autorizarPrestacion), para que le reconozca su parte y la factura
+     * pueda cobrarla. A diferencia de las otras dos operaciones, no evalúa
+     * plan ni cobertura: valida que la autorización corresponda al afiliado
+     * (mismo formato determinista AUT-&lt;afiliado&gt;-&lt;prestación&gt; que
+     * emite autorizarPrestacion) y devuelve cuánto reconoce y con qué número
+     * queda presentado el reclamo. Una autorización que no corresponda al
+     * afiliado, o que no exista, es un pedido inválido.
+     */
+    @WebMethod
+    @WebResult(name = "respuesta")
+    public RespuestaReclamo presentarReclamo(
+            @WebParam(name = "dni") String dni,
+            @WebParam(name = "numeroAfiliado") String numeroAfiliado,
+            @WebParam(name = "numeroAutorizacion") String numeroAutorizacion) {
+        try {
+            return PadronDeAfiliados.presentarReclamo(dni, numeroAfiliado, numeroAutorizacion);
+        } catch (PedidoInvalidoException e) {
+            throw faultDelCliente(e.getMessage());
+        }
+    }
+
     private static RespuestaCobertura evaluar(String dni, String numeroAfiliado, String codigoPrestacion) {
         try {
             return PadronDeAfiliados.evaluar(dni, numeroAfiliado, codigoPrestacion);
