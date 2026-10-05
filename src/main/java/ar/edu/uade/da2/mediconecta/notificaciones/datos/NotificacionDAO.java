@@ -16,6 +16,14 @@ public class NotificacionDAO {
         em.persist(notificacion);
     }
 
+    public boolean existePorTurno(Long turnoId) {
+        Long cantidad = em.createQuery(
+                "SELECT COUNT(n) FROM Notificacion n WHERE n.turnoId = :turnoId", Long.class)
+                .setParameter("turnoId", turnoId)
+                .getSingleResult();
+        return cantidad > 0;
+    }
+
     public List<Notificacion> buscarPorPaciente(Long pacienteId) {
         return em.createQuery(
                 "SELECT n FROM Notificacion n WHERE n.pacienteId = :pacienteId ORDER BY n.fechaEnvio DESC",

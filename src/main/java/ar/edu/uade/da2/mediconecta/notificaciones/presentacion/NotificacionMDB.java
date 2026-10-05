@@ -19,11 +19,20 @@ import jakarta.jms.MessageListener;
  * traduce HTTP y delega en un Servicio.
  *
  * Politica de redelivery: la que trae Artemis por defecto para este topico
- * (sin configuracion propia en mediconecta-setup.cli) - 10 reintentos con
- * backoff, y despues el mensaje va a la cola de mensajes muertos (DLQ). Si
- * el procesamiento falla (por ejemplo, la base no responde), la excepcion
- * sin capturar hace que el contenedor no confirme el mensaje, y Artemis lo
- * reintenta solo, sin que este componente tenga que programar nada.
+ * (sin configuracion propia en mediconecta-setup.cli) - hasta 10 reintentos,
+ * sin demora entre uno y otro, y despues el mensaje va a la cola de mensajes
+ * muertos (DLQ). Si el procesamiento falla (por ejemplo, la base no
+ * responde), la excepcion sin capturar hace que el contenedor no confirme el
+ * mensaje, y Artemis lo reintenta solo, sin que este componente tenga que
+ * programar nada.
+ *
+ * Un mensaje mal formado (no es un MapMessage, le faltan claves o no se puede
+ * leer) es distinto: reintentarlo nunca lo va a arreglar, asi que se descarta
+ * con un aviso en el log en vez de pasar por los 10 reintentos.
+ *
+ * La suscripcion es no durable a proposito: quien publica el evento
+ * (ServicioDeTurnos) vive en el mismo WAR, asi que el consumidor nunca esta
+ * apagado mientras el publicador funciona.
  */
 @MessageDriven(activationConfig = {
         @ActivationConfigProperty(propertyName = "destinationType", propertyValue = "jakarta.jms.Topic"),
@@ -38,18 +47,31 @@ public class NotificacionMDB implements MessageListener {
 
     @Override
     public void onMessage(Message mensaje) {
-        try {
-            MapMessage mapa = (MapMessage) mensaje;
-            Long turnoId = mapa.getLong("turnoId");
-            Long pacienteId = mapa.getLong("pacienteId");
-            String fechaHora = mapa.getString("fechaHora");
-
-            servicio.notificarTurnoConfirmado(turnoId, pacienteId, fechaHora);
-        } catch (JMSException e) {
-            LOG.log(Level.SEVERE, "Error leyendo el mensaje de TurnoConfirmado", e);
-            // Sin capturar mas arriba: el contenedor no confirma el mensaje
-            // y Artemis lo reintenta segun su politica de redelivery.
-            throw new RuntimeException(e);
+        if (!(mensaje instanceof MapMessage)) {
+            LOG.log(Level.WARNING, "TurnoConfirmado: se descarta un mensaje que no es un MapMessage ({0}).",
+                    mensaje == null ? "null" : mensaje.getClass().getName());
+            return;
         }
+
+        MapMessage mapa = (MapMessage) mensaje;
+        Long turnoId;
+        Long pacienteId;
+        String fechaHora;
+        try {
+            if (!mapa.itemExists("turnoId") || !mapa.itemExists("pacienteId") || !mapa.itemExists("fechaHora")) {
+                LOG.warning("TurnoConfirmado: se descarta un mensaje al que le faltan turnoId, pacienteId o fechaHora.");
+                return;
+            }
+            turnoId = mapa.getLong("turnoId");
+            pacienteId = mapa.getLong("pacienteId");
+            fechaHora = mapa.getString("fechaHora");
+        } catch (JMSException | NumberFormatException e) {
+            LOG.log(Level.WARNING, "TurnoConfirmado: se descarta un mensaje que no se puede leer.", e);
+            return;
+        }
+
+        // Fuera del try: si el servicio falla (base caida, etc.) la excepcion sube,
+        // el contenedor no confirma el mensaje y Artemis lo reintenta.
+        servicio.notificarTurnoConfirmado(turnoId, pacienteId, fechaHora);
     }
 }
