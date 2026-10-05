@@ -88,7 +88,7 @@ Hay además un paquete que no es nuestro, aunque viva en el mismo WAR: `externos
 | 3 | ServicioDeHistoriaClinica | `@Stateless` | Antecedentes, diagnósticos, recetas | Implementado |
 | 4 | ServicioDeObrasSociales | Adapter vía SOAP | Validación de cobertura contra sistema legado | Implementado (sección 6.3), contra el legado simulado de la sección 6.2 |
 | 5 | ServicioDePagos | REST | Cobro de copagos contra pasarela de pago | No implementado |
-| 6 | ServicioDeTelemedicina | REST | Integración con proveedor de video | No implementado |
+| 6 | ServicioDeTelemedicina | `@Stateless`, Adapter REST | Sala de video de los turnos de telemedicina | Implementado (sección 6.4), contra el proveedor simulado; falta el enganche con la confirmación (SCRUM-95) |
 | 7 | ServicioDeNotificaciones | `@MessageDriven` (tópico JMS) | Notificación asincrónica de eventos | No implementado |
 | 8 | ServicioDeFacturacion | `@MessageDriven` (tópico y cola JMS) | Reclamo de facturación a obras sociales/prepagas por turnos con cobertura autorizada | Implementado, con el canal real hacia la obra social (sección 9.3) |
 
@@ -226,6 +226,39 @@ Límites que siguen vigentes:
 - Si el legado rechaza los datos de afiliación (un DNI que no corresponde al afiliado), la reserva responde `400` en vez de reservarse como particular: es un dato mal cargado, no una falta de cobertura.
 - Sólo el paciente de prueba tiene afiliación (OS-2002, plan medio). `registrarAfiliacion` existe pero no está expuesta por HTTP.
 - La fachada no verifica que el paciente le pertenezca a quien llama: el observador pasa siempre el paciente del turno, nunca un id que venga del cliente.
+
+### 6.4 ServicioDeTelemedicina y el proveedor de video (simulado)
+
+**El tercero.** `externos.video.ProveedorDeVideoExternoResource` simula un proveedor de videoconsultas con `POST /api/externo/salas`: recibe una referencia opaca y la fecha, y devuelve el id de la sala y dos enlaces, `hostUrl` para el anfitrión y `guestUrl` para el invitado. Vive bajo `/api/externo/*`, fuera de la seguridad de la aplicación, por el mismo motivo que la pasarela de pago: un tercero no se autentica con las credenciales de nuestros usuarios. Ningún componente lo importa; se lo alcanza solo por HTTP. Las salas son de Jitsi Meet, que crea la sala cuando alguien entra a la URL, así que los enlaces funcionan sin API key. El nombre de la sala lleva un UUID porque es su único control de acceso. En el simulador, `hostUrl` y `guestUrl` apuntan a la misma sala y solo cambian el nombre con el que entra cada participante, así que la separación es de presentación y no de permisos. Un proveedor real daría enlaces con permisos distintos; el componente igual trata los dos como secretos separados y nunca entrega uno a quien le corresponde el otro. Para probar la falla, responde `503` si la referencia empieza con `caer` o si está activa la propiedad `mediconecta.video.simular-caida`.
+
+**El componente**, en sus tres capas:
+
+- **Negocio.** `ServicioDeTelemedicina` (`@Stateless`, Facade) habla contra `ProveedorDeVideoAdapter`. Su implementación, `ProveedorDeVideoRestClient`, usa el Jakarta REST Client API con DTOs propios (`SalaExternaRequest`/`SalaExternaResponse`, el mismo shape JSON del tercero sin importar sus clases) y traduce `host` a profesional y `guest` a paciente. El turno se lee con `ServicioDeTurnos.obtenerTurno`, nunca de su tabla.
+- **Datos.** `SesionVideo` (tabla `sesiones_video`) guarda el turno, el paciente y el profesional por id, el id de la sala, los dos enlaces y el estado.
+- **Presentación.** `TelemedicinaResource` expone `POST` y `GET /api/telemedicina/turno/{turnoId}`.
+
+**Quién ve qué.** Cada participante recibe solo su enlace: el profesional el de anfitrión, el paciente el de invitado. `@RolesAllowed` admite PACIENTE y PROFESIONAL, y la regla fina (que el turno sea del caller) se resuelve con el `SessionContext`, como en turnos y pagos. Cualquier otro, administrador incluido, recibe `403`: para la sala el administrador es un tercero más, y ningún caso de uso necesita que entre a una consulta. Un turno inexistente también responde `403`: si respondiera distinto que uno ajeno, cualquier usuario podría recorrer ids y averiguar cuáles existen.
+
+**Reglas de `crearSesion`:**
+
+1. Primero se verifica que el caller sea parte del turno. Va antes que todo para que un tercero no pueda averiguar nada del turno por el mensaje de error.
+2. Solo un turno de `TELEMEDICINA` lleva sala. Uno presencial responde `409` sin llamar al proveedor.
+3. El turno tiene que estar tomado por un paciente. Se acepta `EN_HOLD` y no solo `CONFIRMADO` porque el paso 2/2 va a crear la sala dentro de `confirmarTurno`, antes de que el turno cambie de estado.
+4. Es idempotente: si el turno ya tiene sala para ese paciente, se devuelve sin volver a llamar al proveedor. El `POST` responde `201` si creó la sala y `200` si ya existía.
+5. Si la sala era de un paciente anterior (su hold venció y otro tomó el turno), se pide una sala nueva y se reemplaza la anterior: el enlace viejo lo conoce alguien que ya no es parte del turno.
+
+**Sala vigente.** `obtenerEnlace` resuelve los participantes desde el turno actual, no desde la sesión guardada, y solo entrega un enlace si la sala está vigente: el turno sigue tomado (`EN_HOLD` o `CONFIRMADO`) y por el mismo paciente para el que se creó. La regla vale para los dos roles. Después de una cancelación, de un hold vencido o de que otro paciente tome el turno, el profesional deja de recibir el enlace viejo y el paciente anterior pasa a recibir `403`.
+
+**Límite conocido.** Si dos pedidos crean la misma sala al mismo tiempo, los dos llaman al proveedor y el segundo choca con la restricción única de `turnoId`, lo que da un `500`. El riesgo es bajo: en el paso 2/2 la creación corre dentro de `confirmarTurno`, que ya toma un lock sobre la fila del turno, así que dos confirmaciones del mismo turno quedan serializadas.
+
+**Proveedor que no responde.** El cliente fija timeouts (3 s de conexión, 5 s de respuesta), porque en el paso 2/2 la llamada va a correr dentro de la confirmación, con la fila del turno bloqueada. Cualquier falla, sea timeout, error HTTP o una respuesta incompleta, sale como `ProveedorDeVideoNoDisponibleException` (`rollback = true`), que se traduce a `503` con `Retry-After`, y no se guarda nada a medias. Qué hace la confirmación del turno ante esa falla se decide en SCRUM-95.
+
+**Pruebas.** Sin contenedor ni red:
+- La fachada, con el Adapter, el DAO y `ServicioDeTurnos` como dobles: creación con los dos enlaces, turno presencial, turno sin paciente, paciente ajeno o turno inexistente, idempotencia (sin volver a llamar al proveedor), renovación para un paciente nuevo, proveedor caído, el enlace de cada rol, y que nadie vea una sala que dejó de estar vigente.
+- La traducción del cliente REST.
+- El simulador del proveedor, incluida la caída.
+
+La llamada HTTP real y el cableado de seguridad se verifican con `deploy/smoke-test.sh` y la carpeta 06 de la colección de Postman.
 
 ## 7. Autenticación y autorización
 

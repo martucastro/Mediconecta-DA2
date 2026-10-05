@@ -20,6 +20,7 @@ Siete componentes de negocio, cada uno con su arquitectura en capas:
 | `ServicioDeObrasSociales` | `@Stateless`, Adapter SOAP | Cobertura y autorización contra el legado de la obra social |
 | `ServicioDePagos` | `@Stateless`, Adapter REST | Cobro de copagos y reembolsos contra la pasarela de pago externa |
 | `ServicioDeFacturacion` | `@Stateless` | Reclamo de facturación a la obra social por turnos con cobertura autorizada |
+| `ServicioDeTelemedicina` | `@Stateless`, Adapter REST | Sala de video de los turnos de telemedicina contra el proveedor de video externo |
 
 ```
 ar.edu.uade.da2.mediconecta
@@ -30,8 +31,10 @@ ar.edu.uade.da2.mediconecta
   obrassociales/{negocio, datos}       sin HTTP: lo invocan otros componentes
   pagos/{presentacion, negocio, datos}
   facturacion/{presentacion, negocio, datos}
+  telemedicina/{presentacion, negocio, datos}
   externos/obrasocial                  el legado SOAP simulado, un tercero
   externos/pasarela                    la pasarela de pago REST simulada, otro tercero
+  externos/video                       el proveedor de video REST simulado, otro tercero
 ```
 
 ---
@@ -384,6 +387,37 @@ $WILDFLY_HOME/bin/jboss-cli.sh --connect \
 
 O por la consola de administración: *Runtime → (tu servidor) → Messaging
 (ActiveMQ) → default → Queue → DLQ*.
+
+### Telemedicina
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| `POST` | `/telemedicina/turno/{turnoId}` | paciente o profesional del turno | Crea la sala del turno y responde con el enlace de quien la pidió: `201` si la creó, `200` si ya existía |
+| `GET` | `/telemedicina/turno/{turnoId}` | paciente o profesional del turno | El enlace de quien pregunta: el profesional recibe el de anfitrión y el paciente el de invitado, nunca los dos. `404` si el turno no tiene una sala vigente |
+
+Cualquier otro usuario, administrador incluido, recibe `403`, y también si el
+turno no existe: así no se puede averiguar qué ids existen. Una sala deja de
+ser vigente si el turno se cancela o pasa a otro paciente; desde ese momento
+nadie recibe el enlace viejo. Solo un turno de
+`TELEMEDICINA` tomado por un paciente (`EN_HOLD` o `CONFIRMADO`) puede tener
+sala; uno presencial responde `409` sin llamar al proveedor. Si el proveedor no
+responde, `503` con `Retry-After`.
+
+Hoy la sala se crea a pedido. El enganche con `confirmarTurno`, para que se
+cree sola al confirmar, es SCRUM-95.
+
+**El proveedor de video simulado** (`externos/video`) es un tercero que vive en
+el mismo WAR, como la pasarela de pago: `POST /api/externo/salas`, sin
+autenticación, con `{"reference": "...", "scheduledAt": "..."}`. Devuelve
+`roomId`, `hostUrl` (profesional) y `guestUrl` (paciente). Las salas son de
+Jitsi Meet y los enlaces funcionan de verdad. En el simulador los dos enlaces
+apuntan a la misma sala y solo cambian el nombre con el que entra cada uno: la
+separación es de presentación, no de permisos. Un proveedor real daría enlaces
+con permisos distintos (anfitrión e invitado); el componente ya trata los dos
+como secretos separados. Para simular el proveedor caído,
+una `reference` que empiece con `caer`, o levantar WildFly con
+`-Dmediconecta.video.simular-caida=true`. `ServicioDeTelemedicina` lo llama por
+HTTP con el Jakarta REST Client; la URL se cambia con `-Dmediconecta.video.url`.
 
 ### Facturación: reclamo a la obra social
 

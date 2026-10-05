@@ -1333,6 +1333,694 @@
           }
         }
       ]
+    },
+    {
+      "name": "06 - ServicioDeTelemedicina (proveedor de video simulado)",
+      "description": "SCRUM-99. Primero se ejercita el proveedor de video simulado solo, como un tercero (POST /externo/salas, sin autenticacion). Despues el componente: se crea y consulta la sesion de un turno de telemedicina sin pasar por la confirmacion del turno (ese enganche es SCRUM-95). Cada participante recibe solo su enlace; un tercero recibe 403.",
+      "item": [
+        {
+          "name": "Proveedor simulado - crear sala (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var sala = pm.response.json();",
+                  "pm.test('un enlace por participante, misma sala', function () {",
+                  "    pm.expect(sala.roomId).to.be.a('string');",
+                  "    pm.expect(sala.hostUrl).to.include(sala.roomId);",
+                  "    pm.expect(sala.guestUrl).to.include(sala.roomId);",
+                  "    pm.expect(sala.hostUrl).to.not.eql(sala.guestUrl);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/externo/salas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "externo",
+                "salas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"demo-postman\",\n  \"scheduledAt\": \"2027-03-21T10:00:00\"\n}"
+            },
+            "description": "El tercero, solo. hostUrl es el enlace del anfitrion (profesional) y guestUrl el del invitado (paciente)."
+          }
+        },
+        {
+          "name": "Proveedor simulado - caido (503)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('503', function () {",
+                  "    pm.response.to.have.status(503);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/externo/salas",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "externo",
+                "salas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"caer-demo\",\n  \"scheduledAt\": \"2027-03-21T10:00:00\"\n}"
+            },
+            "description": "Una reference que empieza con 'caer' simula el proveedor caido. Tambien se puede con la propiedad de sistema mediconecta.video.simular-caida=true."
+          }
+        },
+        {
+          "name": "Abrir franja de TELEMEDICINA (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.collectionVariables.set('turno_tele', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{profesional_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{profesional_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/disponibilidad",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "disponibilidad"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"2027-03-21T10:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PACIENTE_A reserva el turno (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_tele}}\n}"
+            }
+          }
+        },
+        {
+          "name": "Sin sesion todavia (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PACIENTE_A crea la sesion (201, solo su enlace)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "var s = pm.response.json();",
+                  "pm.test('enlace de paciente', function () {",
+                  "    pm.expect(s.rol).to.eql('PACIENTE');",
+                  "    pm.expect(s.enlace).to.match(/^https?:\\/\\//);",
+                  "    pm.expect(s).to.not.have.property('enlaceProfesional');",
+                  "});",
+                  "pm.collectionVariables.set('enlace_paciente_tele', s.enlace);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            },
+            "description": "ServicioDeTelemedicina.crearSesion llama al proveedor con el Jakarta REST Client y guarda la SesionVideo. Repetirla devuelve la misma sala."
+          }
+        },
+        {
+          "name": "PACIENTE_A la pide de nuevo (200, misma sala)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('el mismo enlace', function () {",
+                  "    pm.expect(pm.response.json().enlace).to.eql(pm.collectionVariables.get('enlace_paciente_tele'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            },
+            "description": "Idempotente: si el turno ya tiene sala para este paciente, se devuelve la misma sin llamar al proveedor, con 200 en vez de 201."
+          }
+        },
+        {
+          "name": "PROFESIONAL ve su enlace (200, distinto del paciente)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var s = pm.response.json();",
+                  "pm.test('enlace de anfitrion', function () {",
+                  "    pm.expect(s.rol).to.eql('PROFESIONAL');",
+                  "    pm.expect(s.enlace).to.not.eql(pm.collectionVariables.get('enlace_paciente_tele'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{profesional_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{profesional_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PACIENTE_A ve su enlace (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('el mismo enlace de paciente', function () {",
+                  "    pm.expect(pm.response.json().enlace).to.eql(pm.collectionVariables.get('enlace_paciente_tele'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sin credenciales (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            },
+            "description": "web.xml exige autenticacion para /api/telemedicina/*."
+          }
+        },
+        {
+          "name": "PACIENTE_B, ajeno al turno (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteB_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteB_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            },
+            "description": "Un paciente ajeno al turno no recibe ningun enlace."
+          }
+        },
+        {
+          "name": "ADMINISTRADOR (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            },
+            "description": "Para la sala el administrador es un tercero mas: @RolesAllowed del componente solo admite PACIENTE y PROFESIONAL."
+          }
+        },
+        {
+          "name": "Abrir franja PRESENCIAL (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.collectionVariables.set('turno_presencial_tele', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{profesional_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{profesional_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/disponibilidad",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "disponibilidad"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"2027-03-21T11:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Sesion de un turno presencial (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{profesional_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{profesional_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_presencial_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_presencial_tele}}"
+              ]
+            },
+            "description": "Un turno presencial no lleva sala y no se llama al proveedor."
+          }
+        }
+      ]
     }
   ]
 }
