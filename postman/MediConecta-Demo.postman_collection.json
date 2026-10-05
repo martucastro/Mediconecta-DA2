@@ -1640,6 +1640,56 @@
           }
         },
         {
+          "name": "PACIENTE_A la pide de nuevo (200, misma sala)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('el mismo enlace', function () {",
+                  "    pm.expect(pm.response.json().enlace).to.eql(pm.collectionVariables.get('enlace_paciente_tele'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            },
+            "description": "Idempotente: si el turno ya tiene sala para este paciente, se devuelve la misma sin llamar al proveedor, con 200 en vez de 201."
+          }
+        },
+        {
           "name": "PROFESIONAL ve su enlace (200, distinto del paciente)",
           "event": [
             {
@@ -1737,6 +1787,41 @@
                 "{{turno_tele}}"
               ]
             }
+          }
+        },
+        {
+          "name": "Sin credenciales (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele}}"
+              ]
+            },
+            "description": "web.xml exige autenticacion para /api/telemedicina/*."
           }
         },
         {

@@ -98,8 +98,11 @@ comprobar "sin sesion todavia"                404 "$(codigo -u "$PACI" "$BASE/te
 SESION=$(curl -s -u "$PACI" -X POST "$BASE/telemedicina/turno/$IDT")
 comprobar "el paciente crea la sesion"        "si" "$(printf '%s' "$SESION" | grep -q '"rol":"PACIENTE"' && echo si || echo no)"
 ENLACE_PROF=$(curl -s -u "$PROF" "$BASE/telemedicina/turno/$IDT")
+comprobar "crear de nuevo devuelve la misma (200)" 200 "$(codigo -u "$PROF" -X POST "$BASE/telemedicina/turno/$IDT")"
 comprobar "el profesional ve su enlace"       "si" "$(printf '%s' "$ENLACE_PROF" | grep -q '"rol":"PROFESIONAL"' && echo si || echo no)"
 comprobar "cada uno recibe un enlace distinto" "si" "$([ "$(printf '%s' "$SESION" | sed -n 's/.*"enlace":"\([^"]*\)".*/\1/p')" != "$(printf '%s' "$ENLACE_PROF" | sed -n 's/.*"enlace":"\([^"]*\)".*/\1/p')" ] && echo si || echo no)"
+comprobar "sin credenciales NO ve la sala"    401 "$(codigo "$BASE/telemedicina/turno/$IDT")"
+comprobar "un turno inexistente da 403"       403 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/999999999")"
 comprobar "el administrador NO ve la sala"    403 "$(codigo -u "$ADMIN" "$BASE/telemedicina/turno/$IDT")"
 AJENO="smoke-tele-$(date +%s)@mediconecta.com:cambiar123"
 curl -s -o /dev/null -H "Content-Type: application/json" \

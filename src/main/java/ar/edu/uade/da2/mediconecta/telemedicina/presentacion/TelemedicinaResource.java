@@ -4,6 +4,7 @@ import java.util.Map;
 
 import ar.edu.uade.da2.mediconecta.telemedicina.negocio.EnlaceDeSesion;
 import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ServicioDeTelemedicina;
+import ar.edu.uade.da2.mediconecta.telemedicina.negocio.SesionCreada;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -28,14 +29,16 @@ public class TelemedicinaResource {
 
     /**
      * Crea la sala del turno (o devuelve la que ya tiene) y responde con el
-     * enlace de quien la pidio. Permite crearla sin pasar por la confirmacion
-     * del turno; el enganche con confirmarTurno es el paso 2/2.
+     * enlace de quien la pidio: 201 si la creo esta llamada, 200 si ya existia.
+     * Permite crearla sin pasar por la confirmacion del turno; el enganche con
+     * confirmarTurno es el paso 2/2.
      */
     @POST
     @Produces(MediaType.APPLICATION_JSON)
     public Response crearSesion(@PathParam("turnoId") Long turnoId) {
-        servicio.crearSesion(turnoId);
-        return Response.status(Response.Status.CREATED)
+        SesionCreada resultado = servicio.crearSesion(turnoId);
+        Response.Status estado = resultado.nueva() ? Response.Status.CREATED : Response.Status.OK;
+        return Response.status(estado)
                 .entity(new EnlaceSesionDTO(servicio.obtenerEnlace(turnoId)))
                 .build();
     }

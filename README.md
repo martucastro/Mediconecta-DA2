@@ -392,10 +392,13 @@ O por la consola de administración: *Runtime → (tu servidor) → Messaging
 
 | Método | Ruta | Quién | Qué hace |
 |---|---|---|---|
-| `POST` | `/telemedicina/turno/{turnoId}` | paciente o profesional del turno | Crea la sala del turno (o devuelve la que ya tiene) y responde con el enlace de quien la pidió |
-| `GET` | `/telemedicina/turno/{turnoId}` | paciente o profesional del turno | El enlace de quien pregunta: el profesional recibe el de anfitrión y el paciente el de invitado, nunca los dos. `404` si todavía no hay sala |
+| `POST` | `/telemedicina/turno/{turnoId}` | paciente o profesional del turno | Crea la sala del turno y responde con el enlace de quien la pidió: `201` si la creó, `200` si ya existía |
+| `GET` | `/telemedicina/turno/{turnoId}` | paciente o profesional del turno | El enlace de quien pregunta: el profesional recibe el de anfitrión y el paciente el de invitado, nunca los dos. `404` si el turno no tiene una sala vigente |
 
-Cualquier otro usuario, administrador incluido, recibe `403`. Solo un turno de
+Cualquier otro usuario, administrador incluido, recibe `403`, y también si el
+turno no existe: así no se puede averiguar qué ids existen. Una sala deja de
+ser vigente si el turno se cancela o pasa a otro paciente; desde ese momento
+nadie recibe el enlace viejo. Solo un turno de
 `TELEMEDICINA` tomado por un paciente (`EN_HOLD` o `CONFIRMADO`) puede tener
 sala; uno presencial responde `409` sin llamar al proveedor. Si el proveedor no
 responde, `503` con `Retry-After`.
@@ -407,7 +410,11 @@ cree sola al confirmar, es SCRUM-95.
 el mismo WAR, como la pasarela de pago: `POST /api/externo/salas`, sin
 autenticación, con `{"reference": "...", "scheduledAt": "..."}`. Devuelve
 `roomId`, `hostUrl` (profesional) y `guestUrl` (paciente). Las salas son de
-Jitsi Meet y los enlaces funcionan de verdad. Para simular el proveedor caído,
+Jitsi Meet y los enlaces funcionan de verdad. En el simulador los dos enlaces
+apuntan a la misma sala y solo cambian el nombre con el que entra cada uno: la
+separación es de presentación, no de permisos. Un proveedor real daría enlaces
+con permisos distintos (anfitrión e invitado); el componente ya trata los dos
+como secretos separados. Para simular el proveedor caído,
 una `reference` que empiece con `caer`, o levantar WildFly con
 `-Dmediconecta.video.simular-caida=true`. `ServicioDeTelemedicina` lo llama por
 HTTP con el Jakarta REST Client; la URL se cambia con `-Dmediconecta.video.url`.
