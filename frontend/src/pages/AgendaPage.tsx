@@ -203,7 +203,7 @@ export default function AgendaPage() {
                 <li key={turno.id} className={`card appt${turno.estado === 'EN_HOLD' ? ' on-hold' : ''}`}>
                   <span className="appt-time">{hora(turno.fechaHora)}</span>
                   <div className="grow">
-                    {turno.pacienteId !== null ? (
+                    {turno.pacienteId != null ? (
                       <Link className="appt-name" to={`/historia?pacienteId=${turno.pacienteId}`}>{turno.pacienteNombre}</Link>
                     ) : (
                       <p className="appt-name">Sin paciente</p>

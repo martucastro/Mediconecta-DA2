@@ -181,7 +181,7 @@ export default function HoldPage() {
               <div><dt>Cobertura</dt><dd className={turno.coberturaAutorizada ? 'ok' : undefined}>{textoCobertura(turno)}</dd></div>
               <div>
                 <dt>Copago<span className="d"> a abonar en la consulta</span></dt>
-                <dd className="strong">{turno.copago === null ? '—' : PESOS.format(turno.copago)}</dd>
+                <dd className="strong">{turno.copago == null ? '—' : PESOS.format(turno.copago)}</dd>
               </div>
             </dl>
           </section>

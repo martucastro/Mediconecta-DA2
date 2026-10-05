@@ -6,21 +6,23 @@
 export type EstadoTurno = 'DISPONIBLE' | 'EN_HOLD' | 'CONFIRMADO' | 'CANCELADO'
 export type ModalidadTurno = 'PRESENCIAL' | 'TELEMEDICINA'
 
+// JSON-B omite los campos null en vez de mandarlos: los que pueden faltar
+// son opcionales, y se comparan con == null (cubre null y ausente).
 export interface TurnoDTO {
   id: number
   fechaHora: string
   estado: EstadoTurno
-  profesionalId: number | null
-  profesionalNombre: string | null
-  pacienteId: number | null
-  pacienteNombre: string | null
-  inicioHold: string | null
-  modalidad: ModalidadTurno | null
-  consultorio: string | null
-  coberturaAutorizada: boolean | null
-  coberturaPorcentaje: number | null
-  copago: number | null
-  numeroAutorizacion: string | null
+  profesionalId?: number | null
+  profesionalNombre?: string | null
+  pacienteId?: number | null
+  pacienteNombre?: string | null
+  inicioHold?: string | null
+  modalidad?: ModalidadTurno | null
+  consultorio?: string | null
+  coberturaAutorizada?: boolean | null
+  coberturaPorcentaje?: number | null
+  copago?: number | null
+  numeroAutorizacion?: string | null
 }
 
 const CLAVE_TURNO_EN_HOLD = 'mediconecta_turno_en_hold'
