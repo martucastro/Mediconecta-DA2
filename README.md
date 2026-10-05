@@ -184,6 +184,27 @@ Esto deja los archivos compilados en `src/main/webapp`, listos para que
 Este build **no** borra `WEB-INF` (`web.xml`, `beans.xml`), solo reemplaza los
 archivos que genera Vite.
 
+#### Sesión
+
+El login (`POST /api/usuarios/login`) no crea sesión en el servidor: el frontend
+guarda el usuario y el header `Authorization: Basic` (el correo y la contraseña
+codificados en base64, que **no es un cifrado**) en `sessionStorage`, y lo manda
+en cada pedido a la API.
+
+- Dura lo que dura la pestaña: sobrevive a un refresco, pero no a una pestaña
+  nueva ni a cerrar el navegador.
+- Cada ruta exige un rol: un paciente que pide `/agenda` vuelve a `/home`, y un
+  profesional que pide `/home` vuelve a `/agenda`. Es solo para no mostrar
+  pantallas que no le corresponden; la autorización real la hace el backend.
+- Un 401 en medio de la sesión (la credencial ya no vale) cierra la sesión y
+  vuelve al login.
+- El administrador no tiene pantallas: si inicia sesión en la interfaz web se le
+  avisa que opera por la API, y no se guarda la sesión.
+
+Guardar la credencial en el navegador es lo que pide la card porque hoy el
+backend solo habla HTTP Basic. Reemplazarlo por un token con vencimiento
+requiere un cambio de backend y queda fuera de esta entrega.
+
 ---
 
 ## Usuarios de prueba
@@ -322,9 +343,9 @@ volvé a correrlo.
 
 Están acá a propósito: son decisiones de alcance de esta entrega, no descuidos.
 
-- **Frontend con datos de prototipo.** Las pantallas de React ya están migradas
-  y desplegadas, pero todavía muestran datos fijos: conectarlas a la API real es
-  SCRUM-82 a 87.
+- **Frontend con datos de prototipo.** El login ya está conectado a la API, pero
+  el resto de las pantallas todavía muestran datos fijos: conectarlas es
+  SCRUM-83 a 87.
 - **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
   integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
 - **Un solo módulo Maven.** Los tres componentes conviven en un WAR. Separarlos en
