@@ -9,13 +9,14 @@ Trabajo Práctico Integrador de Desarrollo de Aplicaciones II, comisión Lunes T
 
 ## Qué hay implementado
 
-Seis componentes de negocio, cada uno con su arquitectura en capas:
+Siete componentes de negocio, cada uno con su arquitectura en capas:
 
 | Componente | Tipo | Responsabilidad |
 |---|---|---|
 | `ServicioDeUsuarios` | `@Stateless` | Registro, autenticación, perfiles y credenciales |
 | `ServicioDeTurnos` | `@Stateful` | Disponibilidad, reserva, hold de 5 minutos, confirmación |
 | `ServicioDeHistoriaClinica` | `@Stateless` | Antecedentes, diagnósticos y recetas |
+| `ServicioDeNotificaciones` | `@Stateless` (con `NotificacionMDB` como `@MessageDriven` colaborador) | Recordatorio de turno confirmado, consumido del tópico JMS |
 | `ServicioDeObrasSociales` | `@Stateless`, Adapter SOAP | Cobertura y autorización contra el legado de la obra social |
 | `ServicioDePagos` | `@Stateless`, Adapter REST | Cobro de copagos y reembolsos contra la pasarela de pago externa |
 | `ServicioDeFacturacion` | `@Stateless` | Reclamo de facturación a la obra social por turnos con cobertura autorizada |
@@ -25,6 +26,7 @@ ar.edu.uade.da2.mediconecta
   usuarios/{presentacion, negocio, datos}
   turnos/{presentacion, negocio, datos}
   historiaclinica/{presentacion, negocio, datos}
+  notificaciones/{presentacion, negocio, datos}
   obrassociales/{negocio, datos}       sin HTTP: lo invocan otros componentes
   pagos/{presentacion, negocio, datos}
   facturacion/{presentacion, negocio, datos}
@@ -331,6 +333,57 @@ Siempre `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre
 fuera de la transacción y su falla ya no podría frenar la confirmación. El
 criterio completo está en `docs/documento-tecnico.md`, sección 9.2.
 
+### Notificaciones
+
+A diferencia de los puntos de extensión de arriba (sincrónicos, dentro de la
+misma transacción), el recordatorio de turno confirmado es **asincrónico**:
+`ServicioDeTurnos.confirmarTurno` publica un `MapMessage` en el tópico JMS
+`java:/jms/topic/TurnoConfirmado` (campos `turnoId`, `pacienteId`,
+`profesionalId`, `fechaHora`) dentro de la misma transacción que la
+confirmación, pero **quien lo procesa no**: `NotificacionMDB`
+(`notificaciones/presentacion`) lo consume en un hilo propio del contenedor,
+después de que la transacción de `confirmarTurno` ya cerró. La respuesta HTTP
+del `PUT /turnos/{id}/confirmar` no espera a que el mensaje se procese.
+
+`NotificacionMDB` solo traduce el mensaje y delega en
+`ServicioDeNotificaciones` (`@Stateless`), que arma el recordatorio, lo "envía"
+(simulado por ahora: un log, porque no hay proveedor de email/SMS todavía — el
+método `enviar()` es el punto de extensión pensado para un Strategy por canal
+el día que lo haya) y persiste un registro de `Notificacion`, para que la demo
+tenga evidencia de que el mensaje se consumió sin depender del log.
+
+`GET /api/notificaciones/mias` (solo PACIENTE) devuelve las notificaciones del
+paciente autenticado, para verlas desde Postman o el frontend sin entrar a la
+base. El paciente sale del usuario logueado y no de un parámetro, así que nadie
+puede pedir las de otro. Un profesional o un administrador reciben `403`: las
+notificaciones se generan para el paciente del turno, y sin credenciales la
+respuesta es `401`, como en el resto de la API.
+
+#### Política de redelivery
+
+No hay configuración propia de redelivery en `mediconecta-setup.cli`: se usa
+la que trae WildFly por defecto en `standalone-full.xml` para el
+address-setting comodín (`#`), que aplica a este tópico igual que a cualquier
+otro:
+
+- **Hasta 10 reintentos** (`max-delivery-attempts`), sin demora entre uno y
+  el siguiente (`redelivery-delay=0`).
+- Agotados los reintentos, el mensaje se mueve a la **cola de mensajes
+  muertos** (`jms.queue.DLQ`), en vez de perderse.
+
+Si `NotificacionMDB.onMessage` lanza una excepción sin capturarla (por
+ejemplo, porque la base no responde), el contenedor no confirma el mensaje:
+Artemis lo reintenta solo, sin que el componente tenga que programar nada.
+Verificar los mensajes en la DLQ, por CLI:
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect \
+  "/subsystem=messaging-activemq/server=default/jms-queue=DLQ:count-messages"
+```
+
+O por la consola de administración: *Runtime → (tu servidor) → Messaging
+(ActiveMQ) → default → Queue → DLQ*.
+
 ### Facturación: reclamo a la obra social
 
 `ServicioDeFacturacion` **no** es un observador de `PuntosDeExtension.RECLAMO`
@@ -490,9 +543,11 @@ Están acá a propósito: son decisiones de alcance de esta entrega, no descuido
 - **Frontend con datos de prototipo.** El login ya está conectado a la API, pero
   el resto de las pantallas todavía muestran datos fijos: conectarlas es
   SCRUM-83 a 87.
+- **Notificaciones sin canal real.** El envío de recordatorios es simulado (log);
+  no hay proveedor de email/SMS integrado.
 - **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
   integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
-- **Un solo módulo Maven.** Los seis componentes conviven en un WAR. Separarlos en
+- **Un solo módulo Maven.** Los siete componentes conviven en un WAR. Separarlos en
   módulos es lo que corresponde cuando se despliegan por separado, y todavía no es
   el caso.
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
