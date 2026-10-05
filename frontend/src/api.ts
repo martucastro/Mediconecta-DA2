@@ -123,8 +123,16 @@ export async function api<T = unknown>(path: string, opciones: RequestInit = {})
 async function errorDe(respuesta: Response, path: string, habiaSesion: boolean): Promise<ApiError> {
   const estado = respuesta.status
 
-  // Un 5xx puede traer una pagina de error entera (con el stack trace): nunca
-  // se muestra lo que diga el servidor, solo un mensaje generico.
+  // 503: un servicio externo (por ejemplo la obra social) no esta disponible.
+  // A diferencia de otros 5xx, el backend responde {"error": "..."} con un
+  // mensaje pensado para mostrarse, no una pagina de error con stack trace.
+  if (estado === 503) {
+    const mensaje = mensajeDelBackend(await respuesta.text())
+    return new ApiError(mensaje || 'El servicio no está disponible. Probá de nuevo en unos minutos.', estado)
+  }
+
+  // El resto de los 5xx puede traer una pagina de error entera (con el stack
+  // trace): nunca se muestra lo que diga el servidor, solo un mensaje generico.
   if (estado >= 500) {
     return new ApiError('El servidor no pudo procesar el pedido. Probá de nuevo en unos minutos.', estado)
   }
