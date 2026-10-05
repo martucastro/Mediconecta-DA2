@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import jakarta.ejb.EJBAccessException;
-import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -23,7 +23,7 @@ import jakarta.ws.rs.core.SecurityContext;
  * sin depender del log ni de entrar a la base a mano.
  */
 @Path("/notificaciones")
-@ApplicationScoped
+@RequestScoped
 public class NotificacionesResource {
 
     @Inject
