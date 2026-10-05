@@ -58,6 +58,13 @@ comprobar "paciente NO abre disponibilidad"   403 "$(codigo -u "$PACI" -H "Conte
 RESERVA=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID}" "$BASE/turnos")
 comprobar "reservar deja el turno EN_HOLD"    "si" "$(printf '%s' "$RESERVA" | grep -q EN_HOLD && echo si || echo no)"
 comprobar "la respuesta NO filtra el hash"    "si" "$(printf '%s' "$RESERVA" | grep -q contrasena && echo no || echo si)"
+# El paciente semilla es afiliado al plan medio (70%): una CONSULTA de 20000 le deja 6000.
+comprobar "la reserva calcula el copago del 70%"  "si" "$(printf '%s' "$RESERVA" | grep -q '"copago":6000.00' && echo si || echo no)"
+comprobar "la reserva guarda la autorizacion"     "si" "$(printf '%s' "$RESERVA" | grep -q '"numeroAutorizacion":"AUT-OS-2002-CONSULTA"' && echo si || echo no)"
+ID_TELE=$(printf '%s' "$TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+RESERVA_TELE=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID_TELE}" "$BASE/turnos")
+comprobar "telemedicina se cotiza como teleconsulta" "si" "$(printf '%s' "$RESERVA_TELE" | grep -q '"copago":4500.00' && echo si || echo no)"
+comprobar "cancelar libera el turno de telemedicina" 200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID_TELE/cancelar")"
 comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "$BASE/turnos/$ID/confirmar")"
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID/confirmar")"
 
