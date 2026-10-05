@@ -1,25 +1,29 @@
 import { Link } from 'react-router-dom'
+import { ASSETS } from '../rutas'
+import { useTitulo } from '../useTitulo'
 
 export default function HistoriaPage() {
+  useTitulo('Historia clínica')
+
   return (
     <>
       <header className="topbar">
         <Link className="wordmark" to="/agenda">
-          <img src="/mediconecta/assets/logo.svg" alt="" />
+          <img src={ASSETS.logo} alt="" />
           MediConecta
         </Link>
         <nav className="nav">
           <Link to="/agenda">Mi agenda</Link>
           <Link to="/historia" aria-current="page">Pacientes</Link>
           <a href="#">Facturación</a>
-          <img className="avatar" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
         </nav>
-        <img className="avatar m" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
       </header>
 
       <main className="content stack" style={{ gap: 26 }}>
         <article className="card person" style={{ padding: '22px 24px' }}>
-          <img className="avatar" src="/mediconecta/assets/avatar.svg" alt="" style={{ width: 54, height: 54 }} />
+          <img className="avatar" src={ASSETS.avatar} alt="" style={{ width: 54, height: 54 }} />
           <div className="stack grow" style={{ gap: 5 }}>
             <h1 className="person-name">Sofía Ramírez</h1>
             <p className="muted" style={{ fontSize: 14 }}>34 años · DNI 38.492.117 · OSDE 210 · Afiliada 4471-88</p>

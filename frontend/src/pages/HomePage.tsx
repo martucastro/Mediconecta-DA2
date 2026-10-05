@@ -1,22 +1,26 @@
 import { Link } from 'react-router-dom'
 import BotonCerrarSesion from './BotonCerrarSesion'
+import { ASSETS } from '../rutas'
+import { useTitulo } from '../useTitulo'
 
 export default function HomePage() {
+  useTitulo('Mis turnos')
+
   return (
     <>
       <header className="topbar">
         <Link className="wordmark" to="/home">
-          <img src="/mediconecta/assets/logo.svg" alt="" />
+          <img src={ASSETS.logo} alt="" />
           MediConecta
         </Link>
         <nav className="nav">
           <Link to="/home" aria-current="page">Mis turnos</Link>
           <a href="#">Mi historia clínica</a>
           <a href="#">Cobertura</a>
-          <img className="avatar" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
           <BotonCerrarSesion />
         </nav>
-        <img className="avatar m" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
       </header>
 
       <main className="content home">

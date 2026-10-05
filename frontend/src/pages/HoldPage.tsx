@@ -1,16 +1,20 @@
 import { Link } from 'react-router-dom'
+import { ASSETS } from '../rutas'
+import { useTitulo } from '../useTitulo'
 
 export default function HoldPage() {
+  useTitulo('Confirmar turno')
+
   return (
     <>
       <header className="topbar">
         <Link className="wordmark d" to="/home">
-          <img src="/mediconecta/assets/logo.svg" alt="" />
+          <img src={ASSETS.logo} alt="" />
           MediConecta
         </Link>
         <Link className="m" to="/disponibilidad" style={{ fontWeight: 500 }}>← Turno</Link>
-        <img className="avatar d" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
-        <img className="m" src="/mediconecta/assets/logo.svg" alt="MediConecta" style={{ width: 18, height: 18 }} />
+        <img className="avatar d" src={ASSETS.avatar} alt="Perfil" />
+        <img className="m" src={ASSETS.logo} alt="MediConecta" style={{ width: 18, height: 18 }} />
       </header>
 
       <main className="stage">

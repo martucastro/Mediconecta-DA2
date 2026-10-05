@@ -1,27 +1,31 @@
 import { Link } from 'react-router-dom'
+import { ASSETS } from '../rutas'
+import { useTitulo } from '../useTitulo'
 
 export default function DisponibilidadPage() {
+  useTitulo('Disponibilidad')
+
   return (
     <>
       <header className="topbar">
         <Link className="wordmark" to="/home">
-          <img src="/mediconecta/assets/logo.svg" alt="" />
+          <img src={ASSETS.logo} alt="" />
           MediConecta
         </Link>
         <nav className="nav">
           <Link to="/home" aria-current="page">Mis turnos</Link>
           <a href="#">Mi historia clínica</a>
           <a href="#">Cobertura</a>
-          <img className="avatar" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
         </nav>
-        <img className="avatar m" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
       </header>
 
       <main className="content avail">
         <Link className="muted" to="/home" style={{ fontSize: 14, fontWeight: 500 }}>← Volver a la búsqueda</Link>
 
         <article className="card person">
-          <img className="avatar" src="/mediconecta/assets/avatar.svg" alt="" />
+          <img className="avatar" src={ASSETS.avatar} alt="" />
           <div className="stack grow" style={{ gap: 5 }}>
             <h1 className="person-name">Dra. Carla Benítez</h1>
             <p className="muted" style={{ fontSize: 14 }}>Clínica médica · Centro Médico Belgrano · MN 84512</p>

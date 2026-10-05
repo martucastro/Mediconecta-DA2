@@ -1,11 +1,16 @@
 import { Navigate, Outlet } from 'react-router-dom'
-import { obtenerSesion } from '../api'
+import { decidirAcceso, obtenerSesion, type Rol } from '../api'
 
-export default function RutaProtegida() {
-  const sesion = obtenerSesion()
+interface Props {
+  /** Roles que pueden entrar. Sin esto, alcanza con tener sesion. */
+  roles?: Rol[]
+}
 
-  if (!sesion) {
-    return <Navigate to="/" replace />
+export default function RutaProtegida({ roles }: Props) {
+  const destino = decidirAcceso(obtenerSesion(), roles)
+
+  if (destino) {
+    return <Navigate to={destino} replace />
   }
 
   return <Outlet />

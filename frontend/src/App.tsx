@@ -13,10 +13,13 @@ function App() {
     <Routes>
       <Route path="/" element={<LoginPage />} />
 
-      <Route element={<RutaProtegida />}>
+      <Route element={<RutaProtegida roles={['PACIENTE']} />}>
         <Route path="/home" element={<HomePage />} />
         <Route path="/disponibilidad" element={<DisponibilidadPage />} />
         <Route path="/hold" element={<HoldPage />} />
+      </Route>
+
+      <Route element={<RutaProtegida roles={['PROFESIONAL']} />}>
         <Route path="/agenda" element={<AgendaPage />} />
         <Route path="/historia" element={<HistoriaPage />} />
       </Route>
