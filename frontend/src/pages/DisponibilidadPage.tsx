@@ -136,9 +136,14 @@ export default function DisponibilidadPage() {
           const disponibles = await api<TurnoDTO[]>(`/turnos?profesionalId=${profesionalId}`)
           setTurnos(disponibles)
           setTurnoSeleccionado(null)
-          // Si el dia elegido se quedo sin turnos, se pasa al primero que tenga.
+          // Si el dia elegido se quedo sin turnos, se pasa al siguiente que
+          // tenga (o al ultimo, si no hay ninguno despues). Las claves son
+          // AAAA-MM-DD, asi que compararlas como texto respeta el orden.
           const diasConTurnos = [...agruparPorDia(disponibles).keys()]
-          setDiaSeleccionado((dia) => (dia && diasConTurnos.includes(dia) ? dia : diasConTurnos[0] ?? null))
+          setDiaSeleccionado((dia) => {
+            if (dia === null || diasConTurnos.includes(dia)) return dia ?? diasConTurnos[0] ?? null
+            return diasConTurnos.find((d) => d > dia) ?? diasConTurnos.at(-1) ?? null
+          })
         } catch {
           // si tampoco se puede refrescar, se deja visible el error de la reserva
         }
