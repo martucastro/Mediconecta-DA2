@@ -166,8 +166,9 @@ public class ServicioDeTurnos {
         turno.setPaciente(paciente);
 
         // PUNTO DE EXTENSION (reserva). Observadores previstos:
-        //   COBERTURA (SCRUM-91): valida la cobertura y completa los campos de
-        //   cobertura y copago del turno.
+        //   COBERTURA (SCRUM-91, CoberturaEnLaReserva): consulta la cobertura y
+        //   completa los campos de cobertura y copago del turno; si la obra
+        //   social no responde, la reserva falla entera.
         // Va despues de asignar el paciente (la cobertura es suya) y antes de
         // retenerlo: si la cobertura rechaza, no queda ningun hold que liberar.
         eventoReserva.fire(new TurnoEnReserva(turno));

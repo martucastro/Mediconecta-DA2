@@ -123,6 +123,28 @@ public class ServicioDeObrasSociales {
     }
 
     /**
+     * Lo que pide la reserva de un turno: la cobertura del paciente con la
+     * autorización ya pedida, o, si no tiene obra social registrada, la
+     * cobertura de un particular (nada cubierto, copago igual al arancel).
+     *
+     * Participa de la transacción de la reserva. Si el legado no responde lanza
+     * ObraSocialNoDisponibleException, que hace rollback: la reserva falla
+     * entera en vez de quedar a medias o con un copago que no es el real.
+     */
+    @TransactionAttribute(TransactionAttributeType.REQUIRED)
+    public Cobertura cotizarReserva(Long pacienteId, Prestacion prestacion) {
+        if (prestacion == null) {
+            throw new DatosInvalidosException("La prestación es obligatoria.");
+        }
+        validarPaciente(pacienteId);
+        if (afiliacionDAO.buscarPorPaciente(pacienteId) == null) {
+            return new Cobertura(false, 0, prestacion.getArancel(), null,
+                    "El paciente no tiene obra social registrada: se reserva como particular.");
+        }
+        return autorizarPrestacion(pacienteId, prestacion);
+    }
+
+    /**
      * Registra o corrige con qué DNI y número de afiliado conoce la obra social
      * al paciente.
      */

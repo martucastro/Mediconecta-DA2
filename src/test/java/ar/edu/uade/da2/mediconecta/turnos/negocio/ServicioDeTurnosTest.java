@@ -14,6 +14,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -28,6 +29,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Cobertura;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.CoberturaEnLaReserva;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Prestacion;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSociales;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
@@ -166,6 +172,40 @@ class ServicioDeTurnosTest {
         assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
         assertTrue(eventoConfirmacion.disparados().isEmpty(),
                 "Reservar no puede disparar los pasos de la confirmacion (ni crear salas)");
+    }
+
+    @Test
+    void reservarConElObservadorDeCoberturaDejaElCopagoEnElTurnoRetenido() throws Exception {
+        Turno turno = turnoDisponible(12L);
+        prepararReserva(turno);
+        ServicioDeObrasSociales obrasSociales = mock(ServicioDeObrasSociales.class);
+        when(obrasSociales.cotizarReserva(paciente.getId(), Prestacion.CONSULTA)).thenReturn(
+                new Cobertura(true, 70, new BigDecimal("6000.00"), "AUT-OS-2002-CONSULTA", "ok"));
+        eventoReserva.observadoPor(observadorDeCobertura(obrasSociales)::alReservar);
+
+        servicio.reservarTurno(12L);
+
+        assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
+        assertEquals(new BigDecimal("6000.00"), turno.getCopago());
+        assertEquals(new BigDecimal("70"), turno.getCoberturaPorcentaje());
+        assertEquals("AUT-OS-2002-CONSULTA", turno.getNumeroAutorizacion());
+    }
+
+    @Test
+    void conElLegadoCaidoLaReservaFallaEnteraYElTurnoSigueDisponible() throws Exception {
+        Turno turno = turnoDisponible(13L);
+        prepararReserva(turno);
+        ServicioDeObrasSociales obrasSociales = mock(ServicioDeObrasSociales.class);
+        when(obrasSociales.cotizarReserva(paciente.getId(), Prestacion.CONSULTA))
+                .thenThrow(new ObraSocialNoDisponibleException("no respondió"));
+        eventoReserva.observadoPor(observadorDeCobertura(obrasSociales)::alReservar);
+
+        assertThrows(ObraSocialNoDisponibleException.class, () -> servicio.reservarTurno(13L));
+
+        assertEquals(EstadoTurno.DISPONIBLE, turno.getEstado());
+        assertNull(turno.getCopago());
+        verify(turnoDAO, never()).actualizar(any());
+        verify(expirador, never()).programar(anyLong(), anyLong());
     }
 
     @Test
@@ -325,6 +365,13 @@ class ServicioDeTurnosTest {
         Usuario usuario = new Usuario("Nombre", email, rol, "hash");
         usuario.setId(id);
         return usuario;
+    }
+
+    private static CoberturaEnLaReserva observadorDeCobertura(ServicioDeObrasSociales obrasSociales)
+            throws Exception {
+        CoberturaEnLaReserva observador = new CoberturaEnLaReserva();
+        inyectar(observador, "obrasSociales", obrasSociales);
+        return observador;
     }
 
     private static void inyectar(Object destino, String campo, Object valor) throws Exception {
