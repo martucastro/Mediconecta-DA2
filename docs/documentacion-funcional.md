@@ -23,9 +23,9 @@ Una historia "Implementada" tiene endpoint y rol funcionando de punta a punta. "
 | Paciente | Consultar mi propia historia clínica | Implementada | `GET /api/historias/paciente/{pacienteId}` y `/entradas` |
 | Paciente | Pagar el copago de un turno | Implementada | `POST /api/pagos` |
 | Paciente | Consultar el estado de mi pago | Implementada | `GET /api/pagos/{id}` y `GET /api/pagos?turnoId=` |
-| Paciente | Ver que mi cobertura se valide automáticamente al reservar | En revisión (SCRUM-91, PR #19) | — (`reservarTurno`, evento `TurnoEnReserva`) |
-| Paciente | Ver sólo mis propios turnos, sin conocer sus id | En revisión (PR #20) | `GET /api/turnos/mios` (no existe en esta rama) |
-| Paciente | Recibir una notificación cuando se confirma mi turno | En revisión (PR #15) | — (segundo suscriptor del tópico `TurnoConfirmado`) |
+| Paciente | Ver que mi cobertura se valide automáticamente al reservar | Implementada (SCRUM-91, PR #19) | — (`reservarTurno`, evento `TurnoEnReserva`) |
+| Paciente | Ver sólo mis propios turnos, sin conocer sus id | Implementada (PR #20) | `GET /api/turnos/mios` |
+| Paciente | Recibir una notificación cuando se confirma mi turno | Implementada (PR #15) | segundo suscriptor del tópico `TurnoConfirmado`; `GET /api/notificaciones/mias` |
 | Paciente | Que se me cobre el copago automáticamente al confirmar el turno | Planificada (SCRUM-93) | — (`TurnoEnConfirmacion`, `PuntosDeExtension.COBRO_COPAGO`) |
 | Profesional de salud | Iniciar sesión | Implementada | `POST /api/usuarios/login` |
 | Profesional de salud | Abrir una franja horaria disponible | Implementada | `POST /api/turnos/disponibilidad` |
@@ -45,8 +45,8 @@ Una historia "Implementada" tiene endpoint y rol funcionando de punta a punta. "
 | Sistema de la obra social (externo) | Recibir la presentación de un reclamo ya autorizado | Implementada (legado simulado) | SOAP `presentarReclamo` |
 | Pasarela de pago (externo) | Recibir un pedido de cobro | Implementada (simulador) | `POST /api/externo/pagos` |
 | Pasarela de pago (externo) | Recibir un pedido de reembolso | Implementada (simulador) | sub-recurso `.../reembolsos` de `/api/externo/pagos` |
-| Transversal (todos los roles) | Operar el sistema desde una interfaz web en vez de un cliente HTTP manual | En revisión (PR #12 / #14) | SPA React, consume la API REST con HTTP Basic |
-| Transversal (paciente y profesional) | Atender o atenderse por videoconsulta | Planificada (SCRUM-95 / SCRUM-99) | — (`ServicioDeTelemedicina`, no implementado) |
+| Transversal (todos los roles) | Operar el sistema desde una interfaz web en vez de un cliente HTTP manual | Implementada para el login (PR #12 / #14); resto de pantallas pendiente (SCRUM-83 a 87) | SPA React, login conectado a `POST /api/usuarios/login` con redirección por rol |
+| Transversal (paciente y profesional) | Atender o atenderse por videoconsulta | En revisión (PR #21, SCRUM-99); enganche a la confirmación planificado (SCRUM-95) | `POST /api/externo/salas`, `POST`/`GET /api/telemedicina/turno/{turnoId}` |
 
 ## Paciente
 
@@ -150,30 +150,32 @@ Una historia "Implementada" tiene endpoint y rol funcionando de punta a punta. "
 
 **Como** paciente **quiero** que al reservar un turno se consulte automáticamente mi cobertura con la obra social **para** saber de antemano si está autorizada y cuánto voy a pagar de copago.
 
-- El Adapter que hace esa consulta ya existe y está probado (`ServicioDeObrasSociales`, documento-tecnico.md sección 6.3), pero `reservarTurno` todavía no lo invoca.
-- La integración está en curso en el evento `TurnoEnReserva` (SCRUM-91).
+- El Adapter que hace esa consulta (`ServicioDeObrasSociales`, documento-tecnico.md sección 6.3) ya está enganchado a la reserva: `CoberturaEnLaReserva` observa `TurnoEnReserva` y completa la cobertura antes de retener el turno.
+- Si el legado de la obra social no responde, la reserva completa falla con `503` (no se reserva como particular sin aviso); un paciente sin afiliación se reserva igual, como particular, pagando el valor total.
 
-**Estado:** En revisión (PR #19, no mergeado en esta rama).
-**Endpoint:** no expone un endpoint propio; se integraría dentro de `POST /api/turnos`.
+**Estado:** Implementada (SCRUM-91, PR #19).
+**Endpoint:** no expone un endpoint propio; está integrada dentro de `POST /api/turnos`.
 
 ### Ver sólo mis propios turnos, sin conocer sus id
 
 **Como** paciente **quiero** un listado de mis propios turnos **para** no tener que recordar el id de cada uno para confirmarlo o cancelarlo.
 
-- Verificado: `GET /api/turnos/mios` no existe en el código de esta rama (ningún `@Path`/`@GET` con ese nombre en `TurnosResource`); hoy sólo existe el listado de disponibilidad por profesional.
+- Un paciente autenticado recibe sus turnos en estado `EN_HOLD` o `CONFIRMADO`.
+- Un profesional autenticado recibe su propia agenda, en cualquier estado, con el filtro opcional `?fecha=` (formato `YYYY-MM-DD`) para acotarla a un día puntual.
+- Un administrador autenticado recibe `403`: el endpoint es la vista personal de un paciente o un profesional, no una consulta administrativa.
 
-**Estado:** En revisión (PR #20, no mergeado en esta rama).
-**Endpoint:** `GET /api/turnos/mios` (propuesto).
+**Estado:** Implementada (PR #20).
+**Endpoint:** `GET /api/turnos/mios` (opcionalmente `?fecha=` para el profesional).
 
 ### Recibir una notificación cuando se confirma mi turno
 
 **Como** paciente **quiero** recibir una notificación cuando mi turno se confirma **para** enterarme sin tener que consultar la aplicación.
 
-- `ServicioDeTurnos.confirmarTurno` ya publica el evento `TurnoConfirmado` en un tópico JMS (documento-tecnico.md, sección 9.1); falta el componente que lo consuma para notificar al paciente.
-- El código hace referencia a este suscriptor como `NotificacionMDB`, pero esa clase no existe todavía en esta rama (verificado: no hay ningún archivo `NotificacionMDB.java` en el repositorio).
+- `ServicioDeTurnos.confirmarTurno` publica el evento `TurnoConfirmado` en un tópico JMS (documento-tecnico.md, sección 9.1); `NotificacionMDB` es el segundo suscriptor de ese tópico y genera la notificación del paciente.
+- El paciente puede además consultar sus propias notificaciones con `GET /api/notificaciones/mias`; sólo `PACIENTE` puede llamarlo (`web.xml` protege `/api/notificaciones/*`).
 
-**Estado:** En revisión (PR #15, no mergeado en esta rama).
-**Endpoint:** no es un endpoint HTTP; sería un segundo suscriptor del tópico `TurnoConfirmado`.
+**Estado:** Implementada (PR #15).
+**Endpoint:** segundo suscriptor del tópico `TurnoConfirmado`; `GET /api/notificaciones/mias`.
 
 ### Que se me cobre el copago automáticamente al confirmar el turno
 
@@ -351,7 +353,7 @@ Estas historias describen al sistema externo como actor: qué espera recibir y q
 **Estado:** Implementada (simulador).
 **Endpoint:** sub-recurso de reembolsos de `/api/externo/pagos` (`PasarelaDePagoRestClient`).
 
-## Historias transversales (futuras)
+## Historias transversales
 
 No pertenecen a un solo actor; afectan a varios a la vez.
 
@@ -360,15 +362,18 @@ No pertenecen a un solo actor; afectan a varios a la vez.
 **Como** paciente, profesional o administrador **quiero** usar una interfaz web **para** no tener que llamar a la API con un cliente HTTP manual.
 
 - La SPA (React) consume la misma API REST documentada arriba, con HTTP Basic.
+- El login ya está conectado: `POST /api/usuarios/login` autentica contra la API real y redirige a cada usuario según su rol (paciente, profesional o administrador).
+- El resto de las pantallas (agenda, disponibilidad, historia clínica, hold) todavía muestra datos de prototipo, no la respuesta real de la API; conectarlas es SCRUM-83 a SCRUM-87, pendiente.
 
-**Estado:** En revisión (PR #12 y PR #14, no mergeadas en esta rama).
-**Endpoint:** no agrega endpoints nuevos; consume los ya listados.
+**Estado:** Implementada para el login (PR #12 y PR #14); resto de las pantallas pendiente (SCRUM-83 a 87).
+**Endpoint:** no agrega endpoints nuevos; el login consume `POST /api/usuarios/login`.
 
 ### Atender o atenderse por videoconsulta
 
 **Como** paciente **quiero** una sala de videollamada para mi turno de telemedicina, y **como** profesional **quiero** atenderlo por ese mismo medio, **para** no requerir presencia física en el consultorio.
 
-- `ModalidadTurno.TELEMEDICINA` ya existe como valor del turno, pero no hay ningún `ServicioDeTelemedicina` implementado: verificado, no existe ese paquete ni esa clase en `src/main`.
+- `ModalidadTurno.TELEMEDICINA` ya existe como valor del turno. El proveedor de video simulado (PR #21, SCRUM-99) expone `POST /api/externo/salas` y `POST`/`GET /api/telemedicina/turno/{turnoId}`.
+- Falta enganchar la creación de sala al flujo de confirmación del turno: eso es SCRUM-95, planificado.
 
-**Estado:** Planificada (SCRUM-95 / SCRUM-99). Sin código.
-**Endpoint:** no aplica todavía.
+**Estado:** En revisión (PR #21, SCRUM-99); enganche a la confirmación planificado (SCRUM-95).
+**Endpoint:** `POST /api/externo/salas`, `POST`/`GET /api/telemedicina/turno/{turnoId}` (en revisión).
