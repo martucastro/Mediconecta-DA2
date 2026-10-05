@@ -93,6 +93,11 @@ export async function api<T = unknown>(path: string, opciones: RequestInit = {})
   const auth = sessionStorage.getItem(CLAVE_AUTH)
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Le dice al backend que el pedido viene del SPA (AutenticacionBasica,
+    // SCRUM-103): sin esto, un 401 manda WWW-Authenticate y el navegador
+    // muestra su popup nativo de credenciales antes de que este fetch pueda
+    // manejar la respuesta.
+    'X-Requested-With': 'XMLHttpRequest',
     ...(opciones.headers as Record<string, string> | undefined),
   }
   if (auth) {

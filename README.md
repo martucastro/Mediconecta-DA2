@@ -241,7 +241,12 @@ en cada pedido a la API.
   profesional que pide `/home` vuelve a `/agenda`. Es solo para no mostrar
   pantallas que no le corresponden; la autorización real la hace el backend.
 - Un 401 en medio de la sesión (la credencial ya no vale) cierra la sesión y
-  vuelve al login.
+  vuelve al login. Esto depende de que el fetch pueda manejar la respuesta: la
+  API omite `WWW-Authenticate` cuando el pedido viene marcado con
+  `X-Requested-With: XMLHttpRequest` (lo manda el frontend en cada llamada),
+  así el navegador no abre su popup nativo de credenciales antes de que el
+  código de arriba se ejecute. Un curl o un Postman que no manden ese
+  encabezado sí reciben `WWW-Authenticate`, como corresponde a HTTP Basic.
 - El administrador no tiene pantallas: si inicia sesión en la interfaz web se le
   avisa que opera por la API, y no se guarda la sesión.
 
