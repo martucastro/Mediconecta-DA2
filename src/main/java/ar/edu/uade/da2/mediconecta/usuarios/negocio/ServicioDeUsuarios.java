@@ -111,4 +111,14 @@ public class ServicioDeUsuarios {
     public List<Usuario> listarUsuarios() {
         return usuarioDAO.listarTodos();
     }
+
+    /**
+     * Profesionales registrados, para que un paciente elija con quien sacar
+     * turno. Es publico a proposito (hereda el @PermitAll de la clase): el
+     * paciente lo necesita antes de reservar. La capa de presentacion es la
+     * que decide que campos salen; aca solo se filtra por rol.
+     */
+    public List<Usuario> listarProfesionales() {
+        return usuarioDAO.buscarPorRol(ROL_PROFESIONAL);
+    }
 }

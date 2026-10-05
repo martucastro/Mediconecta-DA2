@@ -130,7 +130,7 @@ Este flujo atraviesa las tres capas y varios de los ocho componentes:
 7. Al confirmarse el turno se publica `TurnoConfirmado` en un tópico JMS, que `ServicioDeNotificaciones` consume asincrónicamente.
 8. La SPA recibe `201 Created`.
 
-Los pasos 1 a 3, 6 (parcialmente, sección 11) y la mitad publicadora del paso 7 (sección 9.1) están respaldados por código real, verificado en la sección 10. El componente del paso 4 ya existe (sección 6.3), pero `ServicioDeTurnos` todavía no lo invoca al reservar. El paso 5 y el lado consumidor del paso 7 (`ServicioDeNotificaciones`) describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
+Los pasos 1 a 4, 6 (parcialmente, sección 11) y la mitad publicadora del paso 7 (sección 9.1) están respaldados por código real, verificado en la sección 10. El paso 4 lo ejecuta `CoberturaEnLaReserva`, un observador de `TurnoEnReserva` que llama a `ServicioDeObrasSociales` (sección 6.3). El paso 5 y el lado consumidor del paso 7 (`ServicioDeNotificaciones`) describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
 
 ## 6. Evidencia de implementación
 
@@ -219,12 +219,36 @@ El mensaje de la tercera está pensado para mostrarse tal cual ("El sistema de l
 
 **Pruebas.** La lógica se prueba sin contenedor ni red. La fachada, con el port y los DAO como dobles: qué se guarda y cuándo (sólo si se autorizó, y con número), y qué se rechaza (paciente inexistente o que no es paciente, sin afiliación, prestación nula). El adaptador, con un spy que reemplaza `nuevoPuerto`, la única parte que necesita un runtime de JAX-WS, y un `SOAPFault` simulado: traducción de la respuesta, respuesta nula y cada tipo de falla contra la excepción que corresponde. También tienen pruebas el mapper a `503` y el cálculo de copago del simulador. Lo que sí requiere el servidor desplegado (el cableado de CDI y CXF, los timeouts reales y el código `Client` del fault) se verifica en la sección 10.
 
-**Para SCRUM-91 (integración con la reserva).** Cuatro cosas que conviene tener presentes al engancharlo en el evento `TurnoEnReserva`:
+#### Integración con la reserva (SCRUM-91)
 
-- Un timeout no es un rechazo. Si el legado autorizó pero la respuesta se perdió, queda una autorización remota que no figura en `autorizaciones_prestacion`. Y si la reserva hace rollback después de que el legado autorizó, la fila local se deshace pero la autorización remota queda sin compensar. Hace falta una baja o idempotencia por turno.
-- La transacción de la reserva puede esperar al legado hasta 7 s (2 de conexión más 5 de respuesta), con la fila del turno bloqueada.
-- La fachada no verifica que el paciente le pertenezca a quien llama: debe recibir siempre el paciente del turno, nunca un id que venga del cliente.
-- Sólo el paciente de prueba tiene afiliación. Sin una, la reserva fallaría con `400` ("no tiene una obra social registrada"). `registrarAfiliacion` existe pero todavía no tiene llamadores ni está expuesta.
+`CoberturaEnLaReserva` (en `obrassociales.negocio`) observa `TurnoEnReserva` con `@Priority(PuntosDeExtension.COBERTURA)`. Corre después de asignar el paciente y antes del hold, en la transacción de la reserva. Elige la `Prestacion` según la modalidad (`PRESENCIAL` es `CONSULTA`; `TELEMEDICINA` es `TELECONSULTA`), llama a `ServicioDeObrasSociales.cotizarReserva` y escribe en los campos de cobertura que ya tenía `Turno`: `coberturaAutorizada`, `coberturaPorcentaje`, `copago` y `numeroAutorizacion`. La entidad y `ServicioDeTurnos.reservarTurno` no cambiaron.
+
+`cotizarReserva` devuelve siempre una `Cobertura`:
+
+| Situación del paciente | Qué pasa | `copago` del turno |
+|---|---|---|
+| Afiliado con cobertura (alta o parcial) | Pide la autorización al legado y la guarda en `autorizaciones_prestacion` | Lo que informa el legado (0.00, 6000.00, 12000.00 para una consulta) |
+| Afiliado a un plan sin cobertura (OS-4004) | El legado no autoriza; no se guarda nada | Valor total que informa el legado |
+| Sin obra social registrada | No se llama al legado; se reserva como particular | Valor total: `Prestacion.getArancel()` (20000.00 / 15000.00) |
+
+Sin cobertura el paciente no queda bloqueado: el turno se reserva igual y `copago` es el valor total, que es lo que SCRUM-93 va a cobrar.
+
+**Si el legado no responde, la reserva falla entera (`503`).** Se eligió esto y no reservar como particular con un aviso, por tres motivos:
+
+- La llamada es sincrónica porque el paciente necesita saber antes de confirmar si está cubierto. Reservar sin saberlo le mostraría un copago que puede no ser el real.
+- SCRUM-93 cobra `turno.getCopago()` al confirmar: con la opción del aviso, un afiliado podría pagar el valor total por una falla del legado.
+- Es atómica sin trabajo extra. `ObraSocialNoDisponibleException` ya es `@ApplicationException(rollback = true)`, así que revierte la reserva (el turno sigue `DISPONIBLE`, sin hold y sin fila de autorización) y llega al mapper como `503` con un mensaje para el paciente. La otra opción obligaba a atrapar la excepción dentro del componente para que la transacción no quedara marcada, y a que SCRUM-93 reverificara antes de cobrar.
+
+El costo es que, con el legado caído, nadie reserva hasta que vuelva; el paciente puede reintentar apenas se recupere.
+
+Límites que siguen vigentes:
+
+- La autorización remota no se compensa. Si la reserva falla después de que el legado autorizó, la fila local se deshace pero la autorización remota queda. Lo mismo si el hold vence o se cancela: `Turno.liberar()` limpia el turno, pero la fila de `autorizaciones_prestacion` y la autorización del legado quedan. Hace falta una baja o idempotencia por turno.
+- Un timeout no es un rechazo: si el legado autorizó pero la respuesta se perdió, hay una autorización remota sin fila local.
+- La transacción de la reserva puede esperar al legado hasta 7 s (2 de conexión más 5 de respuesta), con la fila del turno bloqueada. El hold arranca recién después, así que esa espera no le resta tiempo al paciente.
+- Si el legado rechaza los datos de afiliación (un DNI que no corresponde al afiliado), la reserva responde `400` en vez de reservarse como particular: es un dato mal cargado, no una falta de cobertura.
+- Sólo el paciente de prueba tiene afiliación (OS-2002, plan medio). `registrarAfiliacion` existe pero no está expuesta por HTTP.
+- La fachada no verifica que el paciente le pertenezca a quien llama: el observador pasa siempre el paciente del turno, nunca un id que venga del cliente.
 
 ## 7. Autenticación y autorización
 
@@ -330,7 +354,7 @@ Hay dos eventos:
 Tres reglas para quien agregue un observador:
 
 1. **Sincrónico, siempre.** `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre en otro hilo y fuera de la transacción, así que su falla ya no podría impedir la confirmación.
-2. **`MANDATORY`.** El observador se declara `@TransactionAttribute(MANDATORY)`: su paso solo tiene sentido dentro de la transacción del turno, y si alguien disparara el evento fuera de una, el contenedor lo rechaza en vez de ejecutarlo suelto.
+2. **`MANDATORY`.** El observador se declara `@Transactional(TxType.MANDATORY)` (`@TransactionAttribute` sólo rige en los EJB, y un observador CDI no lo es): su paso solo tiene sentido dentro de la transacción del turno, y si alguien disparara el evento fuera de una, el contenedor lo rechaza en vez de ejecutarlo suelto.
 3. **Errores con rollback.** Para cortar el flujo se lanza una excepción `@ApplicationException(rollback = true)`, que atraviesa `ServicioDeTurnos` sin envolverse y llega intacta a presentación.
 
 Un límite a tener presente: el rollback JTA solo alcanza a los recursos transaccionales (base de datos, JMS). Un pedido REST a un sistema externo, como la pasarela de pago o el proveedor de video, no se deshace si un paso posterior falla. Cada card que llame a un sistema externo tiene que decidir cómo compensarlo.
@@ -370,6 +394,10 @@ El sistema se desplegó en WildFly 41 con PostgreSQL 18 y se verificó endpoint 
 | PROFESIONAL intenta confirmar el hold de un paciente | `403` |
 | Reservar un turno | pasa a `EN_HOLD`, con `inicioHold` seteado |
 | Confirmar el turno reservado | pasa a `CONFIRMADO` |
+| Reservar un turno presencial como el paciente de prueba (OS-2002) | `201`, `EN_HOLD`, `coberturaPorcentaje` 70, `copago` 6000.00 y `numeroAutorizacion` `AUT-OS-2002-CONSULTA` |
+| Reservar una franja de telemedicina como el mismo paciente | `copago` 4500.00 y `AUT-OS-2002-TELECONSULTA` |
+| Reservar con un paciente recién registrado, sin obra social | `EN_HOLD` con `coberturaAutorizada` `false`, porcentaje 0 y `copago` 20000.00 (el valor total); sin llamada al legado (esto último, cubierto por el test de unidad de `cotizarReserva`) |
+| Reservar con la URL del legado apuntando a un puerto cerrado | `503` "El sistema de la obra social no respondió. Intentá de nuevo en unos minutos." a los 79 ms; el turno sigue `DISPONIBLE` y vuelve a figurar en la disponibilidad |
 | `GET /mediconecta/legado/obrasocial?wsdl` desde el navegador | `200`, WSDL con `validarCobertura` y `autorizarPrestacion` |
 | `autorizarPrestacion` para `CONSULTA` con los cuatro afiliados de prueba | `100 %`/`0.00`, `70 %`/`6000.00`, `40 %`/`12000.00` autorizados; `0 %`/`20000.00` no autorizado |
 | `validarCobertura` con un afiliado inexistente, un DNI que no corresponde o una prestación desconocida | `500` HTTP con un SOAP Fault de código `Client`; el WSDL ya no declara `wsdl:fault` |

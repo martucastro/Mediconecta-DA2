@@ -174,6 +174,47 @@
             },
             "description": "@RolesAllowed declarativo bloqueando por rol."
           }
+        },
+        {
+          "name": "Listado profesionales - publico (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Devuelve al menos un profesional con id y nombre', function () {",
+                  "    var body = pm.response.json();",
+                  "    pm.expect(body).to.be.an('array').that.is.not.empty;",
+                  "    body.forEach(function (u) {",
+                  "        pm.expect(u).to.have.property('id');",
+                  "        pm.expect(u).to.have.property('nombre');",
+                  "    });",
+                  "});",
+                  "pm.test('No incluye email ni rol', function () {",
+                  "    pm.response.json().forEach(function (u) {",
+                  "        pm.expect(u).to.not.have.property('email');",
+                  "        pm.expect(u).to.not.have.property('rol');",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/usuarios/profesionales",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "profesionales"]
+            },
+            "description": "Endpoint publico (sin auth), SCRUM-81. Devuelve solo {id, nombre} de usuarios con rol PROFESIONAL, para que el paciente elija con quien reservar antes de loguearse."
+          }
         }
       ]
     },
@@ -270,6 +311,48 @@
           }
         },
         {
+          "name": "Mis turnos - PROFESIONAL ve su agenda del dia (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('incluye la franja recien abierta', function () {",
+                  "    var body = pm.response.json();",
+                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var propio = body.find(function (t) { return String(t.id) === String(turnoId); });",
+                  "    pm.expect(propio, 'franja propia en la agenda del dia').to.exist;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional_email}}", "type": "string" },
+                { "key": "password", "value": "{{profesional_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/mios?fecha=2027-03-20",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "mios"],
+              "query": [
+                { "key": "fecha", "value": "2027-03-20" }
+              ]
+            },
+            "description": "A diferencia de la vista del paciente, el profesional ve TODOS los estados de su propia agenda (DISPONIBLE incluido). ?fecha=YYYY-MM-DD es opcional; sin el parametro devuelve toda la agenda del profesional."
+          }
+        },
+        {
           "name": "Reservar turno (201, EN_HOLD)",
           "event": [
             {
@@ -307,6 +390,98 @@
               "path": ["turnos"]
             },
             "description": "ARRANCA EL HOLD (5 min, ExpiradorDeHolds/@Timeout). Turno pasa a EN_HOLD. Seguir con el resto de la demo mientras corre el timer en segundo plano."
+          }
+        },
+        {
+          "name": "Mis turnos - PACIENTE_A ve su hold (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('incluye el turno reservado, en EN_HOLD', function () {",
+                  "    var body = pm.response.json();",
+                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var propio = body.find(function (t) { return String(t.id) === String(turnoId); });",
+                  "    pm.expect(propio, 'turno propio en la respuesta').to.exist;",
+                  "    pm.expect(propio.estado).to.eql('EN_HOLD');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/mios",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "mios"]
+            },
+            "description": "ServicioDeTurnos.misTurnos resuelve el paciente del caller autenticado, nunca de un parametro. Devuelve solo EN_HOLD/CONFIRMADO."
+          }
+        },
+        {
+          "name": "Mis turnos - PACIENTE_B no ve el turno de A (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('no incluye el turno retenido por PACIENTE_A', function () {",
+                  "    var body = pm.response.json();",
+                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var ajeno = body.find(function (t) { return String(t.id) === String(turnoId); });",
+                  "    pm.expect(ajeno, 'turno de otro paciente').to.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteB_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteB_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/mios",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "mios"
+              ]
+            },
+            "description": "Un paciente nunca ve turnos de otro: no hay parametro de paciente que manipular, la consulta filtra siempre por el id del caller autenticado."
           }
         },
         {
@@ -373,6 +548,66 @@
               "path": ["turnos", "{{turno_id}}", "confirmar"]
             },
             "description": "NO correr esta request si el objetivo es mostrar el cierre stateful (carpeta 04) con este mismo turno_id. Son alternativos: o se confirma aca, o se deja expirar en 04. Si quieren mostrar ambos caminos, usar la carpeta 02b para reservar y confirmar un SEGUNDO turno."
+          }
+        },
+        {
+          "name": "Mis turnos - ADMINISTRADOR (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/mios",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "mios"]
+            },
+            "description": "misTurnos declara su propio @RolesAllowed({PACIENTE, PROFESIONAL}), sin ADMINISTRADOR: es la vista personal de un usuario sobre su propia agenda, no una consulta administrativa."
+          }
+        },
+        {
+          "name": "Mis turnos - anonimo (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": { "type": "noauth" },
+            "url": {
+              "raw": "{{base_url}}/turnos/mios",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "mios"]
+            },
+            "description": "Sin header Authorization. El security-constraint de web.xml sobre /api/turnos/* exige autenticacion para toda la coleccion, /mios incluido."
           }
         }
       ]
@@ -709,7 +944,7 @@
       "name": "04 - Cierre stateful (volver despues de ~5 min)",
       "item": [
         {
-          "name": "Nota - no hay GET de un turno individual",
+          "name": "Nota - verificar el cierre con GET /turnos/mios o por DB",
           "request": {
             "method": "GET",
             "header": [],
@@ -721,7 +956,46 @@
                 { "key": "profesionalId", "value": "2" }
               ]
             },
-            "description": "No existe GET /api/turnos/{id} en TurnosResource, solo el listado por profesionalId (PermitAll). Para el cierre stateful de la demo, verificar directamente en DBeaver:\n\nSELECT id, paciente_id, profesional_id, estado, iniciohold FROM turnos WHERE id = {{turno_id}};\n\nDespues de ~5 minutos sin confirmar (ExpiradorDeHolds/@Timeout, DURACION_HOLD_MS=5min), estado deberia volver a DISPONIBLE y paciente_id/iniciohold a null, sin ninguna request de por medio. El seed crea admin=1, profesional=2, paciente=3, asi que el profesional de prueba es el 2."
+            "description": "TurnosResource ahora expone GET /turnos/mios (ver carpeta 02), asi que ya no hace falta DBeaver para verificar el cierre del hold: la request de abajo, corrida antes y despues de los ~5 minutos, alcanza. La consulta a DBeaver queda como alternativa para quien prefiera mirar la fila directamente:\n\nSELECT id, paciente_id, profesional_id, estado, iniciohold FROM turnos WHERE id = {{turno_id}};\n\nDespues de ~5 minutos sin confirmar (ExpiradorDeHolds/@Timeout, DURACION_HOLD_MS=5min), estado deberia volver a DISPONIBLE y paciente_id/iniciohold a null, sin ninguna request de por medio. El seed crea admin=1, profesional=2, paciente=3, asi que el profesional de prueba es el 2."
+          }
+        },
+        {
+          "name": "Mis turnos - PACIENTE_A despues de expirar (ya no aparece)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('el turno vencido ya no esta EN_HOLD para el paciente', function () {",
+                  "    var body = pm.response.json();",
+                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var sigueApareciendo = body.some(function (t) { return String(t.id) === String(turnoId); });",
+                  "    pm.expect(sigueApareciendo, 'el turno vencido ya no deberia listarse como propio').to.be.false;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/mios",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "mios"]
+            },
+            "description": "Correr esto DESPUES de esperar los ~5 minutos del hold (y solo si no se confirmo el turno en la carpeta 02). ExpiradorDeHolds ya lo devolvio a DISPONIBLE y le saco el paciente, asi que misTurnos ya no lo incluye: la ausencia del id es la prueba de que expiro."
           }
         }
       ]

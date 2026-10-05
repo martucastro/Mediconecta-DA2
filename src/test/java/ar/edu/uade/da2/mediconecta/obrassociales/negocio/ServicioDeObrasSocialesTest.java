@@ -290,6 +290,70 @@ class ServicioDeObrasSocialesTest {
         verify(afiliacionDAO, never()).guardar(any());
     }
 
+    // ---- cotizarReserva -------------------------------------------------------
+
+    @Test
+    void cotizarReservaDeUnAfiliadoAutorizaYDevuelveLaCoberturaParcial() {
+        pacienteAfiliado();
+        Cobertura parcial = new Cobertura(true, 70, new BigDecimal("6000.00"), "AUT-OS-2002-CONSULTA", "ok");
+        when(obraSocial.autorizar(DNI, AFILIADO, Prestacion.CONSULTA)).thenReturn(parcial);
+
+        Cobertura obtenida = servicio.cotizarReserva(PACIENTE_ID, Prestacion.CONSULTA);
+
+        assertSame(parcial, obtenida);
+        verify(autorizacionDAO).guardar(any(AutorizacionDePrestacion.class));
+    }
+
+    @Test
+    void cotizarReservaSinAfiliacionEsParticularAlValorTotalYNoLlamaAlLegado() {
+        when(servicioDeUsuarios.obtenerUsuario(PACIENTE_ID))
+                .thenReturn(usuario(PACIENTE_ID, ServicioDeUsuarios.ROL_PACIENTE));
+        when(afiliacionDAO.buscarPorPaciente(PACIENTE_ID)).thenReturn(null);
+
+        Cobertura particular = servicio.cotizarReserva(PACIENTE_ID, Prestacion.TELECONSULTA);
+
+        assertEquals(false, particular.autorizada());
+        assertEquals(0, particular.porcentaje());
+        assertEquals(new BigDecimal("15000.00"), particular.copago());
+        assertEquals(null, particular.numeroAutorizacion());
+        verifyNoInteractions(obraSocial, autorizacionDAO);
+    }
+
+    @Test
+    void cotizarReservaDeUnPlanSinCoberturaDevuelveElCopagoTotalYNoGuarda() {
+        pacienteAfiliado();
+        when(obraSocial.autorizar(DNI, AFILIADO, Prestacion.CONSULTA)).thenReturn(
+                new Cobertura(false, 0, new BigDecimal("20000.00"), null, "sin cobertura"));
+
+        Cobertura obtenida = servicio.cotizarReserva(PACIENTE_ID, Prestacion.CONSULTA);
+
+        assertEquals(new BigDecimal("20000.00"), obtenida.copago());
+        verify(autorizacionDAO, never()).guardar(any());
+    }
+
+    @Test
+    void cotizarReservaConElLegadoCaidoPropagaElErrorYNoGuarda() {
+        pacienteAfiliado();
+        when(obraSocial.autorizar(DNI, AFILIADO, Prestacion.CONSULTA))
+                .thenThrow(new ObraSocialNoDisponibleException("no respondió"));
+
+        assertThrows(ObraSocialNoDisponibleException.class,
+                () -> servicio.cotizarReserva(PACIENTE_ID, Prestacion.CONSULTA));
+
+        verify(autorizacionDAO, never()).guardar(any());
+    }
+
+    @Test
+    void cotizarReservaDeUnUsuarioQueNoEsPacienteEsDatoInvalido() {
+        when(servicioDeUsuarios.obtenerUsuario(PACIENTE_ID))
+                .thenReturn(usuario(PACIENTE_ID, ServicioDeUsuarios.ROL_PROFESIONAL));
+
+        assertThrows(DatosInvalidosException.class,
+                () -> servicio.cotizarReserva(PACIENTE_ID, Prestacion.CONSULTA));
+
+        verifyNoInteractions(obraSocial);
+    }
+
     // ---- ayudas ---------------------------------------------------------------
 
     private void pacienteAfiliado() {
