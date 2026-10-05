@@ -28,13 +28,13 @@ flowchart LR
         os["ServicioDeObrasSociales<br/>Stateless, Adapter SOAP"]:::impl
         pag["ServicioDePagos<br/>Stateless, Adapter REST"]:::impl
         fac["ServicioDeFacturacion<br/>MDB sobre topico y cola"]:::impl
-        noti["ServicioDeNotificaciones<br/>MDB, en revision"]:::review
-        tel["ServicioDeTelemedicina<br/>planificado"]:::plan
+        noti["ServicioDeNotificaciones<br/>MDB sobre topico"]:::impl
+        tel["ServicioDeTelemedicina<br/>en revision, PR 21"]:::review
     end
 
     leg[("Legado de la obra social<br/>SOAP")]:::ext
     pas[("Pasarela de pago<br/>REST")]:::ext
-    vid[("Proveedor de video<br/>REST, planificado")]:::plan
+    vid[("Proveedor de video<br/>REST, en revision")]:::review
 
     spa -->|"HTTP REST"| api
     api --> usu
@@ -53,10 +53,10 @@ flowchart LR
     tur -.->|"asincronico: TurnoConfirmado"| noti
     os -->|"SOAP"| leg
     pag -->|"REST"| pas
-    tur -.->|"planificado SCRUM-91: cobertura al reservar"| os
+    tur -->|"evento CDI sincronico: cobertura al reservar"| os
     tur -.->|"planificado SCRUM-93: copago al confirmar"| pag
     tur -.->|"planificado SCRUM-95: sala de video"| tel
-    tel -.->|"REST, planificado"| vid
+    tel -->|"REST"| vid
 ```
 
 ## Arquitectura de integración (SOA)
@@ -80,8 +80,8 @@ flowchart LR
         pag["ServicioDePagos"]:::impl
         os["ServicioDeObrasSociales"]:::impl
         fac["ServicioDeFacturacion"]:::impl
-        noti["ServicioDeNotificaciones<br/>en revision"]:::review
-        tel["ServicioDeTelemedicina<br/>planificado"]:::plan
+        noti["ServicioDeNotificaciones"]:::impl
+        tel["ServicioDeTelemedicina<br/>en revision, PR 21"]:::review
         subgraph art["ActiveMQ Artemis, broker JMS"]
             top["Topico<br/>TurnoConfirmado"]:::broker
             cola["Cola<br/>ReclamosFacturacion"]:::broker
@@ -89,19 +89,20 @@ flowchart LR
         end
     end
 
-    subgraph ext["Sistemas externos"]
+    subgraph externos["Sistemas externos"]
         leg[("Legado de la obra social<br/>SOAP con WSDL")]:::ext
         pas[("Pasarela de pago<br/>REST")]:::ext
-        vid[("Proveedor de video<br/>REST, planificado")]:::plan
+        vid[("Proveedor de video<br/>REST, en revision")]:::review
     end
 
     spa -->|"REST JSON con HTTP Basic"| api
     api -->|"llamada local EJB"| tur
     api -->|"llamada local EJB"| pag
     api -->|"llamada local EJB"| fac
+    api -->|"llamada local EJB"| tel
     tur -->|"topico JMS: publica al confirmar"| top
     top -->|"topico JMS: suscriptor"| fac
-    top -.->|"topico JMS: suscriptor, en revision"| noti
+    top -->|"topico JMS: suscriptor"| noti
     fac -->|"cola JMS: encola el reclamo"| cola
     cola -->|"cola JMS: MDB consume con reintentos"| fac
     cola -.->|"mensajes no procesables"| dlq
@@ -110,7 +111,7 @@ flowchart LR
     pag -->|"llamada local EJB: obtenerTurno"| tur
     os -->|"SOAP: validarCobertura, autorizarPrestacion, presentarReclamo"| leg
     pag -->|"REST: POST /externo/pagos"| pas
-    tur -.->|"evento CDI sincronico, planificado SCRUM-91"| os
+    tur -->|"evento CDI sincronico: cobertura al reservar"| os
     tur -.->|"evento CDI sincronico, planificado SCRUM-95"| tel
-    tel -.->|"REST, planificado"| vid
+    tel -->|"REST"| vid
 ```
