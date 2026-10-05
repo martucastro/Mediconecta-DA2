@@ -5,6 +5,21 @@
          https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
          version="6.0">
 
+    <!--
+      Sistema legado de la obra social (simulado). Se mapea a mano para que la
+      URL del WSDL sea estable: /mediconecta/legado/obrasocial?wsdl.
+      No lleva security-constraint a proposito: representa a un tercero, que
+      no conoce a los usuarios de MediConecta ni su autenticacion.
+    -->
+    <servlet>
+        <servlet-name>ObraSocialLegado</servlet-name>
+        <servlet-class>ar.edu.uade.da2.mediconecta.externos.obrasocial.ObraSocialLegado</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>ObraSocialLegado</servlet-name>
+        <url-pattern>/legado/obrasocial</url-pattern>
+    </servlet-mapping>
+
     <security-role>
         <role-name>ADMINISTRADOR</role-name>
     </security-role>
@@ -93,6 +108,23 @@
         <auth-constraint>
             <role-name>PACIENTE</role-name>
             <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
+      Operacion sensible 5: el listado de reclamos de facturacion es solo del
+      administrador (visibilidad de la demo, ver docs/documento-tecnico.md).
+      Quien puede operar sobre un reclamo puntual lo decide @RolesAllowed
+      sobre ServicioDeFacturacion; aca se restringe toda la URL porque hoy la
+      unica operacion expuesta es el listado completo.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Reclamos de facturacion</web-resource-name>
+            <url-pattern>/api/reclamos</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
             <role-name>ADMINISTRADOR</role-name>
         </auth-constraint>
     </security-constraint>
