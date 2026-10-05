@@ -5,3 +5,14 @@ target/
 *.class
 # driver JDBC, se descarga en el paso 2 del README
 deploy/postgresql.jar
+
+# Lo genera "mvn package" via frontend-maven-plugin (npm run build).
+# No se commitea: cada build cambia el hash del archivo, y commitear bundles
+# viejos los va acumulando sin que nadie los borre.
+/src/main/webapp/index.html
+/src/main/webapp/assets/
+/src/main/webapp/favicon.svg
+/src/main/webapp/icons.svg
+
+# Dependencias de Node, se reinstalan solas con "npm ci"
+frontend/node_modules/
