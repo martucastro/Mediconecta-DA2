@@ -36,6 +36,16 @@ public class UsuariosResource {
     }
 
     @GET
+    @Path("/profesionales")
+    @Produces(MediaType.APPLICATION_JSON)
+    public List<ProfesionalDTO> listarProfesionales() {
+        return servicio.listarProfesionales()
+                .stream()
+                .map(ProfesionalDTO::new)
+                .collect(Collectors.toList());
+    }
+
+    @GET
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response obtener(@PathParam("id") Long id) {

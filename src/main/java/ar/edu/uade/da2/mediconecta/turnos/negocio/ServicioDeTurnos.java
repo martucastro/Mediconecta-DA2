@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -104,6 +105,29 @@ public class ServicioDeTurnos {
     }
 
     /**
+     * Turnos del usuario autenticado: lo que necesita su home (proximo turno)
+     * o su agenda (confirmados y en hold).
+     *
+     * El id nunca llega por parametro, siempre sale del caller autenticado:
+     * si viniera del cliente, un paciente podria pedir los turnos de otro
+     * pasandole un id ajeno. ADMINISTRADOR queda afuera a proposito, con
+     * @RolesAllowed propio en vez del de la clase: este endpoint es la vista
+     * personal de un paciente o un profesional, no una consulta administrativa
+     * sobre cualquier agenda.
+     *
+     * El filtro de fecha solo aplica al profesional (agenda del dia); para un
+     * paciente se ignora, porque sus turnos EN_HOLD/CONFIRMADO ya son pocos.
+     */
+    @RolesAllowed({ ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL })
+    public List<Turno> misTurnos(LocalDate fecha) {
+        Usuario usuario = usuarioAutenticado();
+        if (contexto.isCallerInRole(ServicioDeUsuarios.ROL_PROFESIONAL)) {
+            return turnoDAO.listarPorProfesional(usuario.getId(), fecha);
+        }
+        return turnoDAO.listarPorPaciente(usuario.getId());
+    }
+
+    /**
      * Abre una franja disponible en la agenda del profesional autenticado.
      * Sin esto no hay forma de que existan turnos para reservar.
      *
@@ -166,8 +190,9 @@ public class ServicioDeTurnos {
         turno.setPaciente(paciente);
 
         // PUNTO DE EXTENSION (reserva). Observadores previstos:
-        //   COBERTURA (SCRUM-91): valida la cobertura y completa los campos de
-        //   cobertura y copago del turno.
+        //   COBERTURA (SCRUM-91, CoberturaEnLaReserva): consulta la cobertura y
+        //   completa los campos de cobertura y copago del turno; si la obra
+        //   social no responde, la reserva falla entera.
         // Va despues de asignar el paciente (la cobertura es suya) y antes de
         // retenerlo: si la cobertura rechaza, no queda ningun hold que liberar.
         eventoReserva.fire(new TurnoEnReserva(turno));

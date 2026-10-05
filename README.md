@@ -16,6 +16,7 @@ Siete componentes de negocio, cada uno con su arquitectura en capas:
 | `ServicioDeUsuarios` | `@Stateless` | Registro, autenticación, perfiles y credenciales |
 | `ServicioDeTurnos` | `@Stateful` | Disponibilidad, reserva, hold de 5 minutos, confirmación |
 | `ServicioDeHistoriaClinica` | `@Stateless` | Antecedentes, diagnósticos y recetas |
+| `ServicioDeNotificaciones` | `@Stateless` (con `NotificacionMDB` como `@MessageDriven` colaborador) | Recordatorio de turno confirmado, consumido del tópico JMS |
 | `ServicioDeObrasSociales` | `@Stateless`, Adapter SOAP | Cobertura y autorización contra el legado de la obra social |
 | `ServicioDePagos` | `@Stateless`, Adapter REST | Cobro de copagos y reembolsos contra la pasarela de pago externa |
 | `ServicioDeFacturacion` | `@Stateless` | Reclamo de facturación a la obra social por turnos con cobertura autorizada |
@@ -26,6 +27,7 @@ ar.edu.uade.da2.mediconecta
   usuarios/{presentacion, negocio, datos}
   turnos/{presentacion, negocio, datos}
   historiaclinica/{presentacion, negocio, datos}
+  notificaciones/{presentacion, negocio, datos}
   obrassociales/{negocio, datos}       sin HTTP: lo invocan otros componentes
   pagos/{presentacion, negocio, datos}
   facturacion/{presentacion, negocio, datos}
@@ -191,6 +193,62 @@ Las pruebas de unidad de la capa de negocio corren sin servidor:
 mvn test
 ```
 
+### 6. Frontend (React + Vite)
+
+El frontend vive en `frontend/`, separado del backend Java, y compila hacia
+`src/main/webapp` para que lo sirva el mismo WAR.
+
+Para trabajar en las pantallas sin recompilar y redesplegar en WildFly cada vez:
+
+```bash
+cd frontend
+npm install   # solo la primera vez, o si cambiaron las dependencias
+npm run dev
+```
+
+Esto levanta un servidor en `http://localhost:5173/mediconecta/`, con recarga
+automática al guardar cualquier archivo. Los pedidos a `/mediconecta/api/*` se
+redirigen automáticamente hacia `http://localhost:8080` (donde tiene que estar
+corriendo WildFly con el backend desplegado), así que no hay problemas de CORS
+al probar el login u otras pantallas conectadas a la API real.
+
+Para generar el WAR no hace falta compilar el frontend a mano: `mvn clean package`
+lo hace solo. El `frontend-maven-plugin` instala una copia propia de Node en
+`target/` (no depende del Node de la máquina), corre `npm ci` y `npm run build`
+(chequeo de tipos con `tsc` y `vite build`), y deja el resultado en
+`src/main/webapp`, de donde lo toma el empaquetado del `.war`. Así el WAR nunca
+queda con un bundle desactualizado.
+
+Lo que genera Vite (`index.html` y `assets/` dentro de `src/main/webapp`) no se
+commitea: está en `.gitignore`. `WEB-INF` (`web.xml`, `beans.xml`) no lo toca el
+build. Si querés ver el resultado sin pasar por Maven, `npm run build` dentro de
+`frontend/` hace lo mismo.
+
+En Windows, `npm ci` falla con `EPERM` si algún programa tiene abierto algo de
+`frontend/node_modules`. Antes de `mvn package`, cerrá `npm run dev` y el editor
+que lo esté indexando.
+
+#### Sesión
+
+El login (`POST /api/usuarios/login`) no crea sesión en el servidor: el frontend
+guarda el usuario y el header `Authorization: Basic` (el correo y la contraseña
+codificados en base64, que **no es un cifrado**) en `sessionStorage`, y lo manda
+en cada pedido a la API.
+
+- Dura lo que dura la pestaña: sobrevive a un refresco, pero no a una pestaña
+  nueva ni a cerrar el navegador.
+- Cada ruta exige un rol: un paciente que pide `/agenda` vuelve a `/home`, y un
+  profesional que pide `/home` vuelve a `/agenda`. Es solo para no mostrar
+  pantallas que no le corresponden; la autorización real la hace el backend.
+- Un 401 en medio de la sesión (la credencial ya no vale) cierra la sesión y
+  vuelve al login.
+- El administrador no tiene pantallas: si inicia sesión en la interfaz web se le
+  avisa que opera por la API, y no se guarda la sesión.
+
+Guardar la credencial en el navegador es lo que pide la card porque hoy el
+backend solo habla HTTP Basic. Reemplazarlo por un token con vencimiento
+requiere un cambio de backend y queda fuera de esta entrega.
+
 ---
 
 ## Usuarios de prueba
@@ -240,6 +298,7 @@ HTTP Basic.
 | `POST` | `/turnos` | PACIENTE | Reserva y retiene por 5 minutos |
 | `PUT` | `/turnos/{id}/confirmar` | PACIENTE | Confirma su propio hold |
 | `PUT` | `/turnos/{id}/cancelar` | PACIENTE | Libera su propio hold |
+| `GET` | `/turnos/mios?fecha=YYYY-MM-DD` | PACIENTE, PROFESIONAL | Turnos del usuario autenticado: el paciente ve sus `EN_HOLD` y `CONFIRMADO`; el profesional, toda su agenda (`fecha` opcional filtra un día) |
 
 `POST /turnos/disponibilidad` acepta `modalidad` (`PRESENCIAL` o
 `TELEMEDICINA`, por defecto `PRESENCIAL`) y, solo para las presenciales,
@@ -277,6 +336,57 @@ public void alConfirmar(
 Siempre `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre
 fuera de la transacción y su falla ya no podría frenar la confirmación. El
 criterio completo está en `docs/documento-tecnico.md`, sección 9.2.
+
+### Notificaciones
+
+A diferencia de los puntos de extensión de arriba (sincrónicos, dentro de la
+misma transacción), el recordatorio de turno confirmado es **asincrónico**:
+`ServicioDeTurnos.confirmarTurno` publica un `MapMessage` en el tópico JMS
+`java:/jms/topic/TurnoConfirmado` (campos `turnoId`, `pacienteId`,
+`profesionalId`, `fechaHora`) dentro de la misma transacción que la
+confirmación, pero **quien lo procesa no**: `NotificacionMDB`
+(`notificaciones/presentacion`) lo consume en un hilo propio del contenedor,
+después de que la transacción de `confirmarTurno` ya cerró. La respuesta HTTP
+del `PUT /turnos/{id}/confirmar` no espera a que el mensaje se procese.
+
+`NotificacionMDB` solo traduce el mensaje y delega en
+`ServicioDeNotificaciones` (`@Stateless`), que arma el recordatorio, lo "envía"
+(simulado por ahora: un log, porque no hay proveedor de email/SMS todavía — el
+método `enviar()` es el punto de extensión pensado para un Strategy por canal
+el día que lo haya) y persiste un registro de `Notificacion`, para que la demo
+tenga evidencia de que el mensaje se consumió sin depender del log.
+
+`GET /api/notificaciones/mias` (solo PACIENTE) devuelve las notificaciones del
+paciente autenticado, para verlas desde Postman o el frontend sin entrar a la
+base. El paciente sale del usuario logueado y no de un parámetro, así que nadie
+puede pedir las de otro. Un profesional o un administrador reciben `403`: las
+notificaciones se generan para el paciente del turno, y sin credenciales la
+respuesta es `401`, como en el resto de la API.
+
+#### Política de redelivery
+
+No hay configuración propia de redelivery en `mediconecta-setup.cli`: se usa
+la que trae WildFly por defecto en `standalone-full.xml` para el
+address-setting comodín (`#`), que aplica a este tópico igual que a cualquier
+otro:
+
+- **Hasta 10 reintentos** (`max-delivery-attempts`), sin demora entre uno y
+  el siguiente (`redelivery-delay=0`).
+- Agotados los reintentos, el mensaje se mueve a la **cola de mensajes
+  muertos** (`jms.queue.DLQ`), en vez de perderse.
+
+Si `NotificacionMDB.onMessage` lanza una excepción sin capturarla (por
+ejemplo, porque la base no responde), el contenedor no confirma el mensaje:
+Artemis lo reintenta solo, sin que el componente tenga que programar nada.
+Verificar los mensajes en la DLQ, por CLI:
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect \
+  "/subsystem=messaging-activemq/server=default/jms-queue=DLQ:count-messages"
+```
+
+O por la consola de administración: *Runtime → (tu servidor) → Messaging
+(ActiveMQ) → default → Queue → DLQ*.
 
 ### Telemedicina
 
@@ -458,12 +568,14 @@ volvé a correrlo.
 
 Están acá a propósito: son decisiones de alcance de esta entrega, no descuidos.
 
-- **Sin frontend.** El sistema se ejerce por HTTP, con las colecciones de Postman
-  de `deploy/` y `postman/`. La primera entrega evalúa la arquitectura de capas y
-  los componentes de negocio, no la interfaz.
+- **Frontend con datos de prototipo.** El login ya está conectado a la API, pero
+  el resto de las pantallas todavía muestran datos fijos: conectarlas es
+  SCRUM-83 a 87.
+- **Notificaciones sin canal real.** El envío de recordatorios es simulado (log);
+  no hay proveedor de email/SMS integrado.
 - **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
   integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
-- **Un solo módulo Maven.** Los seis componentes conviven en un WAR. Separarlos en
+- **Un solo módulo Maven.** Los siete componentes conviven en un WAR. Separarlos en
   módulos es lo que corresponde cuando se despliegan por separado, y todavía no es
   el caso.
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un

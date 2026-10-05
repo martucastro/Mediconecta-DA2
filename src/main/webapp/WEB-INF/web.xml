@@ -130,7 +130,24 @@
     </security-constraint>
 
     <!--
-      Operacion sensible 6: la sala de video de un turno. Quien tiene el enlace
+      Operacion sensible 6: las notificaciones del paciente. Solo el PACIENTE
+      las consulta (GET /api/notificaciones/mias): se generan para el paciente
+      del turno confirmado y el usuario sale del caller principal, nunca de un
+      parametro. Un profesional o un administrador reciben 403, y sin
+      autenticacion la respuesta es 401 en vez de un 500 por no haber caller.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Notificaciones</web-resource-name>
+            <url-pattern>/api/notificaciones/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
+      Operacion sensible 7: la sala de video de un turno. Quien tiene el enlace
       entra a la consulta, asi que nunca es anonima. Incluye al administrador
       para que reciba 403 desde el componente (y no 401 o un rechazo distinto
       de la capa web): que la sala sea solo del paciente y del profesional del

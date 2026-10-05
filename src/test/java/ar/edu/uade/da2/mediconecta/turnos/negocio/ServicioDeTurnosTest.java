@@ -14,7 +14,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
 import java.security.Principal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,12 +30,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Cobertura;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.CoberturaEnLaReserva;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Prestacion;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSociales;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.SessionContext;
 import jakarta.jms.JMSContext;
 import jakarta.jms.JMSProducer;
@@ -169,6 +177,40 @@ class ServicioDeTurnosTest {
     }
 
     @Test
+    void reservarConElObservadorDeCoberturaDejaElCopagoEnElTurnoRetenido() throws Exception {
+        Turno turno = turnoDisponible(12L);
+        prepararReserva(turno);
+        ServicioDeObrasSociales obrasSociales = mock(ServicioDeObrasSociales.class);
+        when(obrasSociales.cotizarReserva(paciente.getId(), Prestacion.CONSULTA)).thenReturn(
+                new Cobertura(true, 70, new BigDecimal("6000.00"), "AUT-OS-2002-CONSULTA", "ok"));
+        eventoReserva.observadoPor(observadorDeCobertura(obrasSociales)::alReservar);
+
+        servicio.reservarTurno(12L);
+
+        assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
+        assertEquals(new BigDecimal("6000.00"), turno.getCopago());
+        assertEquals(new BigDecimal("70"), turno.getCoberturaPorcentaje());
+        assertEquals("AUT-OS-2002-CONSULTA", turno.getNumeroAutorizacion());
+    }
+
+    @Test
+    void conElLegadoCaidoLaReservaFallaEnteraYElTurnoSigueDisponible() throws Exception {
+        Turno turno = turnoDisponible(13L);
+        prepararReserva(turno);
+        ServicioDeObrasSociales obrasSociales = mock(ServicioDeObrasSociales.class);
+        when(obrasSociales.cotizarReserva(paciente.getId(), Prestacion.CONSULTA))
+                .thenThrow(new ObraSocialNoDisponibleException("no respondió"));
+        eventoReserva.observadoPor(observadorDeCobertura(obrasSociales)::alReservar);
+
+        assertThrows(ObraSocialNoDisponibleException.class, () -> servicio.reservarTurno(13L));
+
+        assertEquals(EstadoTurno.DISPONIBLE, turno.getEstado());
+        assertNull(turno.getCopago());
+        verify(turnoDAO, never()).actualizar(any());
+        verify(expirador, never()).programar(anyLong(), anyLong());
+    }
+
+    @Test
     void siUnObservadorDeLaReservaFallaNoQuedaHold() {
         Turno turno = turnoDisponible(11L);
         prepararReserva(turno);
@@ -275,6 +317,44 @@ class ServicioDeTurnosTest {
         assertNull(cancelado.getCopago());
     }
 
+    // ---- Mis turnos ------------------------------------------------------------
+
+    @Test
+    void elPacienteVeLosTurnosDelCallerYNoLosDeOtro() {
+        autenticadoComo(paciente);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_PROFESIONAL)).thenReturn(false);
+        List<Turno> suyos = List.of(turnoEnHold(50L, ModalidadTurno.PRESENCIAL));
+        when(turnoDAO.listarPorPaciente(paciente.getId())).thenReturn(suyos);
+
+        // La fecha se ignora para el paciente: no es un filtro de su vista.
+        assertSame(suyos, servicio.misTurnos(LocalDate.of(2027, 3, 15)));
+
+        verify(turnoDAO).listarPorPaciente(paciente.getId());
+        verify(turnoDAO, never()).listarPorProfesional(anyLong(), any());
+    }
+
+    @Test
+    void elProfesionalVeSuAgendaConElFiltroDeFecha() {
+        autenticadoComo(profesional);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_PROFESIONAL)).thenReturn(true);
+        LocalDate dia = LocalDate.of(2027, 3, 15);
+        List<Turno> agenda = List.of(turnoDisponible(51L));
+        when(turnoDAO.listarPorProfesional(profesional.getId(), dia)).thenReturn(agenda);
+
+        assertSame(agenda, servicio.misTurnos(dia));
+
+        verify(turnoDAO, never()).listarPorPaciente(anyLong());
+    }
+
+    @Test
+    void misTurnosNoEstaHabilitadoParaElAdministrador() throws Exception {
+        RolesAllowed roles = ServicioDeTurnos.class.getMethod("misTurnos", LocalDate.class)
+                .getAnnotation(RolesAllowed.class);
+
+        assertEquals(List.of(ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL),
+                List.of(roles.value()));
+    }
+
     // ---- helpers ---------------------------------------------------------------
 
     private Turno turnoEnHoldConCobertura(Long id) {
@@ -325,6 +405,13 @@ class ServicioDeTurnosTest {
         Usuario usuario = new Usuario("Nombre", email, rol, "hash");
         usuario.setId(id);
         return usuario;
+    }
+
+    private static CoberturaEnLaReserva observadorDeCobertura(ServicioDeObrasSociales obrasSociales)
+            throws Exception {
+        CoberturaEnLaReserva observador = new CoberturaEnLaReserva();
+        inyectar(observador, "obrasSociales", obrasSociales);
+        return observador;
     }
 
     private static void inyectar(Object destino, String campo, Object valor) throws Exception {

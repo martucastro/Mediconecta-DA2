@@ -58,15 +58,41 @@ comprobar "paciente NO abre disponibilidad"   403 "$(codigo -u "$PACI" -H "Conte
 RESERVA=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID}" "$BASE/turnos")
 comprobar "reservar deja el turno EN_HOLD"    "si" "$(printf '%s' "$RESERVA" | grep -q EN_HOLD && echo si || echo no)"
 comprobar "la respuesta NO filtra el hash"    "si" "$(printf '%s' "$RESERVA" | grep -q contrasena && echo no || echo si)"
+# El paciente semilla es afiliado al plan medio (70%): una CONSULTA de 20000 le deja 6000.
+comprobar "la reserva calcula el copago del 70%"  "si" "$(printf '%s' "$RESERVA" | grep -q '"copago":6000.00' && echo si || echo no)"
+comprobar "la reserva guarda la autorizacion"     "si" "$(printf '%s' "$RESERVA" | grep -q '"numeroAutorizacion":"AUT-OS-2002-CONSULTA"' && echo si || echo no)"
+ID_TELE=$(printf '%s' "$TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+RESERVA_TELE=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID_TELE}" "$BASE/turnos")
+comprobar "telemedicina se cotiza como teleconsulta" "si" "$(printf '%s' "$RESERVA_TELE" | grep -q '"copago":4500.00' && echo si || echo no)"
+comprobar "cancelar libera el turno de telemedicina" 200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID_TELE/cancelar")"
 comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "$BASE/turnos/$ID/confirmar")"
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID/confirmar")"
+
+echo
+echo "Mis turnos (resueltos desde el usuario autenticado)"
+FECHA_ID=$(printf '%s' "$NUEVO" | sed -n 's/.*"fechaHora":"\([0-9-]*\)T.*/\1/p')
+comprobar "mis turnos sin credenciales"       401 "$(codigo "$BASE/turnos/mios")"
+comprobar "mis turnos como ADMINISTRADOR"     403 "$(codigo -u "$ADMIN" "$BASE/turnos/mios")"
+comprobar "el paciente ve su turno"           "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | grep -q "\"id\":$ID[,}]" && echo si || echo no)"
+comprobar "el profesional lo ve en su agenda" "si" "$(curl -s -u "$PROF" "$BASE/turnos/mios?fecha=$FECHA_ID" | grep -q "\"id\":$ID[,}]" && echo si || echo no)"
+comprobar "fecha mal formada"                 400 "$(codigo -u "$PROF" "$BASE/turnos/mios?fecha=15-01-2027")"
+OTRO_PACI="smoke-$(date +%s)@mediconecta.com:cambiar123"
+curl -s -o /dev/null -H "Content-Type: application/json" \
+     -d "{\"nombre\":\"Otro paciente\",\"email\":\"${OTRO_PACI%%:*}\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
+     "$BASE/usuarios"
+comprobar "otro paciente NO ve ese turno"     "si" "$(curl -s -u "$OTRO_PACI" "$BASE/turnos/mios" | grep -q "\"id\":$ID[,}]" && echo no || echo si)"
 
 echo
 echo "Telemedicina (proveedor de video simulado y componente)"
 SALA=$(curl -s -H "Content-Type: application/json" -d '{"reference":"smoke"}' "$BASE/externo/salas")
 comprobar "el proveedor simulado crea una sala" "si" "$(printf '%s' "$SALA" | grep -q '"guestUrl":"http' && printf '%s' "$SALA" | grep -q '"hostUrl":"http' && echo si || echo no)"
 comprobar "el proveedor simulado caido"       503 "$(codigo -H "Content-Type: application/json" -d '{"reference":"caer"}' "$BASE/externo/salas")"
-IDT=$(printf '%s' "$TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+# Franja propia: la de $TELE la reserva y la cancela el bloque de turnos, y un
+# turno CANCELADO no se puede volver a reservar.
+SALA_TELE=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
+            -d '{"fechaHora":"2027-01-15T15:00:00","modalidad":"TELEMEDICINA"}' \
+            "$BASE/turnos/disponibilidad")
+IDT=$(printf '%s' "$SALA_TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 curl -s -o /dev/null -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$IDT}" "$BASE/turnos"
 comprobar "sin sesion todavia"                404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$IDT")"
 SESION=$(curl -s -u "$PACI" -X POST "$BASE/telemedicina/turno/$IDT")
