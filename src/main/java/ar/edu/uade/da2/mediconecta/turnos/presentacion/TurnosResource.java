@@ -1,5 +1,7 @@
 package ar.edu.uade.da2.mediconecta.turnos.presentacion;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,6 +46,29 @@ public class TurnosResource {
             salida.add(new TurnoDTO(turno));
         }
         return salida;
+    }
+
+    /**
+     * Turnos del usuario autenticado: proximo turno del paciente en su home,
+     * agenda (con o sin filtro de dia) del profesional.
+     *
+     * "fecha" llega como String y no como LocalDate: JAX-RS solo convierte
+     * @QueryParam automaticamente a tipos con un constructor o un valueOf/
+     * fromString(String), y LocalDate no tiene ninguno de los dos (tiene
+     * parse(CharSequence), que no cuenta). Parsearlo a mano tambien permite
+     * responder 400 con un mensaje claro si el formato no es YYYY-MM-DD, en
+     * vez de que WildFly lo rechace con un error generico.
+     */
+    @GET
+    @Path("/mios")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response misTurnos(@QueryParam("fecha") String fechaParam) {
+        LocalDate fecha = parsearFecha(fechaParam);
+        List<TurnoDTO> salida = new ArrayList<>();
+        for (Turno turno : servicio.misTurnos(fecha)) {
+            salida.add(new TurnoDTO(turno));
+        }
+        return Response.ok(salida).build();
     }
 
     @POST
@@ -92,5 +117,16 @@ public class TurnosResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response cancelar(@PathParam("id") Long id) {
         return Response.ok(new TurnoDTO(servicio.cancelarTurno(id))).build();
+    }
+
+    private LocalDate parsearFecha(String fecha) {
+        if (fecha == null || fecha.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(fecha);
+        } catch (DateTimeParseException e) {
+            throw new DatosInvalidosException("Fecha invalida, se espera YYYY-MM-DD: " + fecha);
+        }
     }
 }

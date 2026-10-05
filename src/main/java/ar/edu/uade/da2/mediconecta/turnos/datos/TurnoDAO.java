@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.turnos.datos;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -7,6 +8,7 @@ import jakarta.ejb.Stateless;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.TypedQuery;
 
 @Stateless
 public class TurnoDAO {
@@ -68,5 +70,44 @@ public class TurnoDAO {
                 .setParameter("estado", EstadoTurno.EN_HOLD)
                 .setParameter("limite", limite)
                 .getResultList();
+    }
+
+    /**
+     * Turnos EN_HOLD o CONFIRMADO de un paciente: lo que necesita ver en su
+     * home o agenda. Los DISPONIBLE no son "suyos" y los CANCELADO no le
+     * interesan una vez pasado el momento de la cancelacion.
+     */
+    public List<Turno> listarPorPaciente(Long pacienteId) {
+        return em.createQuery(
+                "SELECT t FROM Turno t WHERE t.paciente.id = :pacienteId "
+                        + "AND t.estado IN :estados ORDER BY t.fechaHora",
+                Turno.class)
+                .setParameter("pacienteId", pacienteId)
+                .setParameter("estados", List.of(EstadoTurno.EN_HOLD, EstadoTurno.CONFIRMADO))
+                .getResultList();
+    }
+
+    /**
+     * Todos los turnos de un profesional, en cualquier estado, opcionalmente
+     * acotados a un dia puntual para armar la agenda del dia.
+     *
+     * A diferencia de listarPorPaciente, aca no se filtra por estado: el
+     * profesional necesita ver tambien los DISPONIBLE y CANCELADO de su propia
+     * agenda, no solo los que tienen un paciente asociado.
+     */
+    public List<Turno> listarPorProfesional(Long profesionalId, LocalDate fecha) {
+        String jpql = "SELECT t FROM Turno t WHERE t.profesional.id = :profesionalId";
+        if (fecha != null) {
+            jpql += " AND t.fechaHora >= :inicioDia AND t.fechaHora < :finDia";
+        }
+        jpql += " ORDER BY t.fechaHora";
+
+        TypedQuery<Turno> query = em.createQuery(jpql, Turno.class)
+                .setParameter("profesionalId", profesionalId);
+        if (fecha != null) {
+            query.setParameter("inicioDia", fecha.atStartOfDay());
+            query.setParameter("finDia", fecha.plusDays(1).atStartOfDay());
+        }
+        return query.getResultList();
     }
 }

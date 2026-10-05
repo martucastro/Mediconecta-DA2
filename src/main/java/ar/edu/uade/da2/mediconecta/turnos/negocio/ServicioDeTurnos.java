@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -101,6 +102,29 @@ public class ServicioDeTurnos {
      */
     public Turno obtenerTurno(Long turnoId) {
         return turnoDAO.buscarPorId(turnoId);
+    }
+
+    /**
+     * Turnos del usuario autenticado: lo que necesita su home (proximo turno)
+     * o su agenda (confirmados y en hold).
+     *
+     * El id nunca llega por parametro, siempre sale del caller autenticado:
+     * si viniera del cliente, un paciente podria pedir los turnos de otro
+     * pasandole un id ajeno. ADMINISTRADOR queda afuera a proposito, con
+     * @RolesAllowed propio en vez del de la clase: este endpoint es la vista
+     * personal de un paciente o un profesional, no una consulta administrativa
+     * sobre cualquier agenda.
+     *
+     * El filtro de fecha solo aplica al profesional (agenda del dia); para un
+     * paciente se ignora, porque sus turnos EN_HOLD/CONFIRMADO ya son pocos.
+     */
+    @RolesAllowed({ ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL })
+    public List<Turno> misTurnos(LocalDate fecha) {
+        Usuario usuario = usuarioAutenticado();
+        if (contexto.isCallerInRole(ServicioDeUsuarios.ROL_PROFESIONAL)) {
+            return turnoDAO.listarPorProfesional(usuario.getId(), fecha);
+        }
+        return turnoDAO.listarPorPaciente(usuario.getId());
     }
 
     /**
