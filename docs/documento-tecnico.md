@@ -94,6 +94,8 @@ Hay además un paquete que no es nuestro, aunque viva en el mismo WAR: `externos
 
 Que los componentes ya convivan integrados y desplegados juntos fue justamente lo que permitió detectar y corregir la incompatibilidad entre `@Stateful` y `TimerService` descrita en la sección 6.1: un problema que solo se manifiesta con el sistema desplegado, no en aislamiento.
 
+Los diagramas de arquitectura general (componentes y dependencias) y de integración (canales) están en [`docs/arquitectura.md`](arquitectura.md), con su versión editable en Miro: https://miro.com/app/board/uXjVEfW69Q0=/
+
 ## 4.1 Clasificación justificada de las integraciones
 
 El sistema combina tres canales distintos entre componentes y con terceros: REST síncrono, SOAP síncrono y JMS asincrónico (tópico o cola). La elección no es arbitraria por integración; responde a cuatro preguntas que se repiten:
