@@ -62,6 +62,27 @@ comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "$
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID/confirmar")"
 
 echo
+echo "Telemedicina (proveedor de video simulado y componente)"
+SALA=$(curl -s -H "Content-Type: application/json" -d '{"reference":"smoke"}' "$BASE/externo/salas")
+comprobar "el proveedor simulado crea una sala" "si" "$(printf '%s' "$SALA" | grep -q '"guestUrl":"http' && printf '%s' "$SALA" | grep -q '"hostUrl":"http' && echo si || echo no)"
+comprobar "el proveedor simulado caido"       503 "$(codigo -H "Content-Type: application/json" -d '{"reference":"caer"}' "$BASE/externo/salas")"
+IDT=$(printf '%s' "$TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+curl -s -o /dev/null -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$IDT}" "$BASE/turnos"
+comprobar "sin sesion todavia"                404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$IDT")"
+SESION=$(curl -s -u "$PACI" -X POST "$BASE/telemedicina/turno/$IDT")
+comprobar "el paciente crea la sesion"        "si" "$(printf '%s' "$SESION" | grep -q '"rol":"PACIENTE"' && echo si || echo no)"
+ENLACE_PROF=$(curl -s -u "$PROF" "$BASE/telemedicina/turno/$IDT")
+comprobar "el profesional ve su enlace"       "si" "$(printf '%s' "$ENLACE_PROF" | grep -q '"rol":"PROFESIONAL"' && echo si || echo no)"
+comprobar "cada uno recibe un enlace distinto" "si" "$([ "$(printf '%s' "$SESION" | sed -n 's/.*"enlace":"\([^"]*\)".*/\1/p')" != "$(printf '%s' "$ENLACE_PROF" | sed -n 's/.*"enlace":"\([^"]*\)".*/\1/p')" ] && echo si || echo no)"
+comprobar "el administrador NO ve la sala"    403 "$(codigo -u "$ADMIN" "$BASE/telemedicina/turno/$IDT")"
+AJENO="smoke-tele-$(date +%s)@mediconecta.com:cambiar123"
+curl -s -o /dev/null -H "Content-Type: application/json" \
+     -d "{\"nombre\":\"Paciente ajeno\",\"email\":\"${AJENO%%:*}\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
+     "$BASE/usuarios"
+comprobar "un paciente ajeno NO ve la sala"   403 "$(codigo -u "$AJENO" "$BASE/telemedicina/turno/$IDT")"
+comprobar "un turno presencial no lleva sala" 409 "$(codigo -u "$PROF" -X POST "$BASE/telemedicina/turno/$ID")"
+
+echo
 echo "Sistema legado de la obra social (SOAP)"
 SOAP="${SOAP:-${BASE%/api}/legado/obrasocial}"
 

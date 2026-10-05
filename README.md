@@ -9,7 +9,7 @@ Trabajo Práctico Integrador de Desarrollo de Aplicaciones II, comisión Lunes T
 
 ## Qué hay implementado
 
-Seis componentes de negocio, cada uno con su arquitectura en capas:
+Siete componentes de negocio, cada uno con su arquitectura en capas:
 
 | Componente | Tipo | Responsabilidad |
 |---|---|---|
@@ -19,6 +19,7 @@ Seis componentes de negocio, cada uno con su arquitectura en capas:
 | `ServicioDeObrasSociales` | `@Stateless`, Adapter SOAP | Cobertura y autorización contra el legado de la obra social |
 | `ServicioDePagos` | `@Stateless`, Adapter REST | Cobro de copagos y reembolsos contra la pasarela de pago externa |
 | `ServicioDeFacturacion` | `@Stateless` | Reclamo de facturación a la obra social por turnos con cobertura autorizada |
+| `ServicioDeTelemedicina` | `@Stateless`, Adapter REST | Sala de video de los turnos de telemedicina contra el proveedor de video externo |
 
 ```
 ar.edu.uade.da2.mediconecta
@@ -28,8 +29,10 @@ ar.edu.uade.da2.mediconecta
   obrassociales/{negocio, datos}       sin HTTP: lo invocan otros componentes
   pagos/{presentacion, negocio, datos}
   facturacion/{presentacion, negocio, datos}
+  telemedicina/{presentacion, negocio, datos}
   externos/obrasocial                  el legado SOAP simulado, un tercero
   externos/pasarela                    la pasarela de pago REST simulada, otro tercero
+  externos/video                       el proveedor de video REST simulado, otro tercero
 ```
 
 ---
@@ -274,6 +277,30 @@ public void alConfirmar(
 Siempre `@Observes`, nunca `@ObservesAsync`: un observador asincrónico corre
 fuera de la transacción y su falla ya no podría frenar la confirmación. El
 criterio completo está en `docs/documento-tecnico.md`, sección 9.2.
+
+### Telemedicina
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| `POST` | `/telemedicina/turno/{turnoId}` | paciente o profesional del turno | Crea la sala del turno (o devuelve la que ya tiene) y responde con el enlace de quien la pidió |
+| `GET` | `/telemedicina/turno/{turnoId}` | paciente o profesional del turno | El enlace de quien pregunta: el profesional recibe el de anfitrión y el paciente el de invitado, nunca los dos. `404` si todavía no hay sala |
+
+Cualquier otro usuario, administrador incluido, recibe `403`. Solo un turno de
+`TELEMEDICINA` tomado por un paciente (`EN_HOLD` o `CONFIRMADO`) puede tener
+sala; uno presencial responde `409` sin llamar al proveedor. Si el proveedor no
+responde, `503` con `Retry-After`.
+
+Hoy la sala se crea a pedido. El enganche con `confirmarTurno`, para que se
+cree sola al confirmar, es SCRUM-95.
+
+**El proveedor de video simulado** (`externos/video`) es un tercero que vive en
+el mismo WAR, como la pasarela de pago: `POST /api/externo/salas`, sin
+autenticación, con `{"reference": "...", "scheduledAt": "..."}`. Devuelve
+`roomId`, `hostUrl` (profesional) y `guestUrl` (paciente). Las salas son de
+Jitsi Meet y los enlaces funcionan de verdad. Para simular el proveedor caído,
+una `reference` que empiece con `caer`, o levantar WildFly con
+`-Dmediconecta.video.simular-caida=true`. `ServicioDeTelemedicina` lo llama por
+HTTP con el Jakarta REST Client; la URL se cambia con `-Dmediconecta.video.url`.
 
 ### Facturación: reclamo a la obra social
 

@@ -130,6 +130,25 @@
     </security-constraint>
 
     <!--
+      Operacion sensible 6: la sala de video de un turno. Quien tiene el enlace
+      entra a la consulta, asi que nunca es anonima. Incluye al administrador
+      para que reciba 403 desde el componente (y no 401 o un rechazo distinto
+      de la capa web): que la sala sea solo del paciente y del profesional del
+      turno lo decide ServicioDeTelemedicina.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Telemedicina</web-resource-name>
+            <url-pattern>/api/telemedicina/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
       Fallback del frontend: cualquier URL que no corresponda a un archivo ni a
       la API devuelve index.html. El frontend es una SPA y sus rutas (por
       ejemplo /mediconecta/agenda) no existen como archivos en el servidor:
