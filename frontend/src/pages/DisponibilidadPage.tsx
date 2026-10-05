@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { guardarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
@@ -72,6 +72,10 @@ export default function DisponibilidadPage() {
   const [turnoSeleccionado, setTurnoSeleccionado] = useState<TurnoDTO | null>(null)
   const [error, setError] = useState('')
   const [reservando, setReservando] = useState(false)
+  // Guarda sincronica contra el doble clic: el estado de React recien cambia
+  // en el proximo render, y dos clics seguidos llegan antes de que el boton
+  // se deshabilite.
+  const enviando = useRef(false)
 
   useEffect(() => {
     api<ProfesionalDTO[]>('/usuarios/profesionales')
@@ -116,7 +120,8 @@ export default function DisponibilidadPage() {
   }
 
   async function reservar() {
-    if (!turnoSeleccionado || profesionalId === null || reservando) return
+    if (!turnoSeleccionado || profesionalId === null || enviando.current) return
+    enviando.current = true
     setReservando(true)
     setError('')
     try {
@@ -149,6 +154,7 @@ export default function DisponibilidadPage() {
         }
       }
     } finally {
+      enviando.current = false
       setReservando(false)
     }
   }
