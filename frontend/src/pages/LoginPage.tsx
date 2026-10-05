@@ -1,9 +1,14 @@
+import { ASSETS } from '../rutas'
+import { useTitulo } from '../useTitulo'
+
 export default function LoginPage() {
+  useTitulo('Iniciar sesión')
+
   return (
     <main className="login">
       <section className="brand">
         <div className="wordmark">
-          <img src="/mediconecta/assets/logo-light.svg" alt="" />
+          <img src={ASSETS.logoClaro} alt="" />
           MediConecta
         </div>
         <div>

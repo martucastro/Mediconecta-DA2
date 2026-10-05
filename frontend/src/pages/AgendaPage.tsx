@@ -1,20 +1,24 @@
 import { Link } from 'react-router-dom'
+import { ASSETS } from '../rutas'
+import { useTitulo } from '../useTitulo'
 
 export default function AgendaPage() {
+  useTitulo('Mi agenda')
+
   return (
     <>
       <header className="topbar">
         <Link className="wordmark" to="/agenda">
-          <img src="/mediconecta/assets/logo.svg" alt="" />
+          <img src={ASSETS.logo} alt="" />
           MediConecta
         </Link>
         <nav className="nav">
           <Link to="/agenda" aria-current="page">Mi agenda</Link>
           <Link to="/historia">Pacientes</Link>
           <a href="#">Facturación</a>
-          <img className="avatar" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
         </nav>
-        <img className="avatar m" src="/mediconecta/assets/avatar.svg" alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
       </header>
 
       <main className="content stack" style={{ gap: 26 }}>
