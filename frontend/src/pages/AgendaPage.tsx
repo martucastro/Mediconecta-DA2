@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import BotonCerrarSesion from './BotonCerrarSesion'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
 
@@ -17,6 +18,7 @@ export default function AgendaPage() {
           <Link to="/historia">Pacientes</Link>
           <a href="#">Facturación</a>
           <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
+          <BotonCerrarSesion />
         </nav>
         <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
       </header>
