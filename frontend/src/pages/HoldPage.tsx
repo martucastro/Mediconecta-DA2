@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { leerTurnoEnHold, limpiarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
@@ -62,6 +62,11 @@ export default function HoldPage() {
   const [restante, setRestante] = useState(() => segundosRestantes(vence))
   const [estado, setEstado] = useState<Estado>(() => (segundosRestantes(vence) > 0 ? 'reservado' : 'vencido'))
   const [error, setError] = useState('')
+  // Guarda sincronica contra el doble clic: el estado de React recien cambia en
+  // el proximo render, y dos clics seguidos llegan antes de que el boton se
+  // deshabilite. Sin esto se mandan dos PUT y el 409 del segundo podria pisar
+  // el "confirmado" del primero.
+  const enviando = useRef(false)
 
   // La cuenta regresiva solo corre mientras el turno sigue reservado.
   useEffect(() => {
@@ -80,7 +85,8 @@ export default function HoldPage() {
   if (!turno) return <Navigate to="/disponibilidad" replace />
 
   async function confirmar() {
-    if (!turno || estado !== 'reservado') return
+    if (!turno || estado !== 'reservado' || enviando.current) return
+    enviando.current = true
     setEstado('enviando')
     setError('')
     try {
@@ -97,11 +103,14 @@ export default function HoldPage() {
         setEstado('reservado')
       }
       setError(err instanceof Error ? err.message : 'No se pudo confirmar el turno')
+    } finally {
+      enviando.current = false
     }
   }
 
   async function liberar() {
-    if (!turno || estado !== 'reservado') return
+    if (!turno || estado !== 'reservado' || enviando.current) return
+    enviando.current = true
     setEstado('enviando')
     setError('')
     try {
@@ -113,6 +122,7 @@ export default function HoldPage() {
       if (!(err instanceof ApiError && err.estado === 409)) {
         setEstado('reservado')
         setError(err instanceof Error ? err.message : 'No se pudo liberar el turno')
+        enviando.current = false
         return
       }
     }
