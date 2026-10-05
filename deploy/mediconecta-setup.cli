@@ -2,8 +2,9 @@
 #
 # Deja el servidor listo para recibir el WAR: instala el driver de PostgreSQL,
 # crea el datasource java:/MediConectaDS, habilita la integracion de Jakarta
-# Security con Elytron y crea el topico JMS TurnoConfirmadoTopic (requiere
-# haber arrancado con standalone-full.xml).
+# Security con Elytron, crea el topico JMS TurnoConfirmadoTopic y la cola
+# ReclamosFacturacionQueue con su politica de reintentos (requiere haber
+# arrancado con standalone-full.xml).
 #
 # Uso, con WildFly YA CORRIENDO y el driver descargado (ver README):
 #
@@ -84,6 +85,42 @@ if (outcome != success) of /subsystem=messaging-activemq/server=default/jms-topi
 end-if
 
 # ---------------------------------------------------------------------------
-# 5. Aplicar
+# 5. Cola JMS ReclamosFacturacionQueue
+#
+# Cada reclamo de facturacion a la obra social lo procesa exactamente UN
+# consumidor (el @MessageDriven de ServicioDeFacturacion), por eso es una cola
+# punto a punto y no un topico como TurnoConfirmado, que puede tener varios
+# interesados a la vez.
+#
+# El JNDI java:/jms/queue/ReclamosFacturacion es un contrato con el codigo.
+#
+# Un reclamo que falla siempre no puede reintentarse para siempre: despues de
+# 5 entregas fallidas Artemis lo mueve a ReclamosFacturacionDLQ, una cola de
+# mensajes no entregados propia de facturacion. Asi los reclamos trabados no
+# se mezclan con los de otros destinos en la DLQ general y se pueden revisar
+# o reenviar a mano. Entre reintentos espera 2 s, 4 s, 8 s... hasta 30 s, para
+# darle tiempo a la obra social a volver si estaba caida.
+# ---------------------------------------------------------------------------
+if (outcome != success) of /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionDLQ:read-resource
+    /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionDLQ:add( \
+        entries=["java:/jms/queue/ReclamosFacturacionDLQ"])
+end-if
+
+if (outcome != success) of /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionQueue:read-resource
+    /subsystem=messaging-activemq/server=default/jms-queue=ReclamosFacturacionQueue:add( \
+        entries=["java:/jms/queue/ReclamosFacturacion"])
+end-if
+
+if (outcome != success) of /subsystem=messaging-activemq/server=default/address-setting=jms.queue.ReclamosFacturacionQueue:read-resource
+    /subsystem=messaging-activemq/server=default/address-setting=jms.queue.ReclamosFacturacionQueue:add( \
+        dead-letter-address=jms.queue.ReclamosFacturacionDLQ, \
+        max-delivery-attempts=5, \
+        redelivery-delay=2000, \
+        redelivery-multiplier=2.0, \
+        max-redelivery-delay=30000)
+end-if
+
+# ---------------------------------------------------------------------------
+# 6. Aplicar
 # ---------------------------------------------------------------------------
 reload

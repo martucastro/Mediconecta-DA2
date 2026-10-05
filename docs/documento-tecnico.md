@@ -77,6 +77,8 @@ En el paquete raíz quedan las clases fuera de esa estructura: `ApiActivator` (`
 
 La tabla de arriba describe la intención general, pero no es estrictamente "cada capa habla solo con la inmediata inferior": los DTO de presentación (`TurnoDTO`, `UsuarioDTO`, `HistoriaClinicaDTO`, entre otros) se construyen directamente a partir de la entidad JPA de `datos` (por ejemplo, `TurnoDTO(Turno turno)`), sin pasar por un objeto intermedio de `negocio`. La entidad hace de modelo compartido entre presentación y datos para ese propósito puntual. Presentación sigue sin importar `EntityManager` ni escribir SQL, y sigue sin decidir ninguna regla de negocio: lo único que cruza la capa de negocio es la forma del dato, no su comportamiento.
 
+Hay además un paquete que no es nuestro, aunque viva en el mismo WAR: `externos.obrasocial`, la simulación del sistema legado de la obra social (sección 6.2). No se divide en capas porque no es un componente que diseñamos, sino un tercero del que sólo nos importa el contrato SOAP. Ninguna clase de los componentes lo importa: la única forma de llegar a él es su WSDL, igual que con el sistema real.
+
 ## 4. Los ocho componentes del sistema
 
 | # | Componente | Tipo de EJB / integración | Responsabilidad | Estado |
@@ -84,13 +86,13 @@ La tabla de arriba describe la intención general, pero no es estrictamente "cad
 | 1 | ServicioDeUsuarios | `@Stateless` | Registro, autenticación, perfiles | Implementado |
 | 2 | ServicioDeTurnos | `@Stateful` (con `ExpiradorDeHolds` como `@Singleton` colaborador) | Disponibilidad, reserva, cancelación, hold de aproximadamente 5 minutos | Implementado |
 | 3 | ServicioDeHistoriaClinica | `@Stateless` | Antecedentes, diagnósticos, recetas | Implementado |
-| 4 | ServicioDeObrasSociales | Adapter vía SOAP | Validación de cobertura contra sistema legado | No implementado |
+| 4 | ServicioDeObrasSociales | Adapter vía SOAP | Validación de cobertura contra sistema legado | Implementado (sección 6.3), contra el legado simulado de la sección 6.2 |
 | 5 | ServicioDePagos | REST | Cobro de copagos contra pasarela de pago | No implementado |
 | 6 | ServicioDeTelemedicina | REST | Integración con proveedor de video | No implementado |
 | 7 | ServicioDeNotificaciones | `@MessageDriven` (tópico JMS) | Notificación asincrónica de eventos | No implementado |
-| 8 | ServicioDeFacturacion | `@MessageDriven` (cola JMS) | Facturación a obras sociales/prepagas | No implementado |
+| 8 | ServicioDeFacturacion | `@MessageDriven` (tópico y cola JMS) | Reclamo de facturación a obras sociales/prepagas por turnos con cobertura autorizada | Implementado, con el canal real hacia la obra social (sección 9.3) |
 
-Que los tres componentes ya convivan integrados y desplegados juntos fue justamente lo que permitió detectar y corregir la incompatibilidad entre `@Stateful` y `TimerService` descrita en la sección 6.1: un problema que solo se manifiesta con el sistema desplegado, no en aislamiento.
+Que los componentes ya convivan integrados y desplegados juntos fue justamente lo que permitió detectar y corregir la incompatibilidad entre `@Stateful` y `TimerService` descrita en la sección 6.1: un problema que solo se manifiesta con el sistema desplegado, no en aislamiento.
 
 ## 5. Caso de uso representativo: reservar un turno con cobertura
 
@@ -105,7 +107,7 @@ Este flujo atraviesa las tres capas y varios de los ocho componentes:
 7. Al confirmarse el turno se publica `TurnoConfirmado` en un tópico JMS, que `ServicioDeNotificaciones` consume asincrónicamente.
 8. La SPA recibe `201 Created`.
 
-Los pasos 1 a 3, 6 (parcialmente, sección 11) y la mitad publicadora del paso 7 (sección 9.1) están respaldados por código real, verificado en la sección 10. Los pasos 4 y 5, y el lado consumidor del paso 7 (`ServicioDeNotificaciones`), describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
+Los pasos 1 a 3, 6 (parcialmente, sección 11) y la mitad publicadora del paso 7 (sección 9.1) están respaldados por código real, verificado en la sección 10. El componente del paso 4 ya existe (sección 6.3), pero `ServicioDeTurnos` todavía no lo invoca al reservar. El paso 5 y el lado consumidor del paso 7 (`ServicioDeNotificaciones`) describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
 
 ## 6. Evidencia de implementación
 
@@ -128,6 +130,78 @@ Los *stateful* session beans no figuran en esa lista. En una iteración anterior
 Corregir esto dejó a la vista un segundo problema. La versión anterior cancelaba recorriendo todos los temporizadores devueltos por `getTimers()` y cancelándolos sin discriminar. El javadoc de ese método es explícito: devuelve "all active timers associated with this bean", es decir todos los del bean, no los de un paciente en particular. Esa implementación cancelaba también los holds de los demás pacientes, que quedaban retenidos para siempre. La versión actual identifica cada temporizador por el dato con el que fue creado, el identificador del turno, y cancela únicamente el que corresponde.
 
 Entidades: `Turno` (`paciente`/`profesional` `@ManyToOne`, `estado`, `inicioHold`, `modalidad`, `consultorio` y los cuatro campos de cobertura: `coberturaAutorizada`, `coberturaPorcentaje`, `copago`, `numeroAutorizacion`), `ModalidadTurno` (`PRESENCIAL`, `TELEMEDICINA`), `EstadoTurno` (`DISPONIBLE`, `EN_HOLD`, `CONFIRMADO`, `CANCELADO`) y `TurnoDAO`. `TurnosResource` agrega `POST /api/turnos/disponibilidad`, con la restricción de rol en `ServicioDeTurnos.abrirDisponibilidad` (`@RolesAllowed("PROFESIONAL")`), no en el recurso JAX-RS, consistente con la sección 3.
+
+### 6.2 Sistema legado de la obra social (simulado)
+
+El sistema legado de la obra social no existe, pero la integración tiene que ser SOAP de verdad. Por eso se simula con un endpoint JAX-WS publicado por el CXF de WildFly, que es contra lo que se integrará el Adapter `ServicioDeObrasSociales`.
+
+**WSDL:** `http://localhost:8080/mediconecta/legado/obrasocial?wsdl`
+
+La URL se fija con un mapeo explícito en `web.xml` en vez de depender del nombre que JBossWS asigna por defecto, para que el contrato tenga una dirección estable. El endpoint no tiene `security-constraint`: representa a un tercero, que no conoce a los usuarios de MediConecta.
+
+Las dos primeras operaciones reciben `dni`, `numeroAfiliado` y `codigoPrestacion` y devuelven una `respuestaCobertura` con `autorizado`, `plan`, `porcentajeCobertura`, `arancel`, `copago`, `numeroAutorizacion` y `mensaje`:
+
+- `validarCobertura`: consulta; nunca devuelve número de autorización.
+- `autorizarPrestacion`: misma evaluación y, si queda autorizada, un número de autorización (`AUT-<afiliado>-<prestación>`).
+
+Una tercera operación, agregada para SCRUM-97, presenta ante la obra social una prestación ya autorizada: `presentarReclamo(dni, numeroAfiliado, numeroAutorizacion)` devuelve una `respuestaReclamo` con `numeroPresentacion` y `montoReconocido`. A diferencia de las otras dos, no evalúa plan ni cobertura: valida que `numeroAutorizacion` tenga el formato determinista que emite `autorizarPrestacion` y corresponda al afiliado (y al DNI), y reconoce `arancel × porcentaje del plan` (el complemento del copago). Una autorización que no corresponda al afiliado, con formato desconocido o para un afiliado inexistente es, igual que en las otras operaciones, un pedido inválido que vuelve como SOAP Fault `Client`.
+
+Las respuestas son deterministas, con un afiliado por plan para poder mostrar cada caso. El porcentaje depende del plan, y el copago es `arancel × (100 − porcentaje) / 100`. Las prestaciones son `CONSULTA` (arancel 20000.00) y `TELECONSULTA` (15000.00).
+
+| DNI | Afiliado | Plan | Cobertura | Resultado para `CONSULTA` |
+|---|---|---|---|---|
+| 30111222 | OS-1001 | `PLAN_ALTO` | 100 % | autorizado, copago 0.00 |
+| 30333444 | OS-2002 | `PLAN_MEDIO` | 70 % | autorizado, copago 6000.00 |
+| 30444555 | OS-3003 | `PLAN_BASICO` | 40 % | autorizado, copago 12000.00 |
+| 30555666 | OS-4004 | `SIN_COBERTURA` | 0 % | no autorizado, copago 20000.00 |
+| 30777888 | OS-5005 | `PLAN_ALTO` | 100 % | tarda 30 s en responder: existe para demostrar el timeout del Adapter (6.3) |
+
+Se distinguen dos tipos de negativa. "Sin cobertura" es una respuesta válida del legado: el afiliado existe y el plan no cubre. Un afiliado inexistente, un DNI que no corresponde al número de afiliado o una prestación desconocida son en cambio pedidos que el legado no puede evaluar, y vuelven como SOAP Fault de código `Client`, porque el error es del cliente y no del legado; el WSDL no declara un `wsdl:fault` propio. Una falla interna del legado sería, en cambio, un fault `Server`. El Adapter trata la primera como un resultado de negocio, el fault `Client` como un pedido inválido (`400`) y cualquier otra falla como legado no disponible (`503`), ver sección 6.3.
+
+Una consecuencia del caveat de la sección 2.3: `jakarta.jakartaee-api` 11 ya no incluye JAX-WS, así que el `pom.xml` declara `jakarta.xml.ws-api` 4.0 con alcance `provided`. En tiempo de ejecución la implementación la pone WildFly; la dependencia sólo existe para compilar.
+
+### 6.3 ServicioDeObrasSociales: el Adapter
+
+Es el caso de libro del patrón Adapter. Hacia adentro, el sistema pregunta en su propio idioma: `validarCobertura(pacienteId, Prestacion)` y recibe una `Cobertura` (autorizada, porcentaje, copago, número de autorización). Hacia afuera, el legado sólo entiende DNI, número de afiliado, códigos de prestación y sobres SOAP. El componente traduce en los dos sentidos, y ningún tipo del contrato SOAP sale de él.
+
+| Capa | Clase | Qué hace |
+|---|---|---|
+| Negocio | `ServicioDeObrasSociales` (`@Stateless`) | Fachada: `validarCobertura`, `autorizarPrestacion`, `presentarReclamo`, `registrarAfiliacion` |
+| Negocio | `Cobertura`, `Prestacion`, `ResultadoPresentacion` | Objetos de dominio devueltos y enum de prestaciones |
+| Negocio | `SistemaDeObraSocial` | El port del Adapter: interfaz propia, sin ningún tipo SOAP, que devuelve `Cobertura` o `ResultadoPresentacion` |
+| Negocio | `negocio.soap.SistemaDeObraSocialSoap` (con `ObraSocialLegadoPort` y `RespuestaCoberturaXml`) | Única implementación: el cliente JAX-WS |
+| Negocio | `ObraSocialNoDisponibleException` y `ObraSocialNoDisponibleMapper` | El legado no responde; se traduce a `503` |
+| Negocio | `SeedDeAfiliaciones` | Afilia al paciente de prueba (OS-2002) en el arranque |
+| Datos | `AfiliacionDePaciente`, `AutorizacionDePrestacion` y sus DAO | Tablas `afiliaciones_obra_social` y `autorizaciones_prestacion` |
+
+Los pedidos inválidos usan `comun.negocio.DatosInvalidosException`, la misma que el resto de los componentes, que el mapper del paquete raíz ya traduce a `400`.
+
+**Dónde vive SOAP.** Sólo en el subpaquete `obrassociales.negocio.soap`: el contrato del lado cliente (`ObraSocialLegadoPort`, un SEI escrito a mano con los mismos nombres y namespace que el WSDL), el espejo JAXB de la respuesta y el cliente. El port y su implementación viven en `negocio`, igual que `PasarelaDePagoAdapter` y su cliente REST en pagos: la fachada habla contra la interfaz `SistemaDeObraSocial`, que recibe y devuelve tipos de dominio y falla con excepciones de negocio. Así hay una sola traducción, de SOAP al dominio, y no dos encadenadas. Si mañana la obra social migrara a REST, cambiaría una clase y la fachada no se enteraría; la capa de datos del componente queda sólo con lo que se persiste. Se verifica con los imports: fuera de `externos.obrasocial` y `obrassociales.negocio.soap` ningún archivo importa `jakarta.xml.ws`, `jakarta.jws`, `jakarta.xml.soap` ni `jakarta.xml.bind`.
+
+**Por qué `Service.create` sin descargar el WSDL.** El cliente se construye con el nombre del servicio y las anotaciones del SEI, sin pedirle el WSDL al legado. Si lo pidiera, crear el cliente ya dependería de que el legado esté vivo, y esa descarga ocurriría fuera de los timeouts configurados.
+
+**Timeouts explícitos.** Conexión 2 s y respuesta 5 s, puestos en el request context de cada llamada. Sin ellos, un legado que acepta la conexión y no contesta retiene indefinidamente el hilo del pedido, y con él la transacción y al usuario. URL y timeouts son propiedades de sistema (`mediconecta.obrasocial.url`, `mediconecta.obrasocial.timeoutConexionMs`, `mediconecta.obrasocial.timeoutRespuestaMs`) que se leen en cada llamada, así que se pueden cambiar con `jboss-cli` sin redesplegar.
+
+**Tres desenlaces.** El adaptador clasifica lo que vuelve del legado:
+
+1. Una respuesta, con o sin cobertura, es una `Cobertura`. "Sin cobertura" no es un error: es `autorizada = false`.
+2. Un SOAP Fault de código `Client` (`Sender` en SOAP 1.2) significa que el legado entendió el pedido y lo rechaza: `DatosInvalidosException`, `400`. Reintentar no sirve.
+3. Cualquier otra cosa, es decir un fault `Server`, una conexión rechazada, un timeout o una respuesta vacía, es `ObraSocialNoDisponibleException`, `503`. Se puede reintentar.
+
+El mensaje de la tercera está pensado para mostrarse tal cual ("El sistema de la obra social no respondió. Intentá de nuevo en unos minutos."); el detalle técnico queda en el log del adaptador y como causa de la excepción, no en el mensaje. Separar el segundo caso del tercero por el código del fault importa: si todo fault fuera "pedido rechazado", una falla interna del legado le diría al usuario que sus datos son inválidos. Una autorización que el legado da por buena pero sin número también cae en el tercero: sin número no sirve para facturar.
+
+**Transacciones y persistencia.** `validarCobertura` es `NOT_SUPPORTED`: no escribe nada y no tiene sentido retener una transacción durante una llamada remota. `autorizarPrestacion` es `REQUIRED`: si el legado autoriza, guarda número y fecha de autorización, porcentaje y copago en `autorizaciones_prestacion`, que es lo que facturación va a necesitar. Al participar de la transacción de quien lo invoca, si la reserva del turno falla después, la fila local se deshace con ella (la autorización remota no, ver más abajo). Las negativas y los errores no generan filas. `presentarReclamo` es `NOT_SUPPORTED`, por la misma razón que `validarCobertura`: no persiste nada local (eso lo hace `facturacion`, sección 9.3) y su llamada remota no tiene por qué arrastrar la transacción de quien la invoca (`ServicioDeFacturacion.procesarReclamo`); además, al correr fuera de esa transacción, su propia excepción de negocio (`@ApplicationException(rollback = true)`) no puede arriesgarse a hacer rollback de una transacción que no es suya.
+
+**Afiliación.** `Usuario` no tiene DNI ni número de afiliado, y no le corresponde: son datos de la relación con la obra social. Viven en `AfiliacionDePaciente`, tabla propia del componente, que referencia al paciente por id y no con `@ManyToOne`, con el mismo criterio que `HistoriaClinica`. `registrarAfiliacion` es `@RolesAllowed("ADMINISTRADOR")`. El resto de la fachada es `@PermitAll`: quién puede reservar o autorizar lo decide el componente que la invoca, que es el que conoce el caso de uso.
+
+**Pruebas.** La lógica se prueba sin contenedor ni red. La fachada, con el port y los DAO como dobles: qué se guarda y cuándo (sólo si se autorizó, y con número), y qué se rechaza (paciente inexistente o que no es paciente, sin afiliación, prestación nula). El adaptador, con un spy que reemplaza `nuevoPuerto`, la única parte que necesita un runtime de JAX-WS, y un `SOAPFault` simulado: traducción de la respuesta, respuesta nula y cada tipo de falla contra la excepción que corresponde. También tienen pruebas el mapper a `503` y el cálculo de copago del simulador. Lo que sí requiere el servidor desplegado (el cableado de CDI y CXF, los timeouts reales y el código `Client` del fault) se verifica en la sección 10.
+
+**Para SCRUM-91 (integración con la reserva).** Cuatro cosas que conviene tener presentes al engancharlo en el evento `TurnoEnReserva`:
+
+- Un timeout no es un rechazo. Si el legado autorizó pero la respuesta se perdió, queda una autorización remota que no figura en `autorizaciones_prestacion`. Y si la reserva hace rollback después de que el legado autorizó, la fila local se deshace pero la autorización remota queda sin compensar. Hace falta una baja o idempotencia por turno.
+- La transacción de la reserva puede esperar al legado hasta 7 s (2 de conexión más 5 de respuesta), con la fila del turno bloqueada.
+- La fachada no verifica que el paciente le pertenezca a quien llama: debe recibir siempre el paciente del turno, nunca un id que venga del cliente.
+- Sólo el paciente de prueba tiene afiliación. Sin una, la reserva fallaría con `400` ("no tiene una obra social registrada"). `registrarAfiliacion` existe pero todavía no tiene llamadores ni está expuesta.
 
 ## 7. Autenticación y autorización
 
@@ -240,6 +314,25 @@ Un límite a tener presente: el rollback JTA solo alcanza a los recursos transac
 
 Esto no reemplaza al tópico `TurnoConfirmado` (sección 9.1): los eventos CDI son para los pasos que deciden si el turno se confirma; el tópico JMS, para lo que reacciona después, fuera de la transacción del paciente.
 
+### 9.3 Facturación: por qué un segundo suscriptor del tópico, y no `PuntosDeExtension.RECLAMO`
+
+El encolado del reclamo a la obra social aparece en la tabla de la sección 9.2 como el tercer paso de `TurnoEnConfirmacion` (`PuntosDeExtension.RECLAMO`, prioridad 300), pero `ServicioDeFacturacion` finalmente **no** se implementó como observador de ese evento. Se lo conectó como un segundo consumidor independiente del tópico `TurnoConfirmado` (`TurnoConfirmadoFacturacionMDB`; `NotificacionMDB`, sección 4, es el primero), publicado por `ServicioDeTurnos.confirmarTurno` dentro de su propia transacción (sección 9.1).
+
+Dos razones, ambas de aislamiento entre componentes:
+
+1. **`facturacion` no toca código de `turnos`.** Un observador CDI vive en el componente que lo declara, pero igual exige que `ServicioDeTurnos` dispare el evento `TurnoEnConfirmacion` en el punto correcto y que `PuntosDeExtension` reserve el número de prioridad; nada de eso cambia con el tópico, pero evita que esta tarjeta edite o revise el flujo transaccional de confirmación mientras otras tarjetas (SCRUM-91, 93, 95) hacen lo mismo en paralelo sobre el mismo evento.
+2. **El reclamo solo tiene sentido para una confirmación que ya es un hecho.** Un observador `@Observes TurnoEnConfirmacion` corre *antes* de que `confirmarTurno` marque el turno `CONFIRMADO` (sección 9.2): si la transacción hace rollback por otro motivo posterior, un observador ya habría encolado un reclamo para un turno que nunca se confirmó. El tópico, en cambio, se publica después de que la transacción de confirmación cerró con éxito (sección 9.1): no hay forma de recibir `TurnoConfirmado` para un turno que no esté `CONFIRMADO`.
+
+`PuntosDeExtension.RECLAMO` queda sin usar, a propósito: no se borra la constante, porque documenta la prioridad relativa que se había previsto para este paso frente a los otros tres, aunque la implementación final haya tomado un camino distinto.
+
+**Reintentos, cola muerta y revisión manual.** `ReclamoMDB` consume `java:/jms/queue/ReclamosFacturacion` (cola punto a punto, a diferencia del tópico: el reclamo lo tiene que procesar exactamente un consumidor una sola vez). El puerto `CanalDeReclamos` distingue dos tipos de falla: `CanalDeReclamosNoDisponibleException` es transitoria (el canal no respondió) y `ReclamoRechazadoException` es un rechazo determinístico de la obra social. Una falla transitoria con intentos disponibles registra el intento en una transacción `REQUIRES_NEW` propia (mismo patrón que `PagoDAO.guardarEnNuevaTransaccion`, para que sobreviva el rollback) y relanza, dejando que el contenedor no confirme el mensaje y Artemis lo reentregue según la política de `mediconecta-setup.cli` (hasta 5 intentos, 2s→30s de backoff, después `ReclamosFacturacionDLQ`). En el intento número 5 (`ServicioDeFacturacion.MAX_INTENTOS`, que tiene que coincidir con `max-delivery-attempts` del script), o ante un rechazo definitivo desde el primer intento, el reclamo pasa a `EN_REVISION_MANUAL` y el método ya no relanza: no tiene sentido pedirle a Artemis una reentrega que la cola ya no va a dar, y reintentar un rechazo determinístico tampoco cambiaría el resultado. Un reclamo ya `ENVIADO` o `EN_REVISION_MANUAL` se ignora, para que una reentrega (por ejemplo, si el contenedor se reinicia antes de confirmar un mensaje ya procesado) no lo reabra.
+
+**`@RunAs`.** `ServicioDeFacturacion.registrarReclamo` necesita leer el turno con `ServicioDeTurnos.obtenerTurno`, que hereda el `@RolesAllowed({PACIENTE, PROFESIONAL, ADMINISTRADOR})` de clase (sección 7). Un `@MessageDriven` no tiene un `Principal` autenticado: sin nada más, esa llamada falla con `EJBAccessException`. `TurnoConfirmadoFacturacionMDB` se anota `@RunAs(ServicioDeUsuarios.ROL_ADMINISTRADOR)`, que le da al bean una identidad propagada con ese rol para las llamadas que hace a otros EJB.
+
+Verificado en este WildFly 41 (sección 10), `@RunAs` solo no alcanzó: Artemis entregaba el mensaje y el propio `onMessage` quedaba rechazado con `EJBAccessException` ("... is not allowed"), *antes* de llegar siquiera a `obtenerTurno`. La causa es la misma que ya documenta la sección 6 para `ServicioDeUsuarios`: con `default-missing-method-permissions-deny-access` en `true` (el valor por defecto del subsistema `ejb3` de WildFly), un bean que lleva **cualquier** anotación de `jakarta.annotation.security` (acá, `@RunAs`) pero ningún `@RolesAllowed`/`@PermitAll` explícito sobre el método invocado queda denegado por defecto. Agregar `@PermitAll` junto a `@RunAs` lo resolvió, sin tocar ninguna configuración de Elytron ni del script `mediconecta-setup.cli`: es una anotación de la aplicación, no una configuración del servidor.
+
+**El canal real.** `CanalDeReclamos` tiene una única implementación, `CanalDeReclamosSoap` (bean CDI simple, `@ApplicationScoped`, no EJB: no necesita ninguna transacción propia porque `ServicioDeObrasSociales.presentarReclamo` ya es `NOT_SUPPORTED`), que presenta el reclamo llamando a esa fachada (sección 6.3) y traduce sus dos excepciones de negocio a las del puerto de facturación: `DatosInvalidosException` (la autorización no corresponde al afiliado, o es desconocida) se vuelve `ReclamoRechazadoException` (rechazo definitivo, directo a `EN_REVISION_MANUAL`), y `ObraSocialNoDisponibleException` (el legado no respondió) se vuelve `CanalDeReclamosNoDisponibleException` (transitorio, con reintentos). Reemplaza a `CanalDeReclamosPendiente`, que se eliminó: con una sola implementación del puerto no hay ambigüedad de CDI que resolver.
+
 ## 10. Verificación en ejecución
 
 El sistema se desplegó en WildFly 41 con PostgreSQL 18 y se verificó endpoint por endpoint, con el usuario autenticado que corresponde a cada caso.
@@ -254,13 +347,42 @@ El sistema se desplegó en WildFly 41 con PostgreSQL 18 y se verificó endpoint 
 | PROFESIONAL intenta confirmar el hold de un paciente | `403` |
 | Reservar un turno | pasa a `EN_HOLD`, con `inicioHold` seteado |
 | Confirmar el turno reservado | pasa a `CONFIRMADO` |
+| `GET /mediconecta/legado/obrasocial?wsdl` desde el navegador | `200`, WSDL con `validarCobertura` y `autorizarPrestacion` |
+| `autorizarPrestacion` para `CONSULTA` con los cuatro afiliados de prueba | `100 %`/`0.00`, `70 %`/`6000.00`, `40 %`/`12000.00` autorizados; `0 %`/`20000.00` no autorizado |
+| `validarCobertura` con un afiliado inexistente, un DNI que no corresponde o una prestación desconocida | `500` HTTP con un SOAP Fault de código `Client`; el WSDL ya no declara `wsdl:fault` |
+| `ServicioDeObrasSociales.validarCobertura` del paciente de prueba (OS-2002) | `Cobertura` autorizada, 70 %, copago 6000.00, sin número; nada persistido |
+| `ServicioDeObrasSociales.autorizarPrestacion` del mismo paciente | número `AUT-OS-2002-CONSULTA` y una fila en `autorizaciones_prestacion` con fecha, 70 % y 6000.00 |
+| `autorizarPrestacion` con afiliación OS-4004 / OS-9999 | no autorizada y sin fila persistida / `400` "La obra social rechazó el pedido: No existe el afiliado OS-9999" |
+| `autorizarPrestacion` con afiliación OS-5005 (legado lento) | `503` "El sistema de la obra social no respondió. Intentá de nuevo en unos minutos." a los 5,02 s, sin fila persistida |
+| URL del legado apuntando a un puerto cerrado | el mismo `503`, a los 21 ms |
 | Hold sin confirmar, transcurrido el tiempo de expiración | a los 303 segundos, el turno volvió a `DISPONIBLE`, con `paciente` e `inicioHold` en `null`, y el log del contenedor registró "Hold vencido: el turno 2 vuelve a estar disponible" |
+
+Como `ServicioDeObrasSociales` no se expone por HTTP, esas filas (y los `400` y `503`) se observaron a través de un recurso JAX-RS provisorio que invocaba la fachada sin capturar excepciones, para que las tradujeran los mappers reales. Se retiró del código una vez hecha la verificación, y las tablas se comprobaron directamente en PostgreSQL.
 
 Este último resultado es, junto con la corrección de la sección 6.1, la evidencia más fuerte de que el mecanismo de timers funciona como se lo diseñó: nadie liberó el turno manualmente, lo hizo el `@Timeout` de `ExpiradorDeHolds` por su cuenta, sin ninguna solicitud HTTP en curso.
 
-El repositorio incluye dos scripts que automatizan esta verificación: `deploy/mediconecta-setup.cli` (instala el driver JDBC de PostgreSQL como módulo de WildFly y crea el datasource) y `deploy/smoke-test.sh` (automatiza buena parte de la tabla anterior, incluyendo la espera para confirmar la expiración real del hold).
+El repositorio incluye dos scripts que automatizan esta verificación: `deploy/mediconecta-setup.cli` (instala el driver JDBC de PostgreSQL como módulo de WildFly y crea el datasource) y `deploy/smoke-test.sh` (automatiza buena parte de la tabla anterior, incluidos los casos SOAP y la espera para confirmar la expiración real del hold).
 
 Un hallazgo de configuración que costó diagnosticar: la integración de Jakarta Security (Soteria) con Elytron en WildFly requiere fijar `integrated-jaspi=false` en el `application-security-domain` de Undertow. Sin ese ajuste, Elytron intenta reautorizar una identidad que Soteria ya estableció, y **todos** los endpoints protegidos responden `500` con `"ELY01177: Authorization failed"`, incluso con credenciales y rol correctos. La pista que distingue esto de un error de credenciales real: una contraseña incorrecta sigue devolviendo `401` con normalidad, mientras que una credencial correcta con permisos correctos falla igual con `500`.
+
+### 10.1 Facturación: verificación funcional del reclamo y sus reintentos
+
+Desplegado el WAR con `ServicioDeFacturacion` (sección 9.3), con un turno confirmado con cobertura autorizada (seteada directamente en la base, porque la validación real de cobertura es SCRUM-91, todavía no implementada):
+
+| Escenario | Esperado | Observado |
+|---|---|---|
+| Confirmar un turno con cobertura autorizada | se crea un `Reclamo` `PENDIENTE` | `Reclamo` creado, `PENDIENTE`, una sola vez |
+| Reintentos contra el canal stub (siempre indisponible) | 5 intentos con backoff creciente (2s, 4s, 8s, 16s/30s) | intentos y `actualizadoEn` en `15:40:58` (intento 2, +2.0s), `15:41:02` (intento 3, +4.0s), `15:41:10` (intento 4, +8.0s), `15:41:26` (intento 5, +16.0s) — coincide con el backoff configurado en `mediconecta-setup.cli` |
+| Estado final tras el intento 5 | `EN_REVISION_MANUAL`, `intentos=5`, `ultimoError` seteado | `EN_REVISION_MANUAL`, `intentos=5`, `ultimoError="El canal de reclamos a la obra social todavia no esta disponible (pendiente SCRUM-90)."` |
+| `ReclamosFacturacionQueue` / `ReclamosFacturacionDLQ` tras el intento 5 | ambas en 0 mensajes (el intento 5 no relanza, se confirma el mensaje) | `count-messages` → `0` y `0` |
+| Confirmar el mismo turno una segunda vez | `409`, sin crear un segundo reclamo | `409`, sigue existiendo un solo `Reclamo` para ese turno |
+| Confirmar un turno sin cobertura autorizada | no se crea ningún reclamo | 0 filas en `reclamos` para ese turno |
+| `GET /api/reclamos` como ADMINISTRADOR | `200`, lista el reclamo con su estado | `200`, el reclamo `EN_REVISION_MANUAL` aparece con intentos y último error |
+| `GET /api/reclamos` como PACIENTE | `403` | `403` |
+| `GET /api/reclamos` como anónimo | `401` | `401` |
+| `bash deploy/smoke-test.sh --rapido` | todo en verde | 15 correctas, 0 fallidas |
+
+**Hallazgo:** la primera corrida (antes de agregar `@PermitAll`, ver sección 9.3) falló de otra forma de la prevista: no fue `obtenerTurno` el que rechazó por falta de rol, sino el propio `onMessage` del MDB, denegado por el contenedor antes de llegar al cuerpo del método. El mensaje `TurnoConfirmado` de esa corrida agotó los reintentos de la política por defecto del tópico (10 intentos, sin backoff) y terminó en la `DLQ` general de Artemis (`count-messages` → `1`), no en `ReclamosFacturacionDLQ` (esa es la de la cola de reclamos, que nunca llegó a recibir el mensaje porque `registrarReclamo` nunca se ejecutó). Con `@PermitAll` agregado, se repitió el turno completo desde cero y dio la tabla de arriba.
 
 ## 11. Estado actual y trabajo pendiente
 

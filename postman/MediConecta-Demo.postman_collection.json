@@ -6,7 +6,8 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:8080/api" }
+    { "key": "base_url", "value": "http://localhost:8080/api" },
+    { "key": "soap_url", "value": "http://localhost:8080/mediconecta/legado/obrasocial" }
   ],
   "item": [
     {
@@ -721,6 +722,340 @@
               ]
             },
             "description": "No existe GET /api/turnos/{id} en TurnosResource, solo el listado por profesionalId (PermitAll). Para el cierre stateful de la demo, verificar directamente en DBeaver:\n\nSELECT id, paciente_id, profesional_id, estado, iniciohold FROM turnos WHERE id = {{turno_id}};\n\nDespues de ~5 minutos sin confirmar (ExpiradorDeHolds/@Timeout, DURACION_HOLD_MS=5min), estado deberia volver a DISPONIBLE y paciente_id/iniciohold a null, sin ninguna request de por medio. El seed crea admin=1, profesional=2, paciente=3, asi que el profesional de prueba es el 2."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Obra social legado (SOAP, sistema externo simulado)",
+      "description": "Endpoint JAX-WS que simula el sistema legado de la obra social. No requiere autenticacion. Independiente del resto de las carpetas.",
+      "item": [
+        {
+          "name": "Descargar WSDL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('publica las dos operaciones', () => {",
+                  "    pm.expect(pm.response.text()).to.include('validarCobertura');",
+                  "    pm.expect(pm.response.text()).to.include('autorizarPrestacion');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{soap_url}}?wsdl",
+              "host": [
+                "{{soap_url}}"
+              ],
+              "query": [
+                {
+                  "key": "wsdl",
+                  "value": null
+                }
+              ]
+            },
+            "description": "Contrato publicado por el CXF de WildFly. Tambien se abre desde el navegador."
+          }
+        },
+        {
+          "name": "PLAN_ALTO: cobertura total",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = xml2Json(pm.response.text());",
+                  "const cuerpo = r['soap:Envelope']['soap:Body'];",
+                  "const resp = cuerpo[Object.keys(cuerpo)[0]].respuesta;",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('cobertura 100%', () => pm.expect(resp.porcentajeCobertura).to.eql('100'));",
+                  "pm.test('copago 0.00', () => pm.expect(resp.copago).to.eql('0.00'));",
+                  "pm.test('autorizado = true', () => pm.expect(resp.autorizado).to.eql('true'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml; charset=utf-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "\"\""
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:os=\"http://legado.obrasocial.example/\">\n  <soapenv:Body>\n    <os:autorizarPrestacion>\n      <dni>30111222</dni>\n      <numeroAfiliado>OS-1001</numeroAfiliado>\n      <codigoPrestacion>CONSULTA</codigoPrestacion>\n    </os:autorizarPrestacion>\n  </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {
+                  "language": "xml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{soap_url}}",
+              "host": [
+                "{{soap_url}}"
+              ]
+            },
+            "description": "Afiliado OS-1001, plan al 100%: autorizado y sin copago."
+          }
+        },
+        {
+          "name": "PLAN_MEDIO: cobertura 70%",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = xml2Json(pm.response.text());",
+                  "const cuerpo = r['soap:Envelope']['soap:Body'];",
+                  "const resp = cuerpo[Object.keys(cuerpo)[0]].respuesta;",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('cobertura 70%', () => pm.expect(resp.porcentajeCobertura).to.eql('70'));",
+                  "pm.test('copago 6000.00', () => pm.expect(resp.copago).to.eql('6000.00'));",
+                  "pm.test('autorizado = true', () => pm.expect(resp.autorizado).to.eql('true'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml; charset=utf-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "\"\""
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:os=\"http://legado.obrasocial.example/\">\n  <soapenv:Body>\n    <os:autorizarPrestacion>\n      <dni>30333444</dni>\n      <numeroAfiliado>OS-2002</numeroAfiliado>\n      <codigoPrestacion>CONSULTA</codigoPrestacion>\n    </os:autorizarPrestacion>\n  </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {
+                  "language": "xml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{soap_url}}",
+              "host": [
+                "{{soap_url}}"
+              ]
+            },
+            "description": "Afiliado OS-2002: autorizado, paga el 30% del arancel (20000)."
+          }
+        },
+        {
+          "name": "PLAN_BASICO: cobertura 40%",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = xml2Json(pm.response.text());",
+                  "const cuerpo = r['soap:Envelope']['soap:Body'];",
+                  "const resp = cuerpo[Object.keys(cuerpo)[0]].respuesta;",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('cobertura 40%', () => pm.expect(resp.porcentajeCobertura).to.eql('40'));",
+                  "pm.test('copago 12000.00', () => pm.expect(resp.copago).to.eql('12000.00'));",
+                  "pm.test('autorizado = true', () => pm.expect(resp.autorizado).to.eql('true'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml; charset=utf-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "\"\""
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:os=\"http://legado.obrasocial.example/\">\n  <soapenv:Body>\n    <os:autorizarPrestacion>\n      <dni>30444555</dni>\n      <numeroAfiliado>OS-3003</numeroAfiliado>\n      <codigoPrestacion>CONSULTA</codigoPrestacion>\n    </os:autorizarPrestacion>\n  </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {
+                  "language": "xml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{soap_url}}",
+              "host": [
+                "{{soap_url}}"
+              ]
+            },
+            "description": "Afiliado OS-3003: autorizado, paga el 60% del arancel."
+          }
+        },
+        {
+          "name": "SIN_COBERTURA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = xml2Json(pm.response.text());",
+                  "const cuerpo = r['soap:Envelope']['soap:Body'];",
+                  "const resp = cuerpo[Object.keys(cuerpo)[0]].respuesta;",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('cobertura 0%', () => pm.expect(resp.porcentajeCobertura).to.eql('0'));",
+                  "pm.test('copago 20000.00', () => pm.expect(resp.copago).to.eql('20000.00'));",
+                  "pm.test('autorizado = false', () => pm.expect(resp.autorizado).to.eql('false'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml; charset=utf-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "\"\""
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:os=\"http://legado.obrasocial.example/\">\n  <soapenv:Body>\n    <os:autorizarPrestacion>\n      <dni>30555666</dni>\n      <numeroAfiliado>OS-4004</numeroAfiliado>\n      <codigoPrestacion>CONSULTA</codigoPrestacion>\n    </os:autorizarPrestacion>\n  </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {
+                  "language": "xml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{soap_url}}",
+              "host": [
+                "{{soap_url}}"
+              ]
+            },
+            "description": "Afiliado OS-4004: respuesta valida del legado, pero no autoriza; el copago es el arancel completo."
+          }
+        },
+        {
+          "name": "Validar cobertura (consulta, sin autorizacion)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = xml2Json(pm.response.text());",
+                  "const cuerpo = r['soap:Envelope']['soap:Body'];",
+                  "const resp = cuerpo[Object.keys(cuerpo)[0]].respuesta;",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('cobertura 70%', () => pm.expect(resp.porcentajeCobertura).to.eql('70'));",
+                  "pm.test('copago 6000.00', () => pm.expect(resp.copago).to.eql('6000.00'));",
+                  "pm.test('autorizado = true', () => pm.expect(resp.autorizado).to.eql('true'));",
+                  "pm.test('una consulta no emite numero de autorizacion', () => pm.expect(resp.numeroAutorizacion).to.be.undefined);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml; charset=utf-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "\"\""
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:os=\"http://legado.obrasocial.example/\">\n  <soapenv:Body>\n    <os:validarCobertura>\n      <dni>30333444</dni>\n      <numeroAfiliado>OS-2002</numeroAfiliado>\n      <codigoPrestacion>CONSULTA</codigoPrestacion>\n    </os:validarCobertura>\n  </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {
+                  "language": "xml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{soap_url}}",
+              "host": [
+                "{{soap_url}}"
+              ]
+            },
+            "description": "Misma evaluacion que autorizar, pero no devuelve numeroAutorizacion."
+          }
+        },
+        {
+          "name": "Afiliado inexistente: SOAP Fault",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('500 con SOAP Fault', () => {",
+                  "    pm.response.to.have.status(500);",
+                  "    pm.expect(pm.response.text()).to.include('Fault');",
+                  "    pm.expect(pm.response.text()).to.include('OS-9999');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/xml; charset=utf-8"
+              },
+              {
+                "key": "SOAPAction",
+                "value": "\"\""
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:os=\"http://legado.obrasocial.example/\">\n  <soapenv:Body>\n    <os:validarCobertura>\n      <dni>11111111</dni>\n      <numeroAfiliado>OS-9999</numeroAfiliado>\n      <codigoPrestacion>CONSULTA</codigoPrestacion>\n    </os:validarCobertura>\n  </soapenv:Body>\n</soapenv:Envelope>",
+              "options": {
+                "raw": {
+                  "language": "xml"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{soap_url}}",
+              "host": [
+                "{{soap_url}}"
+              ]
+            },
+            "description": "Pedido que el legado no puede evaluar: error de integracion, distinto de 'sin cobertura'."
           }
         }
       ]
