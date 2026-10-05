@@ -46,7 +46,7 @@ Una historia "Implementada" tiene endpoint y rol funcionando de punta a punta. "
 | Pasarela de pago (externo) | Recibir un pedido de cobro | Implementada (simulador) | `POST /api/externo/pagos` |
 | Pasarela de pago (externo) | Recibir un pedido de reembolso | Implementada (simulador) | sub-recurso `.../reembolsos` de `/api/externo/pagos` |
 | Transversal (todos los roles) | Operar el sistema desde una interfaz web en vez de un cliente HTTP manual | Implementada para el login (PR #12 / #14); resto de pantallas pendiente (SCRUM-83 a 87) | SPA React, login conectado a `POST /api/usuarios/login` con redirección por rol |
-| Transversal (paciente y profesional) | Atender o atenderse por videoconsulta | En revisión (PR #21, SCRUM-99); enganche a la confirmación planificado (SCRUM-95) | `POST /api/externo/salas`, `POST`/`GET /api/telemedicina/turno/{turnoId}` |
+| Transversal (paciente y profesional) | Atender o atenderse por videoconsulta | Implementada (SCRUM-99, PR #21); enganche a la confirmación planificado (SCRUM-95) | `POST /api/externo/salas`, `POST`/`GET /api/telemedicina/turno/{turnoId}` |
 
 ## Paciente
 
@@ -372,8 +372,8 @@ No pertenecen a un solo actor; afectan a varios a la vez.
 
 **Como** paciente **quiero** una sala de videollamada para mi turno de telemedicina, y **como** profesional **quiero** atenderlo por ese mismo medio, **para** no requerir presencia física en el consultorio.
 
-- `ModalidadTurno.TELEMEDICINA` ya existe como valor del turno. El proveedor de video simulado (PR #21, SCRUM-99) expone `POST /api/externo/salas` y `POST`/`GET /api/telemedicina/turno/{turnoId}`.
+- `ModalidadTurno.TELEMEDICINA` ya existe como valor del turno. El proveedor de video simulado (SCRUM-99) expone `POST /api/externo/salas` y `POST`/`GET /api/telemedicina/turno/{turnoId}`.
 - Falta enganchar la creación de sala al flujo de confirmación del turno: eso es SCRUM-95, planificado.
 
-**Estado:** En revisión (PR #21, SCRUM-99); enganche a la confirmación planificado (SCRUM-95).
+**Estado:** Implementada (SCRUM-99, PR #21); enganche a la confirmación planificado (SCRUM-95).
 **Endpoint:** `POST /api/externo/salas`, `POST`/`GET /api/telemedicina/turno/{turnoId}` (en revisión).

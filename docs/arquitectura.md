@@ -29,12 +29,12 @@ flowchart LR
         pag["ServicioDePagos<br/>Stateless, Adapter REST"]:::impl
         fac["ServicioDeFacturacion<br/>MDB sobre topico y cola"]:::impl
         noti["ServicioDeNotificaciones<br/>MDB sobre topico"]:::impl
-        tel["ServicioDeTelemedicina<br/>en revision, PR 21"]:::review
+        tel["ServicioDeTelemedicina<br/>Stateless, Adapter REST"]:::impl
     end
 
     leg[("Legado de la obra social<br/>SOAP")]:::ext
     pas[("Pasarela de pago<br/>REST")]:::ext
-    vid[("Proveedor de video<br/>REST, en revision")]:::review
+    vid[("Proveedor de video<br/>REST")]:::ext
 
     spa -->|"HTTP REST"| api
     api --> usu
@@ -81,7 +81,7 @@ flowchart LR
         os["ServicioDeObrasSociales"]:::impl
         fac["ServicioDeFacturacion"]:::impl
         noti["ServicioDeNotificaciones"]:::impl
-        tel["ServicioDeTelemedicina<br/>en revision, PR 21"]:::review
+        tel["ServicioDeTelemedicina<br/>Stateless, Adapter REST"]:::impl
         subgraph art["ActiveMQ Artemis, broker JMS"]
             top["Topico<br/>TurnoConfirmado"]:::broker
             cola["Cola<br/>ReclamosFacturacion"]:::broker
@@ -92,7 +92,7 @@ flowchart LR
     subgraph externos["Sistemas externos"]
         leg[("Legado de la obra social<br/>SOAP con WSDL")]:::ext
         pas[("Pasarela de pago<br/>REST")]:::ext
-        vid[("Proveedor de video<br/>REST, en revision")]:::review
+        vid[("Proveedor de video<br/>REST")]:::ext
     end
 
     spa -->|"REST JSON con HTTP Basic"| api

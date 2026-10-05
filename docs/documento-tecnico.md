@@ -88,7 +88,7 @@ Hay además un paquete que no es nuestro, aunque viva en el mismo WAR: `externos
 | 3 | ServicioDeHistoriaClinica | `@Stateless` | Antecedentes, diagnósticos, recetas | Implementado |
 | 4 | ServicioDeObrasSociales | Adapter vía SOAP | Validación de cobertura contra sistema legado | Implementado (sección 6.3), contra el legado simulado de la sección 6.2 |
 | 5 | ServicioDePagos | REST | Cobro de copagos contra pasarela de pago | Implementado (`PagosResource`, `ServicioDePagos`, `PasarelaDePagoRestClient`, sección 4.1); el disparo automático al confirmar el turno es SCRUM-93, pendiente |
-| 6 | ServicioDeTelemedicina | REST | Integración con proveedor de video | No implementado |
+| 6 | ServicioDeTelemedicina | `@Stateless`, Adapter REST | Sala de video de los turnos de telemedicina | Implementado (sección 6.4), contra el proveedor simulado; falta el enganche con la confirmación (SCRUM-95) |
 | 7 | ServicioDeNotificaciones | `@MessageDriven` (tópico JMS) | Notificación asincrónica de eventos | Implementado (PR #15) |
 | 8 | ServicioDeFacturacion | `@MessageDriven` (tópico y cola JMS) | Reclamo de facturación a obras sociales/prepagas por turnos con cobertura autorizada | Implementado, con el canal real hacia la obra social (sección 9.3) |
 
@@ -112,7 +112,7 @@ El sistema combina tres canales distintos entre componentes y con terceros: REST
 | `ServicioDePagos` → pasarela de pago | REST, síncrono | SOAP | La pasarela es un partner externo moderno con su propia API REST, no un legado con contrato impuesto. Cobrar el copago también necesita la respuesta ya, para decidir con qué resultado se confirma el turno. | Implementado (`PagosResource`, `ServicioDePagos`, `PasarelaDePagoRestClient`); el disparo automático al confirmar el turno es SCRUM-93, pendiente |
 | `ServicioDeTurnos` → tópico JMS `TurnoConfirmado` | Tópico, asincrónico | Cola | Más de un interesado necesita el mismo evento sin saber uno del otro: Facturación arma el reclamo y Notificaciones avisa al paciente. Un tópico entrega una copia a cada suscriptor; una cola la entregaría a uno solo, y el resto se quedaría sin evento. Quien confirma el turno tampoco espera ninguna respuesta de quien reacciona después. | Publicador implementado (sección 9.1); Facturación y Notificaciones implementados como suscriptores (PR #15) |
 | `ServicioDeFacturacion` → cola JMS `ReclamosFacturacion` | Cola, asincrónica | Tópico | El reclamo es un trabajo que un único consumidor tiene que hacer exactamente una vez, con sus propios reintentos (2 s → 30 s, hasta 5 intentos) y una cola de mensajes muertos dedicada (`ReclamosFacturacionDLQ`) si se agotan. Un tópico entregaría el mismo reclamo a cada suscriptor que hubiera, duplicando el trabajo apenas se agregara otro. | Implementado (sección 9.3) |
-| `ServicioDeTelemedicina` → proveedor de video | REST | SOAP | Mismo criterio que la pasarela de pago: un partner moderno sin legado que imponga SOAP. | En revisión (PR #21, SCRUM-99); enganche a la confirmación planificado (SCRUM-95) |
+| `ServicioDeTelemedicina` → proveedor de video | REST | SOAP | Mismo criterio que la pasarela de pago: un partner moderno sin legado que imponga SOAP. | Implementado (SCRUM-99, sección 6.4); enganche a la confirmación planificado (SCRUM-95) |
 | Eventos internos `TurnoEnReserva` / `TurnoEnConfirmacion` | Evento CDI síncrono (`@Observes`, nunca `@ObservesAsync`) | Llamada directa desde `ServicioDeTurnos` a cada fachada | Tiene que correr en la misma transacción JTA que `reservarTurno`/`confirmarTurno`: el observador puede decidir si el turno se confirma (cobertura insuficiente, pasarela caída), y si falla, todo se revierte junto con la confirmación. Un evento asincrónico correría en otro hilo y fuera de esa transacción, y ya no podría impedirla (sección 9.2). | Mecanismo implementado; observador de cobertura implementado (SCRUM-91, PR #19); copago (SCRUM-93) y sala de video (SCRUM-95), planificados |
 
 El caso implementado de punta a punta ilustra el criterio de "uno vs. varios interesados" con el mayor detalle: cuando `ServicioDeTurnos.confirmarTurno` termina, publica un único mensaje en el tópico `TurnoConfirmado` (sección 9.1). Ese evento puede tener más de un interesado — hoy Facturación y Notificaciones, ambos implementados tras mergearse PR #15 — y cada uno necesita su propia copia sin que `ServicioDeTurnos` sepa cuántos son ni quiénes. Un tópico resuelve exactamente eso: replica el mensaje a todos los suscriptores activos. `TurnoConfirmadoFacturacionMDB`, al recibir ese evento, no procesa el reclamo ahí mismo: lo encola en `ReclamosFacturacion` (sección 9.3). A partir de ese punto el reclamo deja de ser un aviso para quien quiera escucharlo y pasa a ser un trabajo que alguien tiene que hacer una sola vez, con reintentos si la obra social no responde y una cola de mensajes muertos si se agotan. Eso es lo que una cola punto a punto garantiza y un tópico no: con un tópico, un reintento entregaría el mensaje de nuevo a *todos* los suscriptores, no solo al que falló.
@@ -249,6 +249,39 @@ Límites que siguen vigentes:
 - Si el legado rechaza los datos de afiliación (un DNI que no corresponde al afiliado), la reserva responde `400` en vez de reservarse como particular: es un dato mal cargado, no una falta de cobertura.
 - Sólo el paciente de prueba tiene afiliación (OS-2002, plan medio). `registrarAfiliacion` existe pero no está expuesta por HTTP.
 - La fachada no verifica que el paciente le pertenezca a quien llama: el observador pasa siempre el paciente del turno, nunca un id que venga del cliente.
+
+### 6.4 ServicioDeTelemedicina y el proveedor de video (simulado)
+
+**El tercero.** `externos.video.ProveedorDeVideoExternoResource` simula un proveedor de videoconsultas con `POST /api/externo/salas`: recibe una referencia opaca y la fecha, y devuelve el id de la sala y dos enlaces, `hostUrl` para el anfitrión y `guestUrl` para el invitado. Vive bajo `/api/externo/*`, fuera de la seguridad de la aplicación, por el mismo motivo que la pasarela de pago: un tercero no se autentica con las credenciales de nuestros usuarios. Ningún componente lo importa; se lo alcanza solo por HTTP. Las salas son de Jitsi Meet, que crea la sala cuando alguien entra a la URL, así que los enlaces funcionan sin API key. El nombre de la sala lleva un UUID porque es su único control de acceso. En el simulador, `hostUrl` y `guestUrl` apuntan a la misma sala y solo cambian el nombre con el que entra cada participante, así que la separación es de presentación y no de permisos. Un proveedor real daría enlaces con permisos distintos; el componente igual trata los dos como secretos separados y nunca entrega uno a quien le corresponde el otro. Para probar la falla, responde `503` si la referencia empieza con `caer` o si está activa la propiedad `mediconecta.video.simular-caida`.
+
+**El componente**, en sus tres capas:
+
+- **Negocio.** `ServicioDeTelemedicina` (`@Stateless`, Facade) habla contra `ProveedorDeVideoAdapter`. Su implementación, `ProveedorDeVideoRestClient`, usa el Jakarta REST Client API con DTOs propios (`SalaExternaRequest`/`SalaExternaResponse`, el mismo shape JSON del tercero sin importar sus clases) y traduce `host` a profesional y `guest` a paciente. El turno se lee con `ServicioDeTurnos.obtenerTurno`, nunca de su tabla.
+- **Datos.** `SesionVideo` (tabla `sesiones_video`) guarda el turno, el paciente y el profesional por id, el id de la sala, los dos enlaces y el estado.
+- **Presentación.** `TelemedicinaResource` expone `POST` y `GET /api/telemedicina/turno/{turnoId}`.
+
+**Quién ve qué.** Cada participante recibe solo su enlace: el profesional el de anfitrión, el paciente el de invitado. `@RolesAllowed` admite PACIENTE y PROFESIONAL, y la regla fina (que el turno sea del caller) se resuelve con el `SessionContext`, como en turnos y pagos. Cualquier otro, administrador incluido, recibe `403`: para la sala el administrador es un tercero más, y ningún caso de uso necesita que entre a una consulta. Un turno inexistente también responde `403`: si respondiera distinto que uno ajeno, cualquier usuario podría recorrer ids y averiguar cuáles existen.
+
+**Reglas de `crearSesion`:**
+
+1. Primero se verifica que el caller sea parte del turno. Va antes que todo para que un tercero no pueda averiguar nada del turno por el mensaje de error.
+2. Solo un turno de `TELEMEDICINA` lleva sala. Uno presencial responde `409` sin llamar al proveedor.
+3. El turno tiene que estar tomado por un paciente. Se acepta `EN_HOLD` y no solo `CONFIRMADO` porque el paso 2/2 va a crear la sala dentro de `confirmarTurno`, antes de que el turno cambie de estado.
+4. Es idempotente: si el turno ya tiene sala para ese paciente, se devuelve sin volver a llamar al proveedor. El `POST` responde `201` si creó la sala y `200` si ya existía.
+5. Si la sala era de un paciente anterior (su hold venció y otro tomó el turno), se pide una sala nueva y se reemplaza la anterior: el enlace viejo lo conoce alguien que ya no es parte del turno.
+
+**Sala vigente.** `obtenerEnlace` resuelve los participantes desde el turno actual, no desde la sesión guardada, y solo entrega un enlace si la sala está vigente: el turno sigue tomado (`EN_HOLD` o `CONFIRMADO`) y por el mismo paciente para el que se creó. La regla vale para los dos roles. Después de una cancelación, de un hold vencido o de que otro paciente tome el turno, el profesional deja de recibir el enlace viejo y el paciente anterior pasa a recibir `403`.
+
+**Límite conocido.** Si dos pedidos crean la misma sala al mismo tiempo, los dos llaman al proveedor y el segundo choca con la restricción única de `turnoId`, lo que da un `500`. El riesgo es bajo: en el paso 2/2 la creación corre dentro de `confirmarTurno`, que ya toma un lock sobre la fila del turno, así que dos confirmaciones del mismo turno quedan serializadas.
+
+**Proveedor que no responde.** El cliente fija timeouts (3 s de conexión, 5 s de respuesta), porque en el paso 2/2 la llamada va a correr dentro de la confirmación, con la fila del turno bloqueada. Cualquier falla, sea timeout, error HTTP o una respuesta incompleta, sale como `ProveedorDeVideoNoDisponibleException` (`rollback = true`), que se traduce a `503` con `Retry-After`, y no se guarda nada a medias. Qué hace la confirmación del turno ante esa falla se decide en SCRUM-95.
+
+**Pruebas.** Sin contenedor ni red:
+- La fachada, con el Adapter, el DAO y `ServicioDeTurnos` como dobles: creación con los dos enlaces, turno presencial, turno sin paciente, paciente ajeno o turno inexistente, idempotencia (sin volver a llamar al proveedor), renovación para un paciente nuevo, proveedor caído, el enlace de cada rol, y que nadie vea una sala que dejó de estar vigente.
+- La traducción del cliente REST.
+- El simulador del proveedor, incluida la caída.
+
+La llamada HTTP real y el cableado de seguridad se verifican con `deploy/smoke-test.sh` y la carpeta 06 de la colección de Postman.
 
 ## 7. Autenticación y autorización
 
