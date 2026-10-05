@@ -172,17 +172,21 @@ redirigen automáticamente hacia `http://localhost:8080` (donde tiene que estar
 corriendo WildFly con el backend desplegado), así que no hay problemas de CORS
 al probar el login u otras pantallas conectadas a la API real.
 
-Cuando los cambios están listos para desplegarse de verdad:
+Para generar el WAR no hace falta compilar el frontend a mano: `mvn clean package`
+lo hace solo. El `frontend-maven-plugin` instala una copia propia de Node en
+`target/` (no depende del Node de la máquina), corre `npm ci` y `npm run build`
+(chequeo de tipos con `tsc` y `vite build`), y deja el resultado en
+`src/main/webapp`, de donde lo toma el empaquetado del `.war`. Así el WAR nunca
+queda con un bundle desactualizado.
 
-```bash
-cd frontend
-npm run build
-```
+Lo que genera Vite (`index.html` y `assets/` dentro de `src/main/webapp`) no se
+commitea: está en `.gitignore`. `WEB-INF` (`web.xml`, `beans.xml`) no lo toca el
+build. Si querés ver el resultado sin pasar por Maven, `npm run build` dentro de
+`frontend/` hace lo mismo.
 
-Esto deja los archivos compilados en `src/main/webapp`, listos para que
-`mvn clean package` los empaquete junto con el resto del proyecto en el `.war`.
-Este build **no** borra `WEB-INF` (`web.xml`, `beans.xml`), solo reemplaza los
-archivos que genera Vite.
+En Windows, `npm ci` falla con `EPERM` si algún programa tiene abierto algo de
+`frontend/node_modules`. Antes de `mvn package`, cerrá `npm run dev` y el editor
+que lo esté indexando.
 
 ---
 
