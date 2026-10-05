@@ -32,4 +32,11 @@ public class UsuarioDAO {
         return em.createQuery("SELECT u FROM Usuario u", Usuario.class)
                   .getResultList();
     }
+
+    public List<Usuario> buscarPorRol(String rol) {
+        return em.createQuery(
+                "SELECT u FROM Usuario u WHERE u.rol = :rol ORDER BY u.nombre", Usuario.class)
+                .setParameter("rol", rol)
+                .getResultList();
+    }
 }
