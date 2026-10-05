@@ -10,10 +10,10 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
  * observadores corren en el mismo hilo y la misma transaccion JTA, asi que una
  * excepcion no controlada en cualquiera de ellos revierte la reserva completa.
  *
- * Hoy no lo observa nadie. Lo va a observar:
- * - ServicioDeObrasSociales (SCRUM-91): validar la cobertura del paciente y
- *   completar coberturaAutorizada, coberturaPorcentaje, copago y
- *   numeroAutorizacion sobre el turno.
+ * Lo observa CoberturaEnLaReserva (obrassociales, SCRUM-91): consulta la
+ * cobertura del paciente y completa coberturaAutorizada, coberturaPorcentaje,
+ * copago y numeroAutorizacion sobre el turno. Si la obra social no responde, su
+ * excepcion revierte la reserva entera.
  *
  * Ver PuntosDeExtension para el orden y el criterio de la decision.
  */
