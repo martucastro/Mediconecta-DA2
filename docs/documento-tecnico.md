@@ -506,6 +506,255 @@ Desplegado el WAR con `ServicioDeFacturacion` (sección 9.3), con un turno confi
 
 **Hallazgo:** la primera corrida (antes de agregar `@PermitAll`, ver sección 9.3) falló de otra forma de la prevista: no fue `obtenerTurno` el que rechazó por falta de rol, sino el propio `onMessage` del MDB, denegado por el contenedor antes de llegar al cuerpo del método. El mensaje `TurnoConfirmado` de esa corrida agotó los reintentos de la política por defecto del tópico (10 intentos, sin backoff) y terminó en la `DLQ` general de Artemis (`count-messages` → `1`), no en `ReclamosFacturacionDLQ` (esa es la de la cola de reclamos, que nunca llegó a recibir el mensaje porque `registrarReclamo` nunca se ejecutó). Con `@PermitAll` agregado, se repitió el turno completo desde cero y dio la tabla de arriba.
 
+### 10.2 Diagramas de secuencia de las integraciones
+
+Para la Entrega Obligatoria N.º 2, esta sección detalla método a método cada integración del sistema: quién llama a quién, en qué transacción corre cada paso y qué código HTTP o excepción produce cada camino de falla. Los nombres de clase, método y los códigos de estado están tomados del código real, no del diseño previsto; donde el código difiere de lo que podría esperarse (por ejemplo, la pasarela de pago responde `502`, no `503`), el diagrama refleja lo que hay.
+
+**Convención de flechas.** `->>` es una llamada síncrona que espera respuesta; `-->>` es la respuesta (o un evento/mensaje ya enviado); `--x` es una llamada que no obtiene respuesta útil (timeout o conexión rechazada).
+
+#### 10.2.1 Reservar un turno con cobertura
+
+Corresponde al paso 2 del caso de uso de la sección 5. Todo lo que sigue corre dentro de la transacción `REQUIRED` de `ServicioDeTurnos.reservarTurno`.
+
+```mermaid
+sequenceDiagram
+    participant SPA
+    participant TurnosResource
+    participant ServicioDeTurnos
+    participant CoberturaEnLaReserva as CoberturaEnLaReserva (Observer de TurnoEnReserva)
+    participant ServicioDeObrasSociales
+    participant Soap as SistemaDeObraSocialSoap (Adapter)
+    participant Legado as Legado SOAP de la obra social
+
+    SPA->>TurnosResource: POST /api/turnos { turnoId }
+    TurnosResource->>ServicioDeTurnos: reservarTurno(turnoId)
+    activate ServicioDeTurnos
+    Note over ServicioDeTurnos: TurnoDAO.buscarParaActualizar (lock pesimista); asigna el paciente
+    ServicioDeTurnos->>CoberturaEnLaReserva: fire TurnoEnReserva(turno) - evento CDI sincronico, misma tx
+    activate CoberturaEnLaReserva
+    CoberturaEnLaReserva->>ServicioDeObrasSociales: cotizarReserva(pacienteId, prestacion)
+    activate ServicioDeObrasSociales
+    alt paciente sin obra social registrada
+        ServicioDeObrasSociales-->>CoberturaEnLaReserva: Cobertura no autorizada, copago = arancel total (no llama al legado)
+    else paciente afiliado
+        ServicioDeObrasSociales->>Soap: autorizar(dni, numeroAfiliado, prestacion)
+        activate Soap
+        Soap->>Legado: SOAP autorizarPrestacion(dni, numeroAfiliado, codigoPrestacion)
+        activate Legado
+        alt respuesta de negocio (autorizado o sin cobertura)
+            Legado-->>Soap: respuestaCobertura { autorizado, porcentaje, copago, numeroAutorizacion }
+            Soap-->>ServicioDeObrasSociales: Cobertura
+            Note over ServicioDeObrasSociales: REQUIRED - si autorizo, guarda AutorizacionDePrestacion
+            ServicioDeObrasSociales-->>CoberturaEnLaReserva: Cobertura
+        else SOAP Fault Client (DNI, afiliado o prestacion invalidos)
+            Legado-->>Soap: SOAP Fault codigo Client/Sender
+            Soap-->>ServicioDeObrasSociales: DatosInvalidosException
+            ServicioDeObrasSociales-->>CoberturaEnLaReserva: DatosInvalidosException
+        else timeout de 5s, conexion rechazada o Fault Server
+            Legado--xSoap: sin respuesta util
+            Soap-->>ServicioDeObrasSociales: ObraSocialNoDisponibleException
+            ServicioDeObrasSociales-->>CoberturaEnLaReserva: ObraSocialNoDisponibleException (ApplicationException rollback=true)
+        end
+        deactivate Legado
+        deactivate Soap
+    end
+    deactivate ServicioDeObrasSociales
+    CoberturaEnLaReserva->>CoberturaEnLaReserva: turno.coberturaAutorizada / coberturaPorcentaje / copago / numeroAutorizacion
+    deactivate CoberturaEnLaReserva
+    alt cobertura resuelta (autorizada, parcial o particular)
+        ServicioDeTurnos->>ServicioDeTurnos: estado = EN_HOLD, inicioHold = now, ExpiradorDeHolds.programar
+        ServicioDeTurnos-->>TurnosResource: Turno EN_HOLD
+        TurnosResource-->>SPA: 201 Created
+    else DatosInvalidosException
+        ServicioDeTurnos-->>TurnosResource: rollback (DatosInvalidosMapper)
+        TurnosResource-->>SPA: 400 Bad Request
+    else ObraSocialNoDisponibleException
+        ServicioDeTurnos-->>TurnosResource: rollback, turno vuelve a DISPONIBLE (ObraSocialNoDisponibleMapper)
+        TurnosResource-->>SPA: 503 Service Unavailable
+    end
+    deactivate ServicioDeTurnos
+```
+
+#### 10.2.2 Confirmar el turno y publicar TurnoConfirmado
+
+`ServicioDeTurnos.confirmarTurno` dispara también `TurnoEnConfirmacion`, pero hoy sin observadores activos: el cobro del copago (SCRUM-93) y la creación de la sala de video (SCRUM-95) todavía no se enganchan ahí (sección 8.5 y 11). El diagrama solo muestra lo que el código ejecuta.
+
+```mermaid
+sequenceDiagram
+    participant SPA
+    participant TurnosResource
+    participant ServicioDeTurnos
+    participant Topico as Topico JMS TurnoConfirmado
+    participant NotiMDB as NotificacionMDB
+    participant ServicioDeNotificaciones
+    participant FactMDB as TurnoConfirmadoFacturacionMDB
+    participant ServicioDeFacturacion
+    participant Cola as Cola JMS ReclamosFacturacion
+
+    SPA->>TurnosResource: POST /api/turnos/{id}/confirmar
+    TurnosResource->>ServicioDeTurnos: confirmarTurno(turnoId)
+    activate ServicioDeTurnos
+    Note over ServicioDeTurnos: TurnoDAO.buscarParaActualizar; verificarQueElHoldEsDelCaller
+    ServicioDeTurnos->>ServicioDeTurnos: fire TurnoEnConfirmacion(turno) - sin observadores hoy (SCRUM-93, SCRUM-95 pendientes)
+    ServicioDeTurnos->>ServicioDeTurnos: estado = CONFIRMADO, ExpiradorDeHolds.cancelar(turnoId)
+    ServicioDeTurnos->>Topico: JMSContext.createProducer().send(MapMessage { turnoId, pacienteId, profesionalId, fechaHora }) - misma tx JTA
+    ServicioDeTurnos-->>TurnosResource: Turno CONFIRMADO
+    TurnosResource-->>SPA: 200 OK
+    deactivate ServicioDeTurnos
+
+    par suscriptor 1 - notificaciones
+        Topico->>NotiMDB: onMessage(MapMessage) - no durable, hasta 10 reintentos sin backoff, luego DLQ de Artemis
+        NotiMDB->>ServicioDeNotificaciones: notificarTurnoConfirmado(turnoId, pacienteId, fechaHora)
+    and suscriptor 2 - facturacion
+        Topico->>FactMDB: onMessage(MapMessage) - RunAs ADMINISTRADOR, PermitAll
+        FactMDB->>ServicioDeFacturacion: registrarReclamo(turnoId)
+        activate ServicioDeFacturacion
+        ServicioDeFacturacion->>ServicioDeTurnos: obtenerTurno(turnoId)
+        alt coberturaAutorizada = true y sin reclamo previo para ese turno
+            ServicioDeFacturacion->>ServicioDeFacturacion: guarda Reclamo PENDIENTE
+            ServicioDeFacturacion->>Cola: send MapMessage { reclamoId } - misma tx
+        else sin cobertura autorizada, o reclamo ya existente
+            ServicioDeFacturacion->>ServicioDeFacturacion: no hace nada (idempotente)
+        end
+        deactivate ServicioDeFacturacion
+    end
+```
+
+#### 10.2.3 Procesar el reclamo desde la cola
+
+```mermaid
+sequenceDiagram
+    participant Cola as Cola JMS ReclamosFacturacion
+    participant ReclamoMDB
+    participant ServicioDeFacturacion
+    participant Canal as CanalDeReclamosSoap
+    participant ServicioDeObrasSociales
+    participant Legado as Legado SOAP de la obra social
+    participant DLQ as ReclamosFacturacionDLQ
+
+    Cola->>ReclamoMDB: onMessage(MapMessage { reclamoId }) - JMSXDeliveryCount = intento
+    ReclamoMDB->>ServicioDeFacturacion: procesarReclamo(reclamoId, intento)
+    activate ServicioDeFacturacion
+    alt reclamo ya ENVIADO o EN_REVISION_MANUAL
+        ServicioDeFacturacion->>ServicioDeFacturacion: no hace nada (reentrega idempotente)
+    else reclamo PENDIENTE
+        ServicioDeFacturacion->>Canal: presentarReclamo(turnoId, pacienteId, numeroAutorizacion, coberturaPorcentaje)
+        Canal->>ServicioDeObrasSociales: presentarReclamo(pacienteId, numeroAutorizacion) - NOT_SUPPORTED
+        ServicioDeObrasSociales->>Legado: SOAP presentarReclamo(dni, numeroAfiliado, numeroAutorizacion)
+        alt presentado
+            Legado-->>ServicioDeObrasSociales: respuestaReclamo { numeroPresentacion, montoReconocido }
+            ServicioDeObrasSociales-->>Canal: ResultadoPresentacion
+            Canal-->>ServicioDeFacturacion: ResultadoReclamo
+            ServicioDeFacturacion->>ServicioDeFacturacion: reclamo.estado = ENVIADO
+        else SOAP Fault Client (autorizacion no corresponde o es desconocida)
+            Legado-->>ServicioDeObrasSociales: SOAP Fault Client
+            ServicioDeObrasSociales-->>Canal: DatosInvalidosException
+            Canal-->>ServicioDeFacturacion: ReclamoRechazadoException
+            ServicioDeFacturacion->>ServicioDeFacturacion: registrarIntentoFallido (REQUIRES_NEW); reclamo.estado = EN_REVISION_MANUAL, no relanza
+        else timeout o Fault Server (transitorio)
+            Legado--xServicioDeObrasSociales: sin respuesta util
+            ServicioDeObrasSociales-->>Canal: ObraSocialNoDisponibleException
+            Canal-->>ServicioDeFacturacion: CanalDeReclamosNoDisponibleException
+            ServicioDeFacturacion->>ServicioDeFacturacion: registrarIntentoFallido (REQUIRES_NEW, sobrevive al rollback)
+            alt intento menor a MAX_INTENTOS (5)
+                ServicioDeFacturacion-->>ReclamoMDB: relanza CanalDeReclamosNoDisponibleException
+                ReclamoMDB-->>Cola: el contenedor no confirma el mensaje
+                Cola->>Cola: Artemis reentrega con backoff de 2s a 30s
+            else intento = MAX_INTENTOS (5)
+                ServicioDeFacturacion->>ServicioDeFacturacion: reclamo.estado = EN_REVISION_MANUAL, no relanza; el mensaje se confirma
+            end
+        end
+    end
+    deactivate ServicioDeFacturacion
+    Note over Cola,DLQ: un mensaje no procesable (no es MapMessage, falta reclamoId) se descarta en ReclamoMDB sin llegar aca
+```
+
+#### 10.2.4 Cobro con la pasarela de pago (REST)
+
+Hoy se invoca por separado (`PUT`/`POST /api/pagos`), no automáticamente al confirmar el turno (SCRUM-93, nota al final de esta sección).
+
+```mermaid
+sequenceDiagram
+    participant Caller as SPA o caller autenticado
+    participant PagosResource
+    participant ServicioDePagos
+    participant PagoDAO
+    participant Adapter as PasarelaDePagoRestClient (Adapter)
+    participant Simulador as Simulador POST /api/externo/pagos
+
+    Caller->>PagosResource: POST /api/pagos { turnoId, monto, moneda, tokenMedioDePago }
+    PagosResource->>ServicioDePagos: cobrar(CobroDTO) - REQUIRED
+    activate ServicioDePagos
+    ServicioDePagos->>ServicioDePagos: valida datos; verificarQueElTurnoEsDelCaller(turnoId)
+    ServicioDePagos->>PagoDAO: guardarEnNuevaTransaccion(Pago) - REQUIRES_NEW, sobrevive si el cobro hace rollback despues
+    ServicioDePagos->>Adapter: cobrar(monto, moneda, tokenMedioDePago)
+    activate Adapter
+    Adapter->>Simulador: POST /api/externo/pagos { monto, moneda, tokenMedioDePago }
+    alt HTTP 200 OK
+        Simulador-->>Adapter: { status: APPROVED|REJECTED|REFUNDED, transactionId }
+        Adapter-->>ServicioDePagos: ResultadoPasarela
+        ServicioDePagos->>PagoDAO: actualizar(Pago con estado e idTransaccionExterna)
+        ServicioDePagos-->>PagosResource: Pago
+        PagosResource-->>Caller: 201 Created
+    else HTTP distinto de 200, o sin conexion (ProcessingException)
+        Simulador-->>Adapter: status != 200, o no responde
+        Adapter-->>ServicioDePagos: PasarelaNoDisponibleException
+        ServicioDePagos-->>PagosResource: rollback de la transaccion del cobro (el Pago PENDIENTE en su propia tx sobrevive)
+        PagosResource-->>Caller: 502 Bad Gateway (PasarelaNoDisponibleMapper)
+    end
+    deactivate Adapter
+    deactivate ServicioDePagos
+```
+
+Nota de verificación: el enunciado de esta tarjeta anticipaba `503` para la caída de la pasarela; el código (`PasarelaNoDisponibleMapper`) devuelve `502 Bad Gateway`. El diagrama refleja el código, no la expectativa.
+
+#### 10.2.5 Sala de telemedicina (REST)
+
+También se invoca por separado hoy, no automáticamente al confirmar un turno de telemedicina (SCRUM-95, nota al final de esta sección).
+
+```mermaid
+sequenceDiagram
+    participant Caller as SPA o caller autenticado
+    participant TelemedicinaResource
+    participant ServicioDeTelemedicina
+    participant ServicioDeTurnos
+    participant SesionVideoDAO
+    participant Adapter as ProveedorDeVideoRestClient (Adapter)
+    participant Simulador as Simulador POST /api/externo/salas
+
+    Caller->>TelemedicinaResource: POST /api/telemedicina/turno/{turnoId}
+    TelemedicinaResource->>ServicioDeTelemedicina: crearSesion(turnoId) - REQUIRED
+    activate ServicioDeTelemedicina
+    ServicioDeTelemedicina->>ServicioDeTurnos: obtenerTurno(turnoId)
+    ServicioDeTelemedicina->>ServicioDeTelemedicina: verifica caller, modalidad TELEMEDICINA, turno EN_HOLD o CONFIRMADO
+    ServicioDeTelemedicina->>SesionVideoDAO: buscarPorTurno(turnoId)
+    alt ya existe sesion vigente para este paciente
+        SesionVideoDAO-->>ServicioDeTelemedicina: SesionVideo existente
+        ServicioDeTelemedicina-->>TelemedicinaResource: SesionCreada(nueva=false)
+        TelemedicinaResource-->>Caller: 200 OK
+    else crea sala nueva (o la reemplaza si era de un paciente anterior)
+        ServicioDeTelemedicina->>Adapter: crearSala(turnoId, fechaHora)
+        activate Adapter
+        Adapter->>Simulador: POST /api/externo/salas { referencia, fecha }
+        alt HTTP 200 con roomId, hostUrl y guestUrl completos
+            Simulador-->>Adapter: SalaExternaResponse
+            Adapter-->>ServicioDeTelemedicina: SalaDeVideo
+            ServicioDeTelemedicina->>SesionVideoDAO: guardar o actualizar SesionVideo
+            ServicioDeTelemedicina-->>TelemedicinaResource: SesionCreada(nueva=true)
+            TelemedicinaResource-->>Caller: 201 Created
+        else HTTP distinto de 200, timeout (3s conexion / 5s lectura), o respuesta incompleta
+            Simulador-->>Adapter: status != 200, sin respuesta, o roomId/hostUrl/guestUrl vacio
+            Adapter-->>ServicioDeTelemedicina: ProveedorDeVideoNoDisponibleException (rollback=true)
+            ServicioDeTelemedicina-->>TelemedicinaResource: rollback, no se guarda nada a medias
+            TelemedicinaResource-->>Caller: 503 Service Unavailable, Retry-After 30 (ProveedorDeVideoNoDisponibleMapper)
+        end
+        deactivate Adapter
+    end
+    deactivate ServicioDeTelemedicina
+```
+
+**Lo que estos diagramas no muestran porque todavía no existe.** `ServicioDeTurnos.confirmarTurno` (diagrama 10.2.2) no llama hoy a `ServicioDePagos` ni a `ServicioDeTelemedicina`: el cobro automático del copago al confirmar (SCRUM-93) y la creación automática de la sala de video al confirmar un turno de telemedicina (SCRUM-95) son los dos puntos de extensión reservados y sin observador que ya documenta la sección 8.5. Los diagramas 10.2.4 y 10.2.5 muestran esos dos componentes funcionando de punta a punta, pero invocados por separado, no como parte de la confirmación.
+
 ## 11. Estado actual y trabajo pendiente
 
 Las seis brechas que este documento listaba como abiertas están resueltas, y cada una se cerró dentro de la capa a la que pertenecía.
