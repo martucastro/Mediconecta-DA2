@@ -3,7 +3,6 @@ package ar.edu.uade.da2.mediconecta.telemedicina.negocio;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -76,16 +75,17 @@ class ServicioDeTelemedicinaTest {
     void crearSesionDeUnTurnoDeTelemedicinaGuardaLosDosEnlaces() {
         Turno turno = turno(10L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CONFIRMADO, paciente);
         autenticadoComo(paciente);
-        when(servicioDeTurnos.obtenerTurno(10L)).thenReturn(turno);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(10L)).thenReturn(turno);
         when(proveedor.crearSala(10L, turno.getFechaHora())).thenReturn(SALA);
 
         SesionCreada resultado = servicio.crearSesion(10L);
-        SesionVideo sesion = resultado.sesion();
 
         assertTrue(resultado.nueva());
+        assertEquals("PACIENTE", resultado.enlace().rol());
+        assertEquals("https://video/sala-1#guest", resultado.enlace().enlace());
         ArgumentCaptor<SesionVideo> guardada = ArgumentCaptor.forClass(SesionVideo.class);
         verify(sesionDAO).guardar(guardada.capture());
-        assertSame(guardada.getValue(), sesion);
+        SesionVideo sesion = guardada.getValue();
         assertEquals(10L, sesion.getTurnoId());
         assertEquals(paciente.getId(), sesion.getPacienteId());
         assertEquals(profesional.getId(), sesion.getProfesionalId());
@@ -100,7 +100,7 @@ class ServicioDeTelemedicinaTest {
         // El paso 2/2 la crea dentro de confirmarTurno, antes de marcarlo CONFIRMADO.
         Turno turno = turno(11L, ModalidadTurno.TELEMEDICINA, EstadoTurno.EN_HOLD, paciente);
         autenticadoComo(paciente);
-        when(servicioDeTurnos.obtenerTurno(11L)).thenReturn(turno);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(11L)).thenReturn(turno);
         when(proveedor.crearSala(anyLong(), any())).thenReturn(SALA);
 
         servicio.crearSesion(11L);
@@ -109,10 +109,37 @@ class ServicioDeTelemedicinaTest {
     }
 
     @Test
+    void elProfesionalQueCreaLaSalaRecibeSuEnlace() {
+        Turno turno = turno(18L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CONFIRMADO, paciente);
+        autenticadoComo(profesional);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(18L)).thenReturn(turno);
+        when(proveedor.crearSala(anyLong(), any())).thenReturn(SALA);
+
+        EnlaceDeSesion enlace = servicio.crearSesion(18L).enlace();
+
+        assertEquals("PROFESIONAL", enlace.rol());
+        assertEquals("https://video/sala-1#host", enlace.enlace());
+    }
+
+    @Test
+    void crearSesionLeeElTurnoConLock() {
+        // Dos pedidos simultaneos quedan serializados por el lock de la fila.
+        Turno turno = turno(19L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CONFIRMADO, paciente);
+        autenticadoComo(paciente);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(19L)).thenReturn(turno);
+        when(proveedor.crearSala(anyLong(), any())).thenReturn(SALA);
+
+        servicio.crearSesion(19L);
+
+        verify(servicioDeTurnos).obtenerTurnoParaActualizar(19L);
+        verify(servicioDeTurnos, never()).obtenerTurno(anyLong());
+    }
+
+    @Test
     void unTurnoPresencialNoLlevaSalaNiLlamaAlProveedor() {
         Turno turno = turno(12L, ModalidadTurno.PRESENCIAL, EstadoTurno.CONFIRMADO, paciente);
         autenticadoComo(paciente);
-        when(servicioDeTurnos.obtenerTurno(12L)).thenReturn(turno);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(12L)).thenReturn(turno);
 
         assertThrows(ConflictoDeNegocioException.class, () -> servicio.crearSesion(12L));
 
@@ -124,7 +151,7 @@ class ServicioDeTelemedicinaTest {
     void unTurnoSinPacienteNoLlevaSala() {
         Turno turno = turno(13L, ModalidadTurno.TELEMEDICINA, EstadoTurno.DISPONIBLE, null);
         autenticadoComo(profesional);
-        when(servicioDeTurnos.obtenerTurno(13L)).thenReturn(turno);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(13L)).thenReturn(turno);
 
         assertThrows(ConflictoDeNegocioException.class, () -> servicio.crearSesion(13L));
 
@@ -135,7 +162,7 @@ class ServicioDeTelemedicinaTest {
     void unPacienteAjenoNoPuedeCrearLaSala() {
         Turno turno = turno(14L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CONFIRMADO, paciente);
         autenticadoComo(otroPaciente);
-        when(servicioDeTurnos.obtenerTurno(14L)).thenReturn(turno);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(14L)).thenReturn(turno);
 
         assertThrows(EJBAccessException.class, () -> servicio.crearSesion(14L));
 
@@ -147,13 +174,13 @@ class ServicioDeTelemedicinaTest {
         Turno turno = turno(15L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CONFIRMADO, paciente);
         SesionVideo existente = sesion(15L, paciente);
         autenticadoComo(paciente);
-        when(servicioDeTurnos.obtenerTurno(15L)).thenReturn(turno);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(15L)).thenReturn(turno);
         when(sesionDAO.buscarPorTurno(15L)).thenReturn(existente);
 
         SesionCreada resultado = servicio.crearSesion(15L);
 
-        assertSame(existente, resultado.sesion());
         assertFalse(resultado.nueva(), "Ya existia: presentacion responde 200 y no 201");
+        assertEquals(existente.getEnlacePaciente(), resultado.enlace().enlace());
 
         verify(proveedor, never()).crearSala(anyLong(), any());
     }
@@ -163,26 +190,24 @@ class ServicioDeTelemedicinaTest {
         Turno turno = turno(16L, ModalidadTurno.TELEMEDICINA, EstadoTurno.EN_HOLD, otroPaciente);
         SesionVideo vieja = sesion(16L, paciente);
         autenticadoComo(otroPaciente);
-        when(servicioDeTurnos.obtenerTurno(16L)).thenReturn(turno);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(16L)).thenReturn(turno);
         when(sesionDAO.buscarPorTurno(16L)).thenReturn(vieja);
         when(proveedor.crearSala(anyLong(), any())).thenReturn(SALA);
         when(sesionDAO.actualizar(vieja)).thenReturn(vieja);
 
         SesionCreada resultado = servicio.crearSesion(16L);
-        SesionVideo renovada = resultado.sesion();
 
         assertTrue(resultado.nueva());
-
-        assertEquals(otroPaciente.getId(), renovada.getPacienteId());
-        assertEquals("sala-1", renovada.getSalaId());
-        assertEquals("https://video/sala-1#guest", renovada.getEnlacePaciente());
+        assertEquals(otroPaciente.getId(), vieja.getPacienteId());
+        assertEquals("sala-1", vieja.getSalaId());
+        assertEquals("https://video/sala-1#guest", resultado.enlace().enlace());
     }
 
     @Test
     void siElProveedorNoRespondeNoSeGuardaNada() {
         Turno turno = turno(17L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CONFIRMADO, paciente);
         autenticadoComo(paciente);
-        when(servicioDeTurnos.obtenerTurno(17L)).thenReturn(turno);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(17L)).thenReturn(turno);
         when(proveedor.crearSala(anyLong(), any()))
                 .thenThrow(new ProveedorDeVideoNoDisponibleException("timeout"));
 
@@ -202,6 +227,7 @@ class ServicioDeTelemedicinaTest {
     void unTurnoInexistenteRespondeIgualQueUnoAjeno() {
         // Si respondiera distinto (400 o 404), se podria averiguar que ids existen.
         autenticadoComo(paciente);
+        when(servicioDeTurnos.obtenerTurnoParaActualizar(99L)).thenReturn(null);
         when(servicioDeTurnos.obtenerTurno(99L)).thenReturn(null);
 
         assertThrows(EJBAccessException.class, () -> servicio.crearSesion(99L));

@@ -325,7 +325,7 @@ dispara el servicio, `TurnoEnReserva` y `TurnoEnConfirmacion`. El orden lo fija
 |---|---|---|---|
 | `TurnoEnReserva` | `COBERTURA` (100) | Validar cobertura, completar copago | SCRUM-91 |
 | `TurnoEnConfirmacion` | `COBRO_COPAGO` (100) | Cobrar el copago | SCRUM-93 |
-| `TurnoEnConfirmacion` | `SALA_DE_VIDEO` (200) | Crear la sala si es telemedicina | SCRUM-95 |
+| `TurnoEnConfirmacion` | `SALA_DE_VIDEO` (200) | Crear la sala si es telemedicina (`SalaAlConfirmar`) | SCRUM-95 |
 | `TurnoEnConfirmacion` | `RECLAMO` (300) | Encolar el reclamo a la obra social | pendiente |
 
 Para sumar un paso:
@@ -408,8 +408,15 @@ nadie recibe el enlace viejo. Solo un turno de
 sala; uno presencial responde `409` sin llamar al proveedor. Si el proveedor no
 responde, `503` con `Retry-After`.
 
-Hoy la sala se crea a pedido. El enganche con `confirmarTurno`, para que se
-cree sola al confirmar, es SCRUM-95.
+**Al confirmar un turno de telemedicina la sala se crea sola** (SCRUM-95):
+`SalaAlConfirmar` observa `TurnoEnConfirmacion` y llama a `crearSesion` dentro
+de la misma transacción. La sala se crea al confirmar y nunca al reservar, así
+que un hold que vence no deja salas colgadas; un turno presencial no llama al
+proveedor. Si el proveedor de video no responde, **falla la confirmación
+entera**: `PUT /turnos/{id}/confirmar` responde `503` con `Retry-After`, el
+turno sigue `EN_HOLD` a nombre del paciente y puede reintentar mientras dure el
+hold (ver `docs/documento-tecnico.md`, sección 9.4). El `POST` de arriba sigue
+sirviendo para crearla a pedido, por ejemplo desde Postman.
 
 **El proveedor de video simulado** (`externos/video`) es un tercero que vive en
 el mismo WAR, como la pasarela de pago: `POST /api/externo/salas`, sin

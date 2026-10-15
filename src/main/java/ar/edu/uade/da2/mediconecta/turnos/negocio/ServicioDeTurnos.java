@@ -105,6 +105,23 @@ public class ServicioDeTurnos {
     }
 
     /**
+     * Igual que obtenerTurno, pero tomando el lock de escritura sobre la fila
+     * (ver TurnoDAO.buscarParaActualizar).
+     *
+     * Para otro componente que tiene que decidir algo sobre el turno sin que
+     * otro pedido lo cambie en el medio. ServicioDeTelemedicina lo usa al
+     * crear la sala: dos pedidos simultaneos quedan serializados y el segundo
+     * encuentra la sala del primero en vez de chocar con la restriccion unica.
+     * Dentro de confirmarTurno el lock ya lo tiene la misma transaccion, asi que
+     * no espera a nadie. MANDATORY porque un lock fuera de una transaccion se
+     * libera en el acto y no protege nada.
+     */
+    @TransactionAttribute(TransactionAttributeType.MANDATORY)
+    public Turno obtenerTurnoParaActualizar(Long turnoId) {
+        return turnoDAO.buscarParaActualizar(turnoId);
+    }
+
+    /**
      * Turnos del usuario autenticado: lo que necesita su home (proximo turno)
      * o su agenda (confirmados y en hold).
      *
@@ -225,13 +242,15 @@ public class ServicioDeTurnos {
 
         // PUNTO DE EXTENSION (confirmacion). Observadores, en este orden:
         //   1. COBRO_COPAGO (SCRUM-93): cobra el copago. Pendiente.
-        //   2. SALA_DE_VIDEO (SCRUM-95): crea la sala si es TELEMEDICINA. Pendiente.
+        //   2. SALA_DE_VIDEO (SCRUM-95): crea la sala si es TELEMEDICINA
+        //      (telemedicina.negocio.SalaAlConfirmar). Si el proveedor de video
+        //      no responde, la confirmacion entera falla.
         //   3. RECLAMO: encola el reclamo a la obra social. Pendiente.
         // Se dispara antes de tocar el estado: si cualquiera falla, la
         // excepcion revierte la transaccion, el turno sigue EN_HOLD con su
         // temporizador vivo y el paciente puede reintentar mientras dure el
-        // hold. La sala va a crearse aca y nunca en reservarTurno: un hold que
-        // vence no tiene que dejar salas colgadas.
+        // hold. La sala se crea aca y nunca en reservarTurno: un hold que vence
+        // no tiene que dejar salas colgadas.
         eventoConfirmacion.fire(new TurnoEnConfirmacion(turno));
 
         turno.setEstado(EstadoTurno.CONFIRMADO);

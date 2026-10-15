@@ -35,6 +35,9 @@ import ar.edu.uade.da2.mediconecta.obrassociales.negocio.CoberturaEnLaReserva;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Prestacion;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSociales;
+import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ProveedorDeVideoNoDisponibleException;
+import ar.edu.uade.da2.mediconecta.telemedicina.negocio.SalaAlConfirmar;
+import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ServicioDeTelemedicina;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
@@ -259,6 +262,68 @@ class ServicioDeTurnosTest {
         verify(jmsContext, never()).createProducer();
     }
 
+    // ---- Sala de video al confirmar (SCRUM-95) --------------------------------
+    //
+    // El evento de confirmacion se conecta al observador real SalaAlConfirmar,
+    // con ServicioDeTelemedicina como doble: se ejerce el camino
+    // confirmarTurno -> fire() -> observador -> crearSesion. Lo que pasa adentro
+    // de crearSesion lo cubre ServicioDeTelemedicinaTest.
+
+    @Test
+    void confirmarUnTurnoDeTelemedicinaCreaLaSalaAntesDeConfirmar() throws Exception {
+        Turno turno = turnoEnHold(60L, ModalidadTurno.TELEMEDICINA);
+        prepararConfirmacion(turno);
+        ServicioDeTelemedicina telemedicina = mock(ServicioDeTelemedicina.class);
+        List<EstadoTurno> estadoAlCrearLaSala = new ArrayList<>();
+        when(telemedicina.crearSesion(60L)).thenAnswer(invocacion -> {
+            estadoAlCrearLaSala.add(turno.getEstado());
+            return null;
+        });
+        eventoConfirmacion.observadoPor(observadorDeSala(telemedicina)::alConfirmar);
+
+        Turno confirmado = servicio.confirmarTurno(60L);
+
+        verify(telemedicina).crearSesion(60L);
+        assertEquals(List.of(EstadoTurno.EN_HOLD), estadoAlCrearLaSala);
+        assertEquals(EstadoTurno.CONFIRMADO, confirmado.getEstado());
+        verify(productor).send(eq(topicoTurnoConfirmado), any(MapMessage.class));
+    }
+
+    @Test
+    void confirmarUnTurnoPresencialNoCreaSalaNiLlamaAlProveedor() throws Exception {
+        Turno turno = turnoEnHold(61L, ModalidadTurno.PRESENCIAL);
+        prepararConfirmacion(turno);
+        ServicioDeTelemedicina telemedicina = mock(ServicioDeTelemedicina.class);
+        eventoConfirmacion.observadoPor(observadorDeSala(telemedicina)::alConfirmar);
+
+        Turno confirmado = servicio.confirmarTurno(61L);
+
+        assertEquals(EstadoTurno.CONFIRMADO, confirmado.getEstado());
+        verify(telemedicina, never()).crearSesion(anyLong());
+    }
+
+    @Test
+    void siElProveedorDeVideoNoRespondeFallaLaConfirmacionEntera() throws Exception {
+        Turno turno = turnoEnHold(62L, ModalidadTurno.TELEMEDICINA);
+        autenticadoComo(paciente);
+        when(turnoDAO.buscarParaActualizar(62L)).thenReturn(turno);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
+        ServicioDeTelemedicina telemedicina = mock(ServicioDeTelemedicina.class);
+        when(telemedicina.crearSesion(62L))
+                .thenThrow(new ProveedorDeVideoNoDisponibleException("timeout"));
+        eventoConfirmacion.observadoPor(observadorDeSala(telemedicina)::alConfirmar);
+
+        assertThrows(ProveedorDeVideoNoDisponibleException.class, () -> servicio.confirmarTurno(62L));
+
+        // Opcion B: nada de la confirmacion se ejecuto. El turno sigue retenido
+        // por el paciente, con su temporizador vivo, y TurnoConfirmado no sale.
+        assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
+        assertSame(paciente, turno.getPaciente());
+        verify(expirador, never()).cancelar(anyLong());
+        verify(turnoDAO, never()).actualizar(any());
+        verify(jmsContext, never()).createProducer();
+    }
+
     // ---- Validacion de turnoId ---------------------------------------------------
     //
     // Mismo criterio que abrirDisponibilidad: un turnoId nulo es un dato
@@ -411,6 +476,13 @@ class ServicioDeTurnosTest {
             throws Exception {
         CoberturaEnLaReserva observador = new CoberturaEnLaReserva();
         inyectar(observador, "obrasSociales", obrasSociales);
+        return observador;
+    }
+
+    private static SalaAlConfirmar observadorDeSala(ServicioDeTelemedicina telemedicina)
+            throws Exception {
+        SalaAlConfirmar observador = new SalaAlConfirmar();
+        inyectar(observador, "servicioDeTelemedicina", telemedicina);
         return observador;
     }
 

@@ -110,6 +110,17 @@ curl -s -o /dev/null -H "Content-Type: application/json" \
      "$BASE/usuarios"
 comprobar "un paciente ajeno NO ve la sala"   403 "$(codigo -u "$AJENO" "$BASE/telemedicina/turno/$IDT")"
 comprobar "un turno presencial no lleva sala" 409 "$(codigo -u "$PROF" -X POST "$BASE/telemedicina/turno/$ID")"
+# SCRUM-95: confirmar crea la sala sola; confirmar un presencial no crea nada.
+CONF_TELE=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
+            -d '{"fechaHora":"2027-01-15T16:00:00","modalidad":"TELEMEDICINA"}' \
+            "$BASE/turnos/disponibilidad")
+IDC=$(printf '%s' "$CONF_TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+curl -s -o /dev/null -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$IDC}" "$BASE/turnos"
+comprobar "reservar NO crea la sala"          404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$IDC")"
+comprobar "confirmar telemedicina"            200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$IDC/confirmar")"
+comprobar "al confirmar el paciente tiene enlace" "si" "$(curl -s -u "$PACI" "$BASE/telemedicina/turno/$IDC" | grep -q '"rol":"PACIENTE"' && echo si || echo no)"
+comprobar "al confirmar el profesional tiene enlace" "si" "$(curl -s -u "$PROF" "$BASE/telemedicina/turno/$IDC" | grep -q '"rol":"PROFESIONAL"' && echo si || echo no)"
+comprobar "confirmar un presencial no crea sala" 404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$ID")"
 
 echo
 echo "Sistema legado de la obra social (SOAP)"
