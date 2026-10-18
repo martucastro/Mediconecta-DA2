@@ -166,6 +166,41 @@
     </security-constraint>
 
     <!--
+      Operacion sensible 8: consultar un usuario por id (SCRUM-102).
+      Antes cualquiera, sin autenticarse, podia pedir /api/usuarios/{id} y ver
+      email y rol. Ahora hay que estar logueado. Que un paciente solo pueda ver
+      SU PROPIO id se controla ademas en ServicioDeUsuarios (no alcanza con web.xml).
+      Solo GET: el registro (POST /api/usuarios) y el login (POST /api/usuarios/login)
+      siguen publicos.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Consulta de usuario por id</web-resource-name>
+            <url-pattern>/api/usuarios/*</url-pattern>
+            <http-method>GET</http-method>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
+      Excepcion a la regla anterior: el listado de profesionales es publico
+      (lo usa la pantalla de busqueda antes de loguearse). Un patron exacto
+      le gana a uno con /*, por eso esta entrada no pasa por la restriccion
+      anterior. Sin auth-constraint = acceso libre.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Listado publico de profesionales</web-resource-name>
+            <url-pattern>/api/usuarios/profesionales</url-pattern>
+            <http-method>GET</http-method>
+        </web-resource-collection>
+    </security-constraint>
+
+    <!--
       Fallback del frontend: cualquier URL que no corresponda a un archivo ni a
       la API devuelve index.html. El frontend es una SPA y sus rutas (por
       ejemplo /mediconecta/agenda) no existen como archivos en el servidor:
