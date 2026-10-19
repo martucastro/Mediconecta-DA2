@@ -215,6 +215,243 @@
             },
             "description": "Endpoint publico (sin auth), SCRUM-81. Devuelve solo {id, nombre} de usuarios con rol PROFESIONAL, para que el paciente elija con quien reservar antes de loguearse."
           }
+        },
+        {
+          "name": "Resolver ids de ADMINISTRADOR y PACIENTE A (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var admin = jsonData.find(function (u) { return u.email === pm.environment.get('admin_email'); });",
+                  "var pacienteA = jsonData.find(function (u) { return u.email === pm.environment.get('pacienteA_email'); });",
+                  "if (admin && pacienteA) {",
+                  "    pm.collectionVariables.set('admin_id', admin.id);",
+                  "    pm.collectionVariables.set('pacienteA_id', pacienteA.id);",
+                  "} else {",
+                  "    console.warn('No se encontraron admin o paciente A en el listado, completar admin_id y pacienteA_id a mano.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Prepara las requests de consulta por id: guarda admin_id y pacienteA_id, que dependen de la base de cada uno."
+          }
+        },
+        {
+          "name": "Consulta por id - anonimo (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "SCRUM-102. Antes devolvia email y rol sin pedir credenciales; ahora web.xml exige estar autenticado."
+          }
+        },
+        {
+          "name": "Consulta por id - PACIENTE su propio usuario (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('devuelve su propio usuario y no expone la contrasena', function () {",
+                  "    var usuario = pm.response.json();",
+                  "    pm.expect(usuario.email).to.eql(pm.environment.get('pacienteA_email'));",
+                  "    pm.expect(usuario).to.not.have.property('contrasenaHash');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "ServicioDeUsuarios.consultarUsuario deja pasar al paciente cuando el id pedido es el suyo."
+          }
+        },
+        {
+          "name": "Consulta por id - PACIENTE otro usuario (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{admin_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{admin_id}}"]
+            },
+            "description": "Control de pertenencia programatico: @RolesAllowed solo dice que es PACIENTE, no que el id sea el suyo. Lo resuelve ServicioDeUsuarios.consultarUsuario."
+          }
+        },
+        {
+          "name": "Consulta por id - ADMINISTRADOR (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "El administrador puede consultar a cualquier usuario."
+          }
+        },
+        {
+          "name": "Consulta por id - ADMINISTRADOR, id inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/999999999",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "999999999"]
+            },
+            "description": "Solo el administrador distingue un id inexistente (404). Un paciente recibe 403 exista o no el id, para no revelar que ids estan ocupados."
+          }
+        },
+        {
+          "name": "Login sigue siendo publico (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{pacienteA_email}}\",\n  \"contrasena\": \"{{pacienteA_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/login",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "login"]
+            },
+            "description": "SCRUM-102 no debe cerrar POST /api/usuarios/login: el constraint de web.xml es solo para GET."
+          }
         }
       ]
     },
