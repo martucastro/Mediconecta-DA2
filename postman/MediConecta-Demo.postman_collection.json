@@ -231,8 +231,8 @@
                   "var admin = jsonData.find(function (u) { return u.email === pm.environment.get('admin_email'); });",
                   "var pacienteA = jsonData.find(function (u) { return u.email === pm.environment.get('pacienteA_email'); });",
                   "if (admin && pacienteA) {",
-                  "    pm.collectionVariables.set('admin_id', admin.id);",
-                  "    pm.collectionVariables.set('pacienteA_id', pacienteA.id);",
+                  "    pm.environment.set('admin_id', admin.id);",
+                  "    pm.environment.set('pacienteA_id', pacienteA.id);",
                   "} else {",
                   "    console.warn('No se encontraron admin o paciente A en el listado, completar admin_id y pacienteA_id a mano.');",
                   "}"
