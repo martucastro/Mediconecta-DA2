@@ -49,7 +49,7 @@ public class UsuariosResource {
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response obtener(@PathParam("id") Long id) {
-        Usuario usuario = servicio.obtenerUsuario(id);
+        Usuario usuario = servicio.consultarUsuario(id);
         if (usuario == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity("Usuario no encontrado")
