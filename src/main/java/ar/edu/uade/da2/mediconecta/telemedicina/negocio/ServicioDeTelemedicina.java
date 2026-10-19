@@ -75,10 +75,19 @@ public class ServicioDeTelemedicina {
      *    esa sin volver a llamar al proveedor. Si la sala era de un paciente
      *    anterior (su hold vencio y otro tomo el turno), se pide una nueva: el
      *    enlace viejo lo conoce alguien que ya no es parte del turno.
+     *
+     * El turno se lee con lock de escritura: dos pedidos simultaneos para el
+     * mismo turno quedan serializados, y el segundo encuentra la sala del
+     * primero en vez de pedir otra y chocar con la restriccion unica de
+     * turnoId. Cuando la llama SalaAlConfirmar, el lock ya es de la
+     * transaccion de confirmarTurno.
+     *
+     * Devuelve el enlace de quien la pidio, nunca los dos.
      */
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public SesionCreada crearSesion(Long turnoId) {
-        Turno turno = turnoDelCaller(turnoId, usuarioAutenticado());
+        Usuario caller = usuarioAutenticado();
+        Turno turno = turnoDelCaller(turnoId, caller, true);
 
         if (turno.getModalidad() != ModalidadTurno.TELEMEDICINA) {
             throw new ConflictoDeNegocioException(
@@ -93,7 +102,7 @@ public class ServicioDeTelemedicina {
         Long pacienteId = turno.getPaciente().getId();
         SesionVideo existente = sesionDAO.buscarPorTurno(turnoId);
         if (existente != null && pacienteId.equals(existente.getPacienteId())) {
-            return new SesionCreada(existente, false);
+            return new SesionCreada(enlacePara(caller, turno, existente), false);
         }
 
         SalaDeVideo sala = proveedor.crearSala(turnoId, turno.getFechaHora());
@@ -102,12 +111,12 @@ public class ServicioDeTelemedicina {
         if (existente != null) {
             existente.asignarSala(pacienteId, sala.salaId(), sala.enlaceProfesional(),
                     sala.enlacePaciente());
-            return new SesionCreada(sesionDAO.actualizar(existente), true);
+            return new SesionCreada(enlacePara(caller, turno, sesionDAO.actualizar(existente)), true);
         }
         SesionVideo nueva = new SesionVideo(turnoId, pacienteId, turno.getProfesional().getId(),
                 sala.salaId(), sala.enlaceProfesional(), sala.enlacePaciente());
         sesionDAO.guardar(nueva);
-        return new SesionCreada(nueva, true);
+        return new SesionCreada(enlacePara(caller, turno, nueva), true);
     }
 
     /**
@@ -127,17 +136,22 @@ public class ServicioDeTelemedicina {
     @TransactionAttribute(TransactionAttributeType.SUPPORTS)
     public EnlaceDeSesion obtenerEnlace(Long turnoId) {
         Usuario caller = usuarioAutenticado();
-        Turno turno = turnoDelCaller(turnoId, caller);
+        Turno turno = turnoDelCaller(turnoId, caller, false);
 
         SesionVideo sesion = sesionDAO.buscarPorTurno(turnoId);
         if (sesion == null || !esVigente(sesion, turno)) {
             return null;
         }
+        return enlacePara(caller, turno, sesion);
+    }
+
+    /** El enlace de anfitrion para el profesional, el de invitado para el paciente. */
+    private static EnlaceDeSesion enlacePara(Usuario caller, Turno turno, SesionVideo sesion) {
         if (caller.getId().equals(turno.getProfesional().getId())) {
-            return new EnlaceDeSesion(turnoId, ROL_EN_SALA_PROFESIONAL,
+            return new EnlaceDeSesion(turno.getId(), ROL_EN_SALA_PROFESIONAL,
                     sesion.getEnlaceProfesional(), sesion.getEstado());
         }
-        return new EnlaceDeSesion(turnoId, ROL_EN_SALA_PACIENTE, sesion.getEnlacePaciente(),
+        return new EnlaceDeSesion(turno.getId(), ROL_EN_SALA_PACIENTE, sesion.getEnlacePaciente(),
                 sesion.getEstado());
     }
 
@@ -160,11 +174,13 @@ public class ServicioDeTelemedicina {
      * caller es PACIENTE, no que el turno sea suyo; mismo criterio que
      * ServicioDeTurnos y ServicioDePagos.
      */
-    private Turno turnoDelCaller(Long turnoId, Usuario caller) {
+    private Turno turnoDelCaller(Long turnoId, Usuario caller, boolean bloquear) {
         if (turnoId == null) {
             throw new DatosInvalidosException("El id del turno es obligatorio.");
         }
-        Turno turno = servicioDeTurnos.obtenerTurno(turnoId);
+        Turno turno = bloquear
+                ? servicioDeTurnos.obtenerTurnoParaActualizar(turnoId)
+                : servicioDeTurnos.obtenerTurno(turnoId);
         boolean esProfesional = turno != null && turno.getProfesional() != null
                 && caller.getId().equals(turno.getProfesional().getId());
         boolean esPaciente = turno != null && turno.getPaciente() != null

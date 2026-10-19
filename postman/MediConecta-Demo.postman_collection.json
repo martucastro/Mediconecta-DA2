@@ -1336,7 +1336,7 @@
     },
     {
       "name": "06 - ServicioDeTelemedicina (proveedor de video simulado)",
-      "description": "SCRUM-99. Primero se ejercita el proveedor de video simulado solo, como un tercero (POST /externo/salas, sin autenticacion). Despues el componente: se crea y consulta la sesion de un turno de telemedicina sin pasar por la confirmacion del turno (ese enganche es SCRUM-95). Cada participante recibe solo su enlace; un tercero recibe 403.",
+      "description": "SCRUM-99. Primero se ejercita el proveedor de video simulado solo, como un tercero (POST /externo/salas, sin autenticacion). Despues el componente: se crea y consulta la sesion de un turno de telemedicina sin pasar por la confirmacion del turno (al final, SCRUM-95: confirmar un turno de telemedicina crea la sala sola). Cada participante recibe solo su enlace; un tercero recibe 403.",
       "item": [
         {
           "name": "Proveedor simulado - crear sala (200)",
@@ -2018,6 +2018,455 @@
               ]
             },
             "description": "Un turno presencial no lleva sala y no se llama al proveedor."
+          }
+        },
+        {
+          "name": "SCRUM-95 - Abrir franja de TELEMEDICINA para confirmar (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.collectionVariables.set('turno_tele_conf', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{profesional_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{profesional_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/disponibilidad",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "disponibilidad"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"2027-03-21T12:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+            }
+          }
+        },
+        {
+          "name": "SCRUM-95 - PACIENTE_A reserva (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_tele_conf}}\n}"
+            }
+          }
+        },
+        {
+          "name": "SCRUM-95 - Reservar no crea la sala (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele_conf}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele_conf}}"
+              ]
+            },
+            "description": "La sala se crea al confirmar y nunca al reservar: un hold que vence no deja salas colgadas."
+          }
+        },
+        {
+          "name": "SCRUM-95 - PACIENTE_A confirma: se crea la sala (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('CONFIRMADO', function () {",
+                  "    pm.expect(pm.response.json().estado).to.eql('CONFIRMADO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_tele_conf}}/confirmar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "{{turno_tele_conf}}",
+                "confirmar"
+              ]
+            },
+            "description": "SalaAlConfirmar observa TurnoEnConfirmacion y crea la sala dentro de la misma transaccion. Con el proveedor caido (-Dmediconecta.video.simular-caida=true) responde 503 y el turno sigue EN_HOLD."
+          }
+        },
+        {
+          "name": "SCRUM-95 - PACIENTE_A tiene su enlace sin pedirlo (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('enlace de paciente', function () {",
+                  "    pm.expect(pm.response.json().rol).to.eql('PACIENTE');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele_conf}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele_conf}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "SCRUM-95 - PROFESIONAL tiene su enlace (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('enlace de profesional', function () {",
+                  "    pm.expect(pm.response.json().rol).to.eql('PROFESIONAL');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{profesional_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{profesional_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_tele_conf}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_tele_conf}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "SCRUM-95 - PACIENTE_A reserva la franja PRESENCIAL (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_presencial_tele}}\n}"
+            }
+          }
+        },
+        {
+          "name": "SCRUM-95 - PACIENTE_A confirma el PRESENCIAL (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_presencial_tele}}/confirmar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "{{turno_presencial_tele}}",
+                "confirmar"
+              ]
+            }
+          }
+        },
+        {
+          "name": "SCRUM-95 - Confirmar un presencial no crea sala (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/telemedicina/turno/{{turno_presencial_tele}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "telemedicina",
+                "turno",
+                "{{turno_presencial_tele}}"
+              ]
+            },
+            "description": "Un turno presencial no genera sala ni llama al proveedor."
           }
         }
       ]

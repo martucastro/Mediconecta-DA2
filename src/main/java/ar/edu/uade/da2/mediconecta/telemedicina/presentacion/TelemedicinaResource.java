@@ -38,9 +38,7 @@ public class TelemedicinaResource {
     public Response crearSesion(@PathParam("turnoId") Long turnoId) {
         SesionCreada resultado = servicio.crearSesion(turnoId);
         Response.Status estado = resultado.nueva() ? Response.Status.CREATED : Response.Status.OK;
-        return Response.status(estado)
-                .entity(new EnlaceSesionDTO(servicio.obtenerEnlace(turnoId)))
-                .build();
+        return Response.status(estado).entity(new EnlaceSesionDTO(resultado.enlace())).build();
     }
 
     /**
