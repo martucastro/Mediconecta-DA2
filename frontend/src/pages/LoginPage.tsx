@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api, encabezadoBasic, guardarSesion, rutaInicial, type Sesion } from '../api'
+import { Navigate, useNavigate } from 'react-router-dom'
+import { api, cerrarSesion, encabezadoBasic, guardarSesion, obtenerSesion, rutaInicial, type Sesion } from '../api'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
 
@@ -13,12 +13,20 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
+  // Si ya hay sesion, el login no tiene sentido: ir directo a su pantalla.
+  const sesionActual = obtenerSesion()
+  const destinoActual = sesionActual ? rutaInicial(sesionActual.rol) : null
+  if (destinoActual) return <Navigate to={destinoActual} replace />
+
   async function manejarSubmit(evento: FormEvent) {
     evento.preventDefault()
+    if (enviando) return
     setError('')
     setEnviando(true)
 
     try {
+      // Borrar la sesion anterior: si no, api() mandaria el Authorization viejo.
+      cerrarSesion()
       const usuario = await api<Sesion>('/usuarios/login', {
         method: 'POST',
         body: JSON.stringify({ email, contrasena: password }),
