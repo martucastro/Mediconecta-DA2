@@ -10,6 +10,10 @@
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Para trabajar solo en el backend, sin compilar el frontend:
+             mvn test -Dskip.frontend=true
+             No usarlo para generar el .war que se despliega: saldria sin pantallas. -->
+        <skip.frontend>false</skip.frontend>
     </properties>
     <dependencies>
         <dependency>
@@ -57,6 +61,27 @@
     <build>
         <finalName>mediconecta</finalName>
         <plugins>
+            <!-- Vite escribe el build del frontend en src/main/webapp (emptyOutDir
+                 en false, para no borrar WEB-INF). "mvn clean" no toca src/, asi que
+                 sin esto cada cambio del frontend dejaba un index-<hash>.js viejo
+                 que el WAR terminaba empaquetando. Solo se borra lo que genera Vite:
+                 index.html y assets/. WEB-INF no se toca. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.2.0</version>
+                <configuration>
+                    <filesets>
+                        <fileset>
+                            <directory>src/main/webapp</directory>
+                            <includes>
+                                <include>index.html</include>
+                                <include>assets/**</include>
+                            </includes>
+                        </fileset>
+                    </filesets>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -74,6 +99,7 @@
                 <artifactId>frontend-maven-plugin</artifactId>
                 <version>1.15.0</version>
                 <configuration>
+                    <skip>${skip.frontend}</skip>
                     <workingDirectory>frontend</workingDirectory>
                     <installDirectory>${project.build.directory}</installDirectory>
                 </configuration>
