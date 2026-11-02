@@ -2,8 +2,8 @@
 
 Relevamiento del estado del proyecto frente a los criterios de testing de la
 clase 15 (entrega del 10/11/2026). Se tomó sobre `main` en `1b32af7` (merge del
-PR #30) el 29/10/2026. **No modifica código ni configuración**: todas las
-mediciones se corrieron sin cambiar el `pom.xml` del repo (ver "Cómo
+PR #30) el 29/10/2026. **No modifica código ni configuración**: el único cambio
+al `pom.xml` fue temporal, para correr PIT, y se descartó (ver "Cómo
 reproducirlo").
 
 ## Resumen
@@ -16,7 +16,7 @@ reproducirlo").
 | Cobertura de líneas (JaCoCo) | 35,8 % | 754 de 2105 líneas; ramas 43,1 %. |
 | Mutación (PIT) | 40,0 % | 307 de 767 mutantes muertos. Sobre el código que sí tiene tests, 93,3 %. |
 | Tests de integración | No hay | Ni Arquillian ni Testcontainers. Los DAO y los Resources no se prueban contra una base o un contenedor reales. |
-| Pruebas de API | Manuales | Colección de Postman (`postman/`, 66 elementos) y `deploy/smoke-test.sh`. No corren en ningún pipeline (Newman). |
+| Pruebas de API | Manuales | Colección de Postman (`postman/`, 57 requests) y `deploy/smoke-test.sh`. No corren en ningún pipeline (Newman). |
 | Frontend | Sin tests | 0 archivos de test. `npm run lint` pasa. |
 | Secretos en el historial | Riesgo bajo | gitleaks: 4 hallazgos, todos credenciales de demo en ejemplos de `curl`. Ver detalle. |
 | Dependencias vulnerables | 3 altas (frontend) | `npm audit`: `vite` 8.3.0–8.3.2 y `source-map-js`, ambas con arreglo disponible. Backend sin medir. |
@@ -60,15 +60,16 @@ Lectura:
 - **Lo que tiene tests, los tiene buenos** (93 % de mutación sobre lo cubierto).
   El número bajo viene de componentes enteros sin ningún test:
   `historiaclinica`, `pagos`, `usuarios.negocio` y `externos.pasarela`
-  suman unas 600 líneas en 0 %.
+  suman 745 líneas, de las que solo 2 están cubiertas.
 - **Los `Resource` y los `DAO` casi no se prueban.** Es esperable con tests de
   unidad: necesitan un contenedor o una base. Es el hueco que cubren los tests
   de integración.
 - **Los 10 mutantes vivos de `ServicioDeTurnos`** son llamadas que ningún test
   verifica: programar y cancelar el temporizador del hold
   (`expirador.programar` y `expirador.cancelar`), `setInicioHold`, los cuatro
-  campos del mensaje JMS `TurnoConfirmado` y el límite de 60 caracteres del
-  consultorio (`> 60` contra `>= 60`). Se arreglan con asserts en tests que
+  campos del mensaje JMS `TurnoConfirmado`, el valor que devuelve
+  `reservarTurno` y el límite de 60 caracteres del consultorio (`> 60` contra
+  `>= 60`). Se arreglan con asserts en tests que
   ya existen, sin tocar código de producción.
 
 ## Hallazgos puntuales
@@ -87,8 +88,9 @@ Lectura:
    a variables con un `.env.example` y dejar documentado que son de demo,
    antes de que el CI corra gitleaks y falle.
 3. **Dos colecciones de Postman.** `deploy/MediConecta.postman_collection.json`
-   (21 elementos, del 28/09) parece la versión vieja de
-   `postman/MediConecta-Demo.postman_collection.json` (66). Hay que decidir
+   (16 requests, del 28/09) parece la versión vieja de
+   `postman/MediConecta-Demo.postman_collection.json` (57), y ni el README ni
+   los documentos la mencionan. Hay que decidir
    cuál vale y borrar la otra.
 4. **Solo 2 clases usan `@ParameterizedTest`.** La máquina de estados del
    turno (cada transición inválida da `409`) es el caso más natural para
@@ -127,6 +129,7 @@ mvn -Dskip.frontend=true org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent tes
 # Reporte: target/site/jacoco/index.html
 
 # Secretos en todo el historial
+# (en Git Bash de Windows: MSYS_NO_PATHCONV=1 y "$(pwd -W):/repo")
 docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 git /repo --redact
 
 # Dependencias del frontend
