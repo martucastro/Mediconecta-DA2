@@ -227,6 +227,20 @@ public class ServicioDeTurnos {
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno confirmarTurno(Long turnoId) {
+        return confirmarTurno(turnoId, null);
+    }
+
+    /**
+     * Confirma el hold y, si el turno tiene copago, lo cobra con el token del
+     * medio de pago que viaja en el cuerpo del PUT (ver CobroAlConfirmar).
+     *
+     * El token no se persiste ni se mira aca: solo se adjunta al evento para que
+     * el observador del cobro lo use durante esta misma transaccion. Un turno sin
+     * copago (cobertura total o aun sin cotizar) se confirma sin token.
+     */
+    @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
+    @TransactionAttribute(TransactionAttributeType.REQUIRED)
+    public Turno confirmarTurno(Long turnoId, String tokenMedioDePago) {
         if (turnoId == null) {
             throw new DatosInvalidosException("El id del turno es obligatorio");
         }
@@ -241,7 +255,9 @@ public class ServicioDeTurnos {
         verificarQueElHoldEsDelCaller(turno);
 
         // PUNTO DE EXTENSION (confirmacion). Observadores, en este orden:
-        //   1. COBRO_COPAGO (SCRUM-93): cobra el copago. Pendiente.
+        //   1. COBRO_COPAGO (SCRUM-93): cobra el copago si el turno lo tiene
+        //      (pagos.negocio.CobroAlConfirmar). Si la pasarela no responde o
+        //      rechaza el cobro, la confirmacion entera falla.
         //   2. SALA_DE_VIDEO (SCRUM-95): crea la sala si es TELEMEDICINA
         //      (telemedicina.negocio.SalaAlConfirmar). Si el proveedor de video
         //      no responde, la confirmacion entera falla.
@@ -251,7 +267,7 @@ public class ServicioDeTurnos {
         // temporizador vivo y el paciente puede reintentar mientras dure el
         // hold. La sala se crea aca y nunca en reservarTurno: un hold que vence
         // no tiene que dejar salas colgadas.
-        eventoConfirmacion.fire(new TurnoEnConfirmacion(turno));
+        eventoConfirmacion.fire(new TurnoEnConfirmacion(turno, tokenMedioDePago));
 
         turno.setEstado(EstadoTurno.CONFIRMADO);
         expirador.cancelar(turnoId);
