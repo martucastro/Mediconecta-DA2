@@ -21,14 +21,14 @@ sequenceDiagram
     participant F as TurnoConfirmadoFacturacionMDB
     participant Q as Cola JMS<br/>ReclamosFacturacion
 
-    P->>R: PUT /api/turnos/{id}/confirmar (HTTP Basic, rol PACIENTE)
-    R->>T: confirmarTurno(id)
+    P->>R: PUT /api/turnos/{id}/confirmar (HTTP Basic, web.xml autentica)
+    R->>T: confirmarTurno(id) (@RolesAllowed PACIENTE)
 
     rect rgba(46, 160, 67, 0.12)
-        Note over T,TOP: Transacción JTA única de confirmarTurno (REQUIRED)
-        T->>DB: turnoDAO.buscarParaActualizar(id) (lock de escritura)
+        Note over T,TOP: Transacción JTA única de confirmarTurno (REQUIRED): empieza al entrar al EJB
+        T->>DB: turnoDAO.buscarParaActualizar(id) (PESSIMISTIC_WRITE)
         DB-->>T: Turno EN_HOLD
-        Note over T: valida estado EN_HOLD (si no, 409)<br/>y verificarQueElHoldEsDelCaller (si no, 403)
+        Note over T: turno inexistente: 400. No está EN_HOLD: 409.<br/>Hold de otro paciente (verificarQueElHoldEsDelCaller): 403.
 
         T->>T: eventoConfirmacion.fire(TurnoEnConfirmacion)
         Note over T,S: Evento CDI sincrónico: los observadores corren en este hilo<br/>y en esta transacción, por orden de @Priority.<br/>Hoy en main hay uno solo: SalaAlConfirmar (200).<br/>COBRO_COPAGO (100) no tiene observador todavía (SCRUM-93, PR #33).<br/>RECLAMO (300) queda sin usar: el reclamo sale por el tópico.
@@ -39,7 +39,7 @@ sequenceDiagram
         else modalidad TELEMEDICINA
             S->>TM: crearSesion(turnoId) (REQUIRED, se une a la TX)
             TM->>T: obtenerTurnoParaActualizar(turnoId) (MANDATORY)
-            T-->>TM: Turno (el lock ya es de esta TX)
+            T-->>TM: Turno (otra instancia del stateful, pero el lock ya es de esta TX)
             TM->>DB: sesionDAO.buscarPorTurno(turnoId)
             alt ya hay sala para este paciente (idempotente)
                 DB-->>TM: SesionVideo existente
@@ -47,7 +47,7 @@ sequenceDiagram
                 TM->>RC: crearSala(turnoId, fechaHora)
                 RC->>V: POST /api/externo/salas {reference: "turno-{id}"}<br/>(timeouts: 3 s conexión, 5 s lectura)
                 break proveedor caído, lento o con sala incompleta
-                    V--xRC: 503 / timeout
+                    V--xRC: 503, timeout o respuesta sin roomId / enlaces
                     RC--xTM: ProveedorDeVideoNoDisponibleException<br/>(@ApplicationException rollback = true)
                     TM--xS: se propaga, no se atrapa
                     S--xT: sale por el fire()
@@ -70,8 +70,8 @@ sequenceDiagram
         Note over T,TOP: El JMSContext está enlistado en la TX:<br/>el mensaje queda retenido hasta el commit
     end
 
+    Note over T,TOP: COMMIT al salir del EJB: se graban turno y sala,<br/>se libera el lock y recién ahí Artemis entrega el mensaje
     T-->>R: Turno CONFIRMADO
-    Note over T,TOP: COMMIT: se graban turno y sala, y recién ahí Artemis entrega el mensaje
     R-->>P: 200 TurnoDTO
 
     rect rgba(56, 132, 255, 0.12)
@@ -84,7 +84,7 @@ sequenceDiagram
             F->>F: ServicioDeFacturacion.registrarReclamo(turnoId)<br/>solo con cobertura autorizada, idempotente por turnoId
             opt cobertura autorizada y sin reclamo previo
                 F--)Q: MapMessage {reclamoId}
-                Note over Q: ReclamoMDB lo presenta a la obra social por SOAP<br/>(hasta 5 entregas, después revisión manual / DLQ)
+                Note over Q: ReclamoMDB lo presenta a la obra social por SOAP.<br/>Hasta 5 entregas (espera de 2 s a 30 s). Agotadas: EN_REVISION_MANUAL.<br/>DLQ propia: ReclamosFacturacionDLQ.
             end
         end
         Note over N,F: Si un MDB falla, Artemis reentrega el mensaje.<br/>La confirmación del turno no se ve afectada.
@@ -100,6 +100,12 @@ sequenceDiagram
 | Alta o actualización de `SesionVideo` | `ReclamoMDB` presenta el reclamo por SOAP, con reintentos y DLQ |
 | Turno pasa a `CONFIRMADO`, `ExpiradorDeHolds.cancelar` y `turnoDAO.actualizar` | |
 | Envío del mensaje al tópico `TurnoConfirmado` (sale recién al commit) | |
+
+## Casos a tener presentes
+
+- **Solo hay un observador de `TurnoEnConfirmacion` en `main`.** Es `SalaAlConfirmar` (200). La cobertura (`CoberturaEnLaReserva`, `COBERTURA` = 100) observa otro evento, `TurnoEnReserva`, y corre al reservar, no al confirmar. El copago (`COBRO_COPAGO` = 100) se suma con la PR #33 (SCRUM-93), que todavía está abierta.
+- **Carrera con el vencimiento del hold.** Si el timer de `ExpiradorDeHolds` vence mientras se confirma, `liberar` corre en su propia transacción (`REQUIRES_NEW`) y pide el mismo `PESSIMISTIC_WRITE` sobre el turno. Queda esperando el commit de la confirmación, después lee `CONFIRMADO` y no hace nada. El lock serializa los dos caminos.
+- **Orden entre suscriptores.** Notificaciones y facturación no tienen orden entre sí ni dependen uno del otro. Cada uno es idempotente por `turnoId`, así que una reentrega no duplica la notificación ni el reclamo.
 
 Una salvedad: la llamada HTTP al proveedor de video está adentro de la transacción en el tiempo, pero no participa de ella. Si la sala se crea y después falla algo posterior, el rollback borra la fila de `SesionVideo`, pero la sala del proveedor ya existe. No queda nadie con ese enlace y el reintento pide una sala nueva, así que el efecto es una sala huérfana sin uso. Lo mismo, con dinero, es lo que analiza la PR #33 para el cobro del copago.
 
