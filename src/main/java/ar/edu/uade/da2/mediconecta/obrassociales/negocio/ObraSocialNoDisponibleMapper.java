@@ -23,6 +23,7 @@ public class ObraSocialNoDisponibleMapper implements ExceptionMapper<ObraSocialN
     @Override
     public Response toResponse(ObraSocialNoDisponibleException excepcion) {
         return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "30")
                 .entity(Map.of("error", excepcion.getMessage()))
                 .type(MediaType.APPLICATION_JSON)
                 .build();

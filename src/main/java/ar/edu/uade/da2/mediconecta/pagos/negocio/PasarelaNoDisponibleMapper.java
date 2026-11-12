@@ -8,7 +8,8 @@ import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
 
 /**
- * Traduce PasarelaNoDisponibleException a HTTP 502.
+ * Traduce PasarelaNoDisponibleException a HTTP 503 con Retry-After, igual que
+ * las otras dos integraciones externas (con el circuito abierto es lo mismo).
  *
  * A diferencia de DatosInvalidosException y ConflictoDeNegocioException, esta
  * excepcion es especifica de pagos, asi que su mapper vive junto a ella en vez
@@ -19,7 +20,8 @@ public class PasarelaNoDisponibleMapper implements ExceptionMapper<PasarelaNoDis
 
     @Override
     public Response toResponse(PasarelaNoDisponibleException excepcion) {
-        return Response.status(Response.Status.BAD_GATEWAY)
+        return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "30")
                 .entity(Map.of("error", excepcion.getMessage()))
                 .type(MediaType.APPLICATION_JSON)
                 .build();

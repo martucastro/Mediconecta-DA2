@@ -8,6 +8,7 @@ import java.util.logging.Logger;
 import javax.xml.namespace.QName;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
+import ar.edu.uade.da2.mediconecta.comun.resiliencia.CircuitBreaker;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Cobertura;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Prestacion;
@@ -42,6 +43,12 @@ import jakarta.xml.ws.soap.SOAPFaultException;
  * del cliente (Client en SOAP 1.1, Sender en 1.2) dice que el legado entendió el
  * pedido y lo rechaza, y es un dato inválido; cualquier otro (Server, por
  * ejemplo) es una falla del legado y se trata como no disponible.
+ *
+ * Circuit breaker: las tres operaciones comparten uno. Tras varias fallas
+ * "no disponible" seguidas el circuito se abre y las llamadas fallan al instante
+ * (la misma ObraSocialNoDisponibleException, es decir 503 con Retry-After) sin
+ * esperar los timeouts. Los faults del cliente (datos invalidos) no cuentan.
+ * Configurable con mediconecta.obrasocial.cb.umbral y .cb.abiertoMs.
  */
 @ApplicationScoped
 public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
@@ -73,16 +80,24 @@ public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
 
     private volatile Service servicio;
 
+    private final CircuitBreaker circuito =
+            CircuitBreaker.deConfiguracion("obra-social", "mediconecta.obrasocial", 3, 10_000);
+
+    private <T> T protegido(java.util.function.Supplier<T> llamada) {
+        return circuito.ejecutar(llamada, ObraSocialNoDisponibleException.class,
+                () -> new ObraSocialNoDisponibleException(MENSAJE_NO_DISPONIBLE));
+    }
+
     @Override
     public Cobertura consultar(String dni, String numeroAfiliado, Prestacion prestacion) {
-        return invocar("validarCobertura",
-                puerto -> puerto.validarCobertura(dni, numeroAfiliado, prestacion.name()));
+        return protegido(() -> invocar("validarCobertura",
+                puerto -> puerto.validarCobertura(dni, numeroAfiliado, prestacion.name())));
     }
 
     @Override
     public Cobertura autorizar(String dni, String numeroAfiliado, Prestacion prestacion) {
-        return invocar("autorizarPrestacion",
-                puerto -> puerto.autorizarPrestacion(dni, numeroAfiliado, prestacion.name()));
+        return protegido(() -> invocar("autorizarPrestacion",
+                puerto -> puerto.autorizarPrestacion(dni, numeroAfiliado, prestacion.name())));
     }
 
     /**
@@ -93,6 +108,11 @@ public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
      */
     @Override
     public ResultadoPresentacion presentar(String dni, String numeroAfiliado, String numeroAutorizacion) {
+        return protegido(() -> presentarSinProteger(dni, numeroAfiliado, numeroAutorizacion));
+    }
+
+    private ResultadoPresentacion presentarSinProteger(String dni, String numeroAfiliado,
+            String numeroAutorizacion) {
         String url = System.getProperty(PROPIEDAD_URL, URL_POR_DEFECTO);
         try {
             return traducirPresentacion(nuevoPuerto(url).presentarReclamo(dni, numeroAfiliado, numeroAutorizacion));

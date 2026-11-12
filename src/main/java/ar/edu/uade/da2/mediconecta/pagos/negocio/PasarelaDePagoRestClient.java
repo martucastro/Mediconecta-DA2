@@ -3,6 +3,7 @@ package ar.edu.uade.da2.mediconecta.pagos.negocio;
 import java.math.BigDecimal;
 import java.util.logging.Logger;
 
+import ar.edu.uade.da2.mediconecta.comun.resiliencia.CircuitBreaker;
 import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 
 import jakarta.annotation.PostConstruct;
@@ -48,6 +49,19 @@ public class PasarelaDePagoRestClient implements PasarelaDePagoAdapter {
     // cuando la destruye, en vez de abrir y cerrar uno por invocacion.
     private Client cliente;
 
+    // Circuit breaker compartido por cobrar y reembolsar: si la pasarela cae,
+    // tras 3 fallas seguidas se deja de llamarla por 10 s y se falla al instante.
+    // Un pago RECHAZADO es una respuesta valida, no una falla. Propiedades:
+    // mediconecta.pasarela.cb.umbral y mediconecta.pasarela.cb.abiertoMs.
+    private final CircuitBreaker circuito =
+            CircuitBreaker.deConfiguracion("pasarela-de-pago", "mediconecta.pasarela", 3, 10_000);
+
+    private <T> T protegido(java.util.function.Supplier<T> llamada) {
+        return circuito.ejecutar(llamada, PasarelaNoDisponibleException.class,
+                () -> new PasarelaNoDisponibleException(
+                        "La pasarela de pago no esta disponible (circuito abierto)."));
+    }
+
     @PostConstruct
     public void iniciar() {
         cliente = ClientBuilder.newClient();
@@ -60,6 +74,10 @@ public class PasarelaDePagoRestClient implements PasarelaDePagoAdapter {
 
     @Override
     public ResultadoPasarela cobrar(BigDecimal monto, String moneda, String tokenMedioDePago) {
+        return protegido(() -> cobrarSinProteger(monto, moneda, tokenMedioDePago));
+    }
+
+    private ResultadoPasarela cobrarSinProteger(BigDecimal monto, String moneda, String tokenMedioDePago) {
         PagoExternoRequest cuerpo = new PagoExternoRequest(monto, moneda, tokenMedioDePago);
 
         try (Response respuesta = cliente.target(URL_BASE)
@@ -81,6 +99,10 @@ public class PasarelaDePagoRestClient implements PasarelaDePagoAdapter {
 
     @Override
     public ResultadoPasarela reembolsar(String idTransaccionExterna) {
+        return protegido(() -> reembolsarSinProteger(idTransaccionExterna));
+    }
+
+    private ResultadoPasarela reembolsarSinProteger(String idTransaccionExterna) {
         try (Response respuesta = cliente.target(URL_BASE)
                 .path(idTransaccionExterna)
                 .path("reembolsos")

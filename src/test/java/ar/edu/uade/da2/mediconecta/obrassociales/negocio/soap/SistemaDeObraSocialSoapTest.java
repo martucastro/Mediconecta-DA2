@@ -228,6 +228,24 @@ class SistemaDeObraSocialSoapTest {
         return xml;
     }
 
+    @Test
+    void conElLegadoCaidoElCircuitoSeAbreYLasLlamadasFallanSinSalirALaRed() {
+        when(puerto.validarCobertura(anyString(), anyString(), anyString()))
+                .thenThrow(new WebServiceException("Connection refused"));
+
+        for (int i = 0; i < 3; i++) {
+            assertThrows(ObraSocialNoDisponibleException.class,
+                    () -> sistema.consultar(DNI, AFILIADO, Prestacion.CONSULTA));
+        }
+        // Circuito abierto: ni siquiera se arma un puerto nuevo (cero timeouts).
+        org.mockito.Mockito.clearInvocations(sistema);
+        assertThrows(ObraSocialNoDisponibleException.class,
+                () -> sistema.consultar(DNI, AFILIADO, Prestacion.CONSULTA));
+        assertThrows(ObraSocialNoDisponibleException.class,
+                () -> sistema.presentar(DNI, AFILIADO, "AUT-1"));
+        verify(sistema, never()).nuevoPuerto(anyString());
+    }
+
     private static RespuestaReclamoXml respuestaReclamo(String numeroPresentacion, String montoReconocido) {
         RespuestaReclamoXml xml = new RespuestaReclamoXml();
         xml.numeroPresentacion = numeroPresentacion;
