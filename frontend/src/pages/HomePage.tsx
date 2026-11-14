@@ -17,6 +17,7 @@ export default function HomePage() {
           <Link to="/home" aria-current="page">Mis turnos</Link>
           <a href="#">Mi historia clínica</a>
           <a href="#">Cobertura</a>
+          <Link to="/notificaciones">Notificaciones</Link>
           <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
           <BotonCerrarSesion />
         </nav>

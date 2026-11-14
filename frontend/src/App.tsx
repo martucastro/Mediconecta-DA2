@@ -5,6 +5,7 @@ import DisponibilidadPage from './pages/DisponibilidadPage'
 import HoldPage from './pages/HoldPage'
 import AgendaPage from './pages/AgendaPage'
 import HistoriaPage from './pages/HistoriaPage'
+import NotificacionesPage from './pages/NotificacionesPage'
 import NotFoundPage from './pages/NotFoundPage'
 import RutaProtegida from './pages/RutaProtegida'
 
@@ -17,6 +18,7 @@ function App() {
         <Route path="/home" element={<HomePage />} />
         <Route path="/disponibilidad" element={<DisponibilidadPage />} />
         <Route path="/hold" element={<HoldPage />} />
+        <Route path="/notificaciones" element={<NotificacionesPage />} />
       </Route>
 
       <Route element={<RutaProtegida roles={['PROFESIONAL']} />}>

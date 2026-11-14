@@ -67,6 +67,18 @@ comprobar "telemedicina se cotiza como teleconsulta" "si" "$(printf '%s' "$RESER
 comprobar "cancelar libera el turno de telemedicina" 200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID_TELE/cancelar")"
 comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "$BASE/turnos/$ID/confirmar")"
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID/confirmar")"
+comprobar "anonimo NO ve notificaciones"      401 "$(codigo "$BASE/notificaciones/mias")"
+comprobar "profesional NO ve notificaciones"  403 "$(codigo -u "$PROF" "$BASE/notificaciones/mias")"
+# La notificacion la crea un consumidor JMS: llega un instante despues de confirmar.
+NOTIFICADO=no
+for i in 1 2 3 4 5; do
+  if curl -s -u "$PACI" "$BASE/notificaciones/mias" | grep -q "\"turnoId\":$ID[,}]"; then
+    NOTIFICADO=si
+    break
+  fi
+  sleep 1
+done
+comprobar "el paciente ve la notificacion del turno" "si" "$NOTIFICADO"
 
 echo
 echo "Mis turnos (resueltos desde el usuario autenticado)"

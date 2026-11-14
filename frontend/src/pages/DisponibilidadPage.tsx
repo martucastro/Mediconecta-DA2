@@ -175,6 +175,7 @@ export default function DisponibilidadPage() {
           <Link to="/home" aria-current="page">Mis turnos</Link>
           <a href="#">Mi historia clínica</a>
           <a href="#">Cobertura</a>
+          <Link to="/notificaciones">Notificaciones</Link>
           <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
         </nav>
         <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
