@@ -27,7 +27,7 @@ import jakarta.ejb.EJBAccessException;
 import jakarta.ejb.SessionContext;
 
 @ExtendWith(MockitoExtension.class)
-class ServicioDeUsuariosTest {
+class ServicioDeUsuariosRegistroLoginTest {
 
     @Mock
     private UsuarioDAO usuarioDAO;
