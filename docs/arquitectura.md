@@ -54,8 +54,8 @@ flowchart LR
     os -->|"SOAP"| leg
     pag -->|"REST"| pas
     tur -->|"evento CDI sincronico: cobertura al reservar"| os
-    tur -.->|"planificado SCRUM-93: copago al confirmar"| pag
-    tur -.->|"planificado SCRUM-95: sala de video"| tel
+    tur -->|"evento CDI sincronico: copago al confirmar (SCRUM-93)"| pag
+    tur -->|"evento CDI sincronico: sala de video al confirmar (SCRUM-95)"| tel
     tel -->|"REST"| vid
 ```
 
@@ -112,6 +112,61 @@ flowchart LR
     os -->|"SOAP: validarCobertura, autorizarPrestacion, presentarReclamo"| leg
     pag -->|"REST: POST /externo/pagos"| pas
     tur -->|"evento CDI sincronico: cobertura al reservar"| os
-    tur -.->|"evento CDI sincronico, planificado SCRUM-95"| tel
+    tur -->|"evento CDI sincronico: copago al confirmar (SCRUM-93)"| pag
+    tur -->|"evento CDI sincronico: sala al confirmar (SCRUM-95)"| tel
     tel -->|"REST"| vid
 ```
+
+## Cobro del copago al confirmar: qué pasa si la pasarela falla (SCRUM-93)
+
+`confirmarTurno` corre en una sola transacción JTA. El observador `CobroAlConfirmar`
+(prioridad `COBRO_COPAGO` = 100) cobra el copago **dentro** de esa transacción,
+antes de la sala de video (`SALA_DE_VIDEO` = 200). El rollback de JTA deshace la
+base y JMS, pero **no deshace un cobro REST que ya salió**: la pasarela es un
+tercero por HTTP. De ahí los tres desenlaces.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Paciente
+    participant T as confirmarTurno (TX JTA)
+    participant C as CobroAlConfirmar (100)
+    participant G as Pasarela ($ externo)
+    participant S as SalaAlConfirmar (200)
+
+    P->>T: PUT /turnos/{id}/confirmar { tokenMedioDePago }
+    T->>C: fire(TurnoEnConfirmacion)
+    Note over C: copago null o 0 → return,<br/>no se cobra ni se pide medio de pago
+    C->>G: cobrar(copago, token)
+
+    alt A) la pasarela no responde
+        G--xC: PasarelaNoDisponibleException (rollback=true)
+        Note over T: rollback total: nada cobrado,<br/>turno sigue EN_HOLD, timer vivo
+        T-->>P: 502 — reintentar
+    else B) cobró OK, pero un paso posterior falla
+        G-->>C: APROBADO ($ ya se movió)
+        T->>S: fire → crear sala
+        S--xT: ProveedorDeVideoNoDisponibleException (rollback=true)
+        Note over T,G: rollback deshace la fila Pago,<br/>pero el $ externo ya salió = COBRO HUÉRFANO.<br/>El rastro PENDIENTE (REQUIRES_NEW) sobrevive<br/>→ compensar con ServicioDePagos.reembolsar
+        T-->>P: 502/503
+    else B') la pasarela rechaza el cobro
+        G-->>C: RECHAZADO (no lanza)
+        C--xT: ConflictoDeNegocioException (rollback=true)
+        Note over T: no se confirma un turno impago
+        T-->>P: 409
+    else C) todo OK
+        G-->>C: APROBADO
+        T->>S: sala creada
+        Note over T: commit único:<br/>turno CONFIRMADO + Pago APROBADO + mensaje TurnoConfirmado
+        T-->>P: 200
+    end
+```
+
+**Defensa de cada caso:**
+
+- **A — pasarela caída:** `PasarelaNoDisponibleException` es `@ApplicationException(rollback = true)`; atraviesa el `fire()`, revierte todo, el turno sigue `EN_HOLD` con su temporizador vivo y el paciente reintenta. **No se cobró nada.** Mismo patrón que la sala (sección 9.4 del documento técnico).
+- **B — cobro huérfano (el caso que la consigna pide defender):** si el cobro se aprueba y después falla la sala, JTA revierte la base pero el dinero externo ya se movió. Es inevitable con un cobro REST inmediato porque el recurso externo no es transaccional. Se acota así: `ServicioDePagos` inserta el `Pago` en `PENDIENTE` con `REQUIRES_NEW` **antes** de llamar a la pasarela, así ese rastro sobrevive al rollback y permite **compensar con un reembolso** (`ServicioDePagos.reembolsar`, que ya existe).
+- **B' — rechazo del cobro:** la pasarela no lanza ante un rechazo; devuelve el `Pago` en `RECHAZADO`. `CobroAlConfirmar` lo traduce a `ConflictoDeNegocioException` (409) para no dejar un turno confirmado sin pagar.
+- **C — camino feliz:** una sola transacción confirma el turno, aprueba el pago y publica `TurnoConfirmado` de forma atómica.
+
+El medio de pago (`tokenMedioDePago`) viaja en el cuerpo del `PUT /turnos/{id}/confirmar`: el paciente confirma pagando, sin necesidad de un vault de medios guardados. Un turno sin copago (cobertura total o aún sin cotizar) se confirma sin cuerpo, como antes.
