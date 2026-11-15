@@ -123,10 +123,10 @@ export async function api<T = unknown>(path: string, opciones: RequestInit = {})
 async function errorDe(respuesta: Response, path: string, habiaSesion: boolean): Promise<ApiError> {
   const estado = respuesta.status
 
-  // 503: un servicio externo (por ejemplo la obra social) no esta disponible.
-  // A diferencia de otros 5xx, el backend responde {"error": "..."} con un
-  // mensaje pensado para mostrarse, no una pagina de error con stack trace.
-  if (estado === 503) {
+  // 502/503: un servicio externo (la pasarela de pago, la obra social) no esta
+  // disponible. A diferencia de otros 5xx, el backend responde {"error": "..."}
+  // con un mensaje pensado para mostrarse, no una pagina de error con stack trace.
+  if (estado === 502 || estado === 503) {
     const mensaje = mensajeDelBackend(await respuesta.text())
     return new ApiError(mensaje || 'El servicio no está disponible. Probá de nuevo en unos minutos.', estado)
   }

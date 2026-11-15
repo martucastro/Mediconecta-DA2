@@ -738,7 +738,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -771,7 +777,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -936,7 +948,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -2432,7 +2450,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -2630,7 +2654,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [

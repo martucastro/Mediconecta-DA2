@@ -14,6 +14,9 @@ BASE="${BASE:-http://127.0.0.1:8080/mediconecta/api}"
 ADMIN="admin@mediconecta.com:cambiar123"
 PROF="profesional@mediconecta.com:cambiar123"
 PACI="paciente@mediconecta.com:cambiar123"
+# Confirmar cobra el copago (SCRUM-93) y el cuerpo es JSON. La pasarela simulada
+# aprueba cualquier token salvo los que empiezan con "rechazar" o "caer".
+PAGO=(-H "Content-Type: application/json" -d '{"tokenMedioDePago":"tok_visa_demo"}')
 
 ok=0; fallos=0
 
@@ -90,8 +93,12 @@ ID_TELE=$(printf '%s' "$TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 RESERVA_TELE=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID_TELE}" "$BASE/turnos")
 comprobar "telemedicina se cotiza como teleconsulta" "si" "$(printf '%s' "$RESERVA_TELE" | grep -q '"copago":4500.00' && echo si || echo no)"
 comprobar "cancelar libera el turno de telemedicina" 200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID_TELE/cancelar")"
-comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "$BASE/turnos/$ID/confirmar")"
-comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID/confirmar")"
+comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "${PAGO[@]}" "$BASE/turnos/$ID/confirmar")"
+# Copago rechazado: la transaccion de confirmarTurno se revierte entera.
+comprobar "copago con tarjeta rechazada"      409 "$(codigo -u "$PACI" -X PUT -H "Content-Type: application/json" \
+                                                     -d '{"tokenMedioDePago":"rechazar_demo"}' "$BASE/turnos/$ID/confirmar")"
+comprobar "el rechazo deja el turno EN_HOLD"  "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | tr '{' '\n' | grep "\"id\":$ID[,}]" | grep -q EN_HOLD && echo si || echo no)"
+comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "${PAGO[@]}" "$BASE/turnos/$ID/confirmar")"
 
 echo
 echo "Mis turnos (resueltos desde el usuario autenticado)"
@@ -142,7 +149,7 @@ CONF_TELE=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
 IDC=$(printf '%s' "$CONF_TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 curl -s -o /dev/null -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$IDC}" "$BASE/turnos"
 comprobar "reservar NO crea la sala"          404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$IDC")"
-comprobar "confirmar telemedicina"            200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$IDC/confirmar")"
+comprobar "confirmar telemedicina"            200 "$(codigo -u "$PACI" -X PUT "${PAGO[@]}" "$BASE/turnos/$IDC/confirmar")"
 comprobar "al confirmar el paciente tiene enlace" "si" "$(curl -s -u "$PACI" "$BASE/telemedicina/turno/$IDC" | grep -q '"rol":"PACIENTE"' && echo si || echo no)"
 comprobar "al confirmar el profesional tiene enlace" "si" "$(curl -s -u "$PROF" "$BASE/telemedicina/turno/$IDC" | grep -q '"rol":"PROFESIONAL"' && echo si || echo no)"
 comprobar "confirmar un presencial no crea sala" 404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$ID")"

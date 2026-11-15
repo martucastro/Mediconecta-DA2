@@ -10,7 +10,8 @@
     { "key": "admin", "value": "admin@mediconecta.com" },
     { "key": "profesional", "value": "profesional@mediconecta.com" },
     { "key": "paciente", "value": "paciente@mediconecta.com" },
-    { "key": "turnoId", "value": "6" }
+    { "key": "turnoId", "value": "6" },
+    { "key": "tokenMedioDePago", "value": "tok_visa_demo" }
   ],
   "item": [
     {
@@ -201,6 +202,8 @@
               ]
             },
             "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"tokenMedioDePago\": \"{{tokenMedioDePago}}\"\n}" },
             "url": "{{baseUrl}}/turnos/{{turnoId}}/confirmar",
             "description": "Esto no lo puede resolver @RolesAllowed: la anotacion sabe que el que llama tiene un rol, no que ESTE turno sea suyo. La comprobacion es programatica, con SessionContext."
           }
@@ -216,8 +219,10 @@
               ]
             },
             "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"tokenMedioDePago\": \"{{tokenMedioDePago}}\"\n}" },
             "url": "{{baseUrl}}/turnos/{{turnoId}}/confirmar",
-            "description": "El turno pasa a CONFIRMADO y se cancela el temporizador de expiracion."
+            "description": "El turno pasa a CONFIRMADO y se cancela el temporizador de expiracion.\n\nSi el turno tiene copago, se cobra con el token de la variable tokenMedioDePago (SCRUM-93). La pasarela simulada aprueba cualquier token salvo los que empiezan con \"rechazar\" (409, el turno sigue EN_HOLD) o \"caer\" (502, pasarela caida)."
           }
         },
         {
