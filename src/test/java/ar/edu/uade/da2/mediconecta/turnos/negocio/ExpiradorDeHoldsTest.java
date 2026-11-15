@@ -4,11 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -45,10 +45,10 @@ import jakarta.ejb.TimerService;
  * barrerHoldsVencidos() lo que corre el @Schedule de cada minuto.
  *
  * El tiempo es deterministico: el expirador lee "ahora" de un reloj fijo, asi
- * que el limite que le pasa a la consulta de holds vencidos es exacto. Que
- * holds entran en esa consulta lo decide TurnoDAO.listarHoldsVencidos
- * (inicioHold < limite); aca se verifica que el limite sea el correcto y que
- * cada hold quede del lado que corresponde.
+ * que el limite que le pasa a la consulta de holds vencidos es exacto. La
+ * consulta en si (JPQL de TurnoDAO.listarHoldsVencidos) no se ejecuta: la
+ * reemplaza conLaBase con la misma condicion. Si se cambia esa JPQL, hay que
+ * cambiar tambien conLaBase.
  */
 @ExtendWith(MockitoExtension.class)
 class ExpiradorDeHoldsTest {
@@ -76,8 +76,7 @@ class ExpiradorDeHoldsTest {
     @Test
     void elBarridoLiberaUnHoldVencido() {
         Turno vencido = enHold(1L, AHORA.minusMinutes(6));
-        when(turnoDAO.listarHoldsVencidos(LIMITE)).thenReturn(List.of(vencido));
-        when(turnoDAO.buscarParaActualizar(1L)).thenReturn(vencido);
+        conLaBase(vencido);
 
         expirador.barrerHoldsVencidos();
 
@@ -86,53 +85,53 @@ class ExpiradorDeHoldsTest {
     }
 
     @Test
-    void elBarridoBuscaLosHoldsConElLimiteExactoDeCincoMinutos() {
+    void unHoldVigenteNoSeToca() {
+        // Retenido hace 4 minutos: le queda 1. Comparte el barrido con uno
+        // vencido, y solo se libera el vencido.
+        Turno vencido = enHold(1L, AHORA.minusMinutes(6));
+        Turno vigente = enHold(2L, AHORA.minusMinutes(4));
+        conLaBase(vencido, vigente);
+
         expirador.barrerHoldsVencidos();
 
-        assertEquals(LIMITE, limiteConsultado());
-        assertEquals(LIMITE, AHORA.minusNanos(ExpiradorDeHolds.DURACION_HOLD_MS * 1_000_000));
+        assertLiberado(vencido);
+        assertSigueRetenido(vigente);
+        verify(turnoDAO, times(1)).actualizar(any());
     }
 
     @Test
-    void unHoldVigenteNoSeToca() {
-        // Retenido hace 4 minutos: le queda 1. La consulta (inicioHold < limite)
-        // no lo devuelve, y sin turnos para liberar no se escribe nada.
-        Turno vigente = enHold(2L, AHORA.minusMinutes(4));
-        when(turnoDAO.listarHoldsVencidos(LIMITE)).thenReturn(List.of());
+    void unHoldDeExactamenteCincoMinutosTodaviaNoLoLiberaElBarrido() {
+        // inicioHold == limite y la consulta usa "<": lo libera su temporizador
+        // o, si se perdio (reinicio), el barrido del minuto siguiente.
+        Turno justo = enHold(3L, AHORA.minusMinutes(5));
+        conLaBase(justo);
 
         expirador.barrerHoldsVencidos();
 
-        assertDespuesDelLimite(vigente.getInicioHold(), limiteConsultado());
-        assertEquals(EstadoTurno.EN_HOLD, vigente.getEstado());
-        verify(turnoDAO, never()).buscarParaActualizar(anyLong());
+        assertSigueRetenido(justo);
         verify(turnoDAO, never()).actualizar(any());
     }
 
     @Test
-    void unHoldDeExactamenteCincoMinutosTodaviaNoEntraEnElBarrido() {
-        // inicioHold == limite y la consulta usa "<": lo libera su temporizador,
-        // o el barrido del minuto siguiente.
-        expirador.barrerHoldsVencidos();
-
-        assertEquals(LIMITE, limiteConsultado());
-        assertDespuesDelLimite(AHORA.minusMinutes(5), limiteConsultado());
-    }
-
-    @Test
-    void elMismoHoldQuedaVencidoCuandoElRelojAvanza() throws Exception {
-        LocalDateTime inicio = AHORA.minusMinutes(4);
+    void elMismoHoldSeLiberaCuandoElRelojAvanza() throws Exception {
+        Turno hold = enHold(4L, AHORA.minusMinutes(4));
+        conLaBase(hold);
 
         expirador.barrerHoldsVencidos();
-        assertDespuesDelLimite(inicio, limiteConsultado());
+        assertSigueRetenido(hold);
 
         relojEn(AHORA.plusMinutes(2));
         expirador.barrerHoldsVencidos();
+        assertLiberado(hold);
+    }
 
-        ArgumentCaptor<LocalDateTime> limites = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(turnoDAO, times(2)).listarHoldsVencidos(limites.capture());
-        LocalDateTime segundoLimite = limites.getAllValues().get(1);
-        assertEquals(AHORA.minusMinutes(3), segundoLimite);
-        assertTrue(inicio.isBefore(segundoLimite), "a los 6 minutos el hold ya entra en el barrido");
+    @Test
+    void elBarridoBuscaLosHoldsConElLimiteExactoDeCincoMinutos() {
+        expirador.barrerHoldsVencidos();
+
+        ArgumentCaptor<LocalDateTime> limite = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(turnoDAO).listarHoldsVencidos(limite.capture());
+        assertEquals(LIMITE, limite.getValue());
     }
 
     @Test
@@ -220,16 +219,26 @@ class ExpiradorDeHoldsTest {
         campo.set(expirador, Clock.fixed(instante.atZone(ZONA).toInstant(), ZONA));
     }
 
-    private LocalDateTime limiteConsultado() {
-        ArgumentCaptor<LocalDateTime> limite = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(turnoDAO).listarHoldsVencidos(limite.capture());
-        return limite.getValue();
-    }
-
-    /** Del lado vigente: la condicion inicioHold < limite de la consulta es falsa. */
-    private static void assertDespuesDelLimite(LocalDateTime inicioHold, LocalDateTime limite) {
-        assertFalse(inicioHold.isBefore(limite),
-                "inicioHold " + inicioHold + " no tendria que entrar con el limite " + limite);
+    /**
+     * Base en memoria para el barrido. listarHoldsVencidos aplica la misma
+     * condicion que su JPQL en TurnoDAO (estado EN_HOLD e inicioHold < limite)
+     * y buscarParaActualizar devuelve el turno por id, asi los holds vigentes
+     * pasan de verdad por el barrido en vez de quedar afuera por el stub.
+     */
+    private void conLaBase(Turno... turnos) {
+        List<Turno> base = List.of(turnos);
+        when(turnoDAO.listarHoldsVencidos(any())).thenAnswer(invocacion -> {
+            LocalDateTime limite = invocacion.getArgument(0);
+            return base.stream()
+                    .filter(t -> t.getEstado() == EstadoTurno.EN_HOLD
+                            && t.getInicioHold() != null && t.getInicioHold().isBefore(limite))
+                    .toList();
+        });
+        // lenient: en los tests donde nada vencio, el barrido no llega a pedir el lock.
+        lenient().when(turnoDAO.buscarParaActualizar(anyLong())).thenAnswer(invocacion -> base.stream()
+                .filter(t -> t.getId().equals(invocacion.getArgument(0)))
+                .findFirst()
+                .orElse(null));
     }
 
     private static Timer timerDe(Long turnoId) {
@@ -270,6 +279,13 @@ class ExpiradorDeHoldsTest {
         assertNull(turno.getCoberturaAutorizada());
         assertNull(turno.getCopago());
         assertNull(turno.getNumeroAutorizacion());
+    }
+
+    private static void assertSigueRetenido(Turno turno) {
+        assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
+        assertNotNull(turno.getPaciente());
+        assertNotNull(turno.getInicioHold());
+        assertEquals(new BigDecimal("6000.00"), turno.getCopago());
     }
 
     private static void assertNoLiberado(Turno turno) {
