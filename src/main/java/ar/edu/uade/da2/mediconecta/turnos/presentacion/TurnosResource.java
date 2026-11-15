@@ -105,11 +105,18 @@ public class TurnosResource {
         return Response.ok(new TurnoDTO(servicio.reservarTurno(reserva.getTurnoId()))).build();
     }
 
+    /**
+     * Confirma el hold. El cuerpo es opcional: solo hace falta cuando el turno
+     * tiene copago, y lleva el token del medio de pago para cobrarlo (SCRUM-93).
+     * Sin cuerpo, "cuerpo" llega null y el token queda null.
+     */
     @PUT
     @Path("/{id}/confirmar")
+    @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response confirmar(@PathParam("id") Long id) {
-        return Response.ok(new TurnoDTO(servicio.confirmarTurno(id))).build();
+    public Response confirmar(@PathParam("id") Long id, ConfirmarTurnoRequest cuerpo) {
+        String token = cuerpo != null ? cuerpo.getTokenMedioDePago() : null;
+        return Response.ok(new TurnoDTO(servicio.confirmarTurno(id, token))).build();
     }
 
     @PUT

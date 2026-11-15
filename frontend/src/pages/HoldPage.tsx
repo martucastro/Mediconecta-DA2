@@ -13,6 +13,16 @@ const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', '
 
 const PESOS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })
 
+// El copago se cobra al confirmar (SCRUM-93) con el token del medio de pago,
+// nunca con el numero de tarjeta. Con una pasarela real el token lo devuelve su
+// formulario; la simulada (PasarelaExternaResource) aprueba cualquier token
+// salvo los que empiezan con "rechazar" (409) o "caer" (pasarela caida, 502).
+const MEDIOS_DE_PAGO = [
+  { token: 'tok_visa_demo', nombre: 'Tarjeta de prueba (se aprueba)' },
+  { token: 'rechazar_demo', nombre: 'Tarjeta de prueba (se rechaza)' },
+  { token: 'caer_demo', nombre: 'Simular pasarela caída' },
+]
+
 type Estado = 'reservado' | 'enviando' | 'confirmado' | 'vencido'
 
 function dosDigitos(n: number): string {
@@ -62,6 +72,7 @@ export default function HoldPage() {
   const [restante, setRestante] = useState(() => segundosRestantes(vence))
   const [estado, setEstado] = useState<Estado>(() => (segundosRestantes(vence) > 0 ? 'reservado' : 'vencido'))
   const [error, setError] = useState('')
+  const [tokenMedioDePago, setTokenMedioDePago] = useState(MEDIOS_DE_PAGO[0].token)
   // Guarda sincronica contra el doble clic: el estado de React recien cambia en
   // el proximo render, y dos clics seguidos llegan antes de que el boton se
   // deshabilite. Sin esto se mandan dos PUT y el 409 del segundo podria pisar
@@ -90,11 +101,21 @@ export default function HoldPage() {
     setEstado('enviando')
     setError('')
     try {
-      await api<TurnoDTO>(`/turnos/${turno.id}/confirmar`, { method: 'PUT' })
+      // El token viaja siempre: sin copago el backend lo ignora.
+      await api<TurnoDTO>(`/turnos/${turno.id}/confirmar`, {
+        method: 'PUT',
+        body: JSON.stringify({ tokenMedioDePago }),
+      })
       limpiarTurnoEnHold()
       setEstado('confirmado')
     } catch (err) {
-      if (err instanceof ApiError && err.estado === 409) {
+      // Un 409 con el hold todavia corriendo es un copago rechazado: la
+      // confirmacion se revirtio, el turno sigue reservado y se puede reintentar
+      // con otro medio de pago (igual que tras un 502 o un 400).
+      // ponytail: se distingue por la cuenta regresiva del navegador; si el
+      // servidor vence el hold unos segundos antes, se ve su mensaje y la cuenta
+      // llega a cero sola.
+      if (err instanceof ApiError && err.estado === 409 && segundosRestantes(vence) === 0) {
         // El hold vencio (o el turno ya no esta reservado): se informa y se
         // vuelve a elegir turno.
         limpiarTurnoEnHold()
@@ -180,11 +201,22 @@ export default function HoldPage() {
               <div><dt>Modalidad</dt><dd>{textoModalidad(turno)}</dd></div>
               <div><dt>Cobertura</dt><dd className={turno.coberturaAutorizada ? 'ok' : undefined}>{textoCobertura(turno)}</dd></div>
               <div>
-                <dt>Copago<span className="d"> a abonar en la consulta</span></dt>
+                <dt>Copago<span className="d"> a abonar al confirmar</span></dt>
                 <dd className="strong">{turno.copago == null ? '—' : PESOS.format(turno.copago)}</dd>
               </div>
             </dl>
           </section>
+
+          {!confirmado && !vencido && (turno.copago ?? 0) > 0 && (
+            <div className="field">
+              <label htmlFor="medio-de-pago">MEDIO DE PAGO</label>
+              <select className="input" id="medio-de-pago" value={tokenMedioDePago} onChange={(e) => setTokenMedioDePago(e.target.value)} disabled={estado !== 'reservado'}>
+                {MEDIOS_DE_PAGO.map((medio) => (
+                  <option key={medio.token} value={medio.token}>{medio.nombre}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {error && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{error}</p>}
 

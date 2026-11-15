@@ -95,6 +95,38 @@ public class ServicioDeUsuarios {
         return usuarioDAO.buscarPorId(id);
     }
 
+
+    /**
+     * Consulta de un usuario por id desde la API (GET /api/usuarios/{id}).
+     *
+     * Un administrador puede consultar a cualquiera. Cualquier otro rol solo
+     * puede consultar su propio id: @RolesAllowed dice "es PACIENTE", nunca
+     * "este id es el suyo", asi que esa parte se resuelve aca, comparando el
+     * caller autenticado contra el id pedido.
+     *
+     * La pertenencia se verifica ANTES de buscar el id pedido, para que un
+     * no-administrador reciba el mismo 403 exista o no el usuario y no pueda
+     * descubrir que ids estan ocupados. Un administrador con un id inexistente
+     * recibe null (404 en la capa de presentacion).
+     *
+     * Es un metodo aparte de obtenerUsuario a proposito: ese lo usan otros
+     * componentes por dentro (obras sociales, historia clinica) y no debe
+     * restringirse.
+     */
+    @RolesAllowed({ROL_PACIENTE, ROL_PROFESIONAL, ROL_ADMINISTRADOR})
+    public Usuario consultarUsuario(Long id) {
+        if (!contexto.isCallerInRole(ROL_ADMINISTRADOR)) {
+            String emailDelCaller = contexto.getCallerPrincipal().getName();
+            Usuario solicitante = obtenerPorEmail(emailDelCaller);
+
+            if (solicitante == null || !solicitante.getId().equals(id)) {
+                throw new EJBAccessException(
+                        "Solo se puede consultar el propio usuario.");
+            }
+        }
+        return usuarioDAO.buscarPorId(id);
+    }
+
     /**
      * Busca por email, que es el nombre con el que el contenedor identifica al
      * usuario autenticado. Lo necesitan otros componentes para resolver "quien

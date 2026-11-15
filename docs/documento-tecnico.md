@@ -27,9 +27,9 @@ title: "MediConecta - Documento Técnico"
 
 MediConecta conecta pacientes con profesionales de la salud independientes y con clínicas para gestionar turnos presenciales y de telemedicina, incluyendo la facturación a obras sociales y prepagas. Este documento describe la arquitectura, el stack elegido, los ocho componentes de negocio, los patrones de diseño aplicados y el fundamento de cada decisión.
 
-De los ocho componentes, tres ya están implementados: `ServicioDeUsuarios`, `ServicioDeTurnos` y `ServicioDeHistoriaClinica`. Los cinco restantes están definidos a nivel de responsabilidad e integración, sin código (sección 11).
+Los ocho componentes ya están implementados y desplegados juntos (sección 4): `ServicioDeUsuarios`, `ServicioDeTurnos`, `ServicioDeHistoriaClinica`, `ServicioDeObrasSociales`, `ServicioDePagos`, `ServicioDeTelemedicina`, `ServicioDeNotificaciones` y `ServicioDeFacturacion`. Lo que sigue abierto no es ningún componente completo, sino puntos de enganche puntuales entre ellos y pantallas de la SPA todavía sin conectar (sección 11).
 
-Respecto de una entrega anterior, la separación en capas pasó de ser una convención de nombres a una estructura de paquetes real, y la autenticación quedó conectada de punta a punta y verificada en despliegue. También se corrigió un error en el temporizador de expiración de turnos (sección 6.1), evidencia de comprensión del modelo de componentes de Jakarta EE.
+Respecto de una entrega anterior, la separación en capas pasó de ser una convención de nombres a una estructura de paquetes real, la autenticación quedó conectada de punta a punta y verificada en despliegue, y se sumaron los cinco componentes que faltaban, cada uno con su propia integración real (SOAP, REST o JMS) contra un simulador del tercero correspondiente. También se corrigió un error en el temporizador de expiración de turnos (sección 6.1), evidencia de comprensión del modelo de componentes de Jakarta EE.
 
 ## 2. Elección del stack tecnológico
 
@@ -87,7 +87,7 @@ Hay además un paquete que no es nuestro, aunque viva en el mismo WAR: `externos
 | 2 | ServicioDeTurnos | `@Stateful` (con `ExpiradorDeHolds` como `@Singleton` colaborador) | Disponibilidad, reserva, cancelación, hold de aproximadamente 5 minutos | Implementado |
 | 3 | ServicioDeHistoriaClinica | `@Stateless` | Antecedentes, diagnósticos, recetas | Implementado |
 | 4 | ServicioDeObrasSociales | Adapter vía SOAP | Validación de cobertura contra sistema legado | Implementado (sección 6.3), contra el legado simulado de la sección 6.2 |
-| 5 | ServicioDePagos | REST | Cobro de copagos contra pasarela de pago | Implementado (`PagosResource`, `ServicioDePagos`, `PasarelaDePagoRestClient`, sección 4.1); el disparo automático al confirmar el turno es SCRUM-93, pendiente |
+| 5 | ServicioDePagos | `@Stateless`, Adapter REST | Cobro de copagos contra pasarela de pago | Implementado (`PagosResource`, `ServicioDePagos`, `PasarelaDePagoRestClient`, sección 4.1); se dispara al confirmar el turno desde `CobroAlConfirmar` (SCRUM-93, sección 9.4) |
 | 6 | ServicioDeTelemedicina | `@Stateless`, Adapter REST | Sala de video de los turnos de telemedicina | Implementado (sección 6.4), contra el proveedor simulado; la sala se crea al confirmar (SCRUM-95, sección 9.4) |
 | 7 | ServicioDeNotificaciones | `@MessageDriven` (tópico JMS) | Notificación asincrónica de eventos | Implementado (PR #15) |
 | 8 | ServicioDeFacturacion | `@MessageDriven` (tópico y cola JMS) | Reclamo de facturación a obras sociales/prepagas por turnos con cobertura autorizada | Implementado, con el canal real hacia la obra social (sección 9.3) |
@@ -107,13 +107,13 @@ El sistema combina tres canales distintos entre componentes y con terceros: REST
 
 | Integración | Canal elegido | Alternativa descartada | Por qué | Estado |
 |---|---|---|---|---|
-| SPA ↔ API | REST (JAX-RS) sobre HTTP, con HTTP Basic (sección 7) | SOAP | El único consumidor es una SPA propia del equipo, que habla JSON de forma nativa. SOAP exigiría mantener un contrato WSDL para un cliente que el propio equipo controla, sin ningún tercero que ya lo imponga (a diferencia de la fila siguiente). | API implementada; login de la SPA implementado y conectado (PR #12/#14); el resto de las pantallas todavía muestra datos de prototipo (SCRUM-83 a 87, pendientes) |
+| SPA ↔ API | REST (JAX-RS) sobre HTTP, con HTTP Basic (sección 7) | SOAP | El único consumidor es una SPA propia del equipo, que habla JSON de forma nativa. SOAP exigiría mantener un contrato WSDL para un cliente que el propio equipo controla, sin ningún tercero que ya lo imponga (a diferencia de la fila siguiente). | API implementada; login de la SPA implementado y conectado (PR #12/#14); disponibilidad, reserva, hold y agenda conectados (SCRUM-82/84/85/86); `HomePage` e `HistoriaPage` siguen con datos de prototipo (SCRUM-83 y 87) |
 | `ServicioDeObrasSociales` → legado de la obra social | SOAP (JAX-WS), síncrono | REST | El contrato lo impone el legado (sección 6.2): no es una decisión nuestra, es la naturaleza del sistema externo. Además, quien reserva necesita la respuesta de cobertura (autorizada o no, con qué copago) antes de seguir: es una pregunta que bloquea el flujo. | Adapter implementado y ya enganchado a la reserva (sección 6.3; SCRUM-91, PR #19) |
-| `ServicioDePagos` → pasarela de pago | REST, síncrono | SOAP | La pasarela es un partner externo moderno con su propia API REST, no un legado con contrato impuesto. Cobrar el copago también necesita la respuesta ya, para decidir con qué resultado se confirma el turno. | Implementado (`PagosResource`, `ServicioDePagos`, `PasarelaDePagoRestClient`); el disparo automático al confirmar el turno es SCRUM-93, pendiente |
+| `ServicioDePagos` → pasarela de pago | REST, síncrono | SOAP | La pasarela es un partner externo moderno con su propia API REST, no un legado con contrato impuesto. Cobrar el copago también necesita la respuesta ya, para decidir con qué resultado se confirma el turno. | Implementado (`PagosResource`, `ServicioDePagos`, `PasarelaDePagoRestClient`) y enganchado a la confirmación (`CobroAlConfirmar`, SCRUM-93, sección 9.4) |
 | `ServicioDeTurnos` → tópico JMS `TurnoConfirmado` | Tópico, asincrónico | Cola | Más de un interesado necesita el mismo evento sin saber uno del otro: Facturación arma el reclamo y Notificaciones avisa al paciente. Un tópico entrega una copia a cada suscriptor; una cola la entregaría a uno solo, y el resto se quedaría sin evento. Quien confirma el turno tampoco espera ninguna respuesta de quien reacciona después. | Publicador implementado (sección 9.1); Facturación y Notificaciones implementados como suscriptores (PR #15) |
 | `ServicioDeFacturacion` → cola JMS `ReclamosFacturacion` | Cola, asincrónica | Tópico | El reclamo es un trabajo que un único consumidor tiene que hacer exactamente una vez, con sus propios reintentos (2 s → 30 s, hasta 5 intentos) y una cola de mensajes muertos dedicada (`ReclamosFacturacionDLQ`) si se agotan. Un tópico entregaría el mismo reclamo a cada suscriptor que hubiera, duplicando el trabajo apenas se agregara otro. | Implementado (sección 9.3) |
 | `ServicioDeTelemedicina` → proveedor de video | REST | SOAP | Mismo criterio que la pasarela de pago: un partner moderno sin legado que imponga SOAP. | Implementado (SCRUM-99, sección 6.4) y enganchado a la confirmación (SCRUM-95, sección 9.4) |
-| Eventos internos `TurnoEnReserva` / `TurnoEnConfirmacion` | Evento CDI síncrono (`@Observes`, nunca `@ObservesAsync`) | Llamada directa desde `ServicioDeTurnos` a cada fachada | Tiene que correr en la misma transacción JTA que `reservarTurno`/`confirmarTurno`: el observador puede decidir si el turno se confirma (cobertura insuficiente, pasarela caída), y si falla, todo se revierte junto con la confirmación. Un evento asincrónico correría en otro hilo y fuera de esa transacción, y ya no podría impedirla (sección 9.2). | Mecanismo implementado; observadores de cobertura (SCRUM-91, PR #19) y de sala de video (SCRUM-95) implementados; copago (SCRUM-93), planificado |
+| Eventos internos `TurnoEnReserva` / `TurnoEnConfirmacion` | Evento CDI síncrono (`@Observes`, nunca `@ObservesAsync`) | Llamada directa desde `ServicioDeTurnos` a cada fachada | Tiene que correr en la misma transacción JTA que `reservarTurno`/`confirmarTurno`: el observador puede decidir si el turno se confirma (cobertura insuficiente, pasarela caída), y si falla, todo se revierte junto con la confirmación. Un evento asincrónico correría en otro hilo y fuera de esa transacción, y ya no podría impedirla (sección 9.2). | Mecanismo implementado; observadores de cobertura (SCRUM-91, PR #19), de copago (SCRUM-93, `CobroAlConfirmar`) y de sala de video (SCRUM-95, `SalaAlConfirmar`) implementados |
 
 El caso implementado de punta a punta ilustra el criterio de "uno vs. varios interesados" con el mayor detalle: cuando `ServicioDeTurnos.confirmarTurno` termina, publica un único mensaje en el tópico `TurnoConfirmado` (sección 9.1). Ese evento puede tener más de un interesado — hoy Facturación y Notificaciones, ambos implementados tras mergearse PR #15 — y cada uno necesita su propia copia sin que `ServicioDeTurnos` sepa cuántos son ni quiénes. Un tópico resuelve exactamente eso: replica el mensaje a todos los suscriptores activos. `TurnoConfirmadoFacturacionMDB`, al recibir ese evento, no procesa el reclamo ahí mismo: lo encola en `ReclamosFacturacion` (sección 9.3). A partir de ese punto el reclamo deja de ser un aviso para quien quiera escucharlo y pasa a ser un trabajo que alguien tiene que hacer una sola vez, con reintentos si la obra social no responde y una cola de mensajes muertos si se agotan. Eso es lo que una cola punto a punto garantiza y un tópico no: con un tópico, un reintento entregaría el mensaje de nuevo a *todos* los suscriptores, no solo al que falló.
 
@@ -121,22 +121,21 @@ El caso implementado de punta a punta ilustra el criterio de "uno vs. varios int
 
 Este flujo atraviesa las tres capas y varios de los ocho componentes:
 
-1. La SPA envía `POST /api/turnos`; el pedido llega a `TurnosResource`.
-2. `ServicioDeTurnos` marca el turno como `EN_HOLD` y delega en `ExpiradorDeHolds` (`@Singleton` con `TimerService`) la programación del temporizador.
-3. `TurnoDAO` verifica la disponibilidad del turno vía JPA.
-4. `ServicioDeObrasSociales` (Adapter) valida la cobertura del paciente mediante una llamada SOAP al sistema legado de la obra social.
-5. Si la cobertura es parcial, `ServicioDePagos` cobra el copago con una llamada REST a la pasarela de pago externa.
-6. Toda la secuencia queda en una transacción declarativa; si un paso falla, se hace rollback de los anteriores.
-7. Al confirmarse el turno se publica `TurnoConfirmado` en un tópico JMS, que `ServicioDeNotificaciones` consume asincrónicamente.
-8. La SPA recibe `201 Created`.
+1. La SPA envía `POST /api/turnos`; el pedido llega a `TurnosResource`, que delega en `ServicioDeTurnos.reservarTurno`.
+2. Antes de retener el turno, `ServicioDeTurnos` dispara el evento CDI síncrono `TurnoEnReserva` (sección 9.2). `CoberturaEnLaReserva`, que lo observa con prioridad `PuntosDeExtension.COBERTURA`, llama a `ServicioDeObrasSociales.cotizarReserva`, que valida la cobertura del paciente con una llamada SOAP (vía el Adapter `SistemaDeObraSocialSoap`) al sistema legado de la obra social y escribe `coberturaAutorizada`, `coberturaPorcentaje`, `copago` y `numeroAutorizacion` en el turno (sección 6.3).
+3. `ServicioDeTurnos` marca el turno como `EN_HOLD` y delega en `ExpiradorDeHolds` (`@Singleton` con `TimerService`) la programación del temporizador.
+4. `TurnoDAO` toma un lock pesimista sobre la fila del turno para verificar su disponibilidad vía JPA, lo que serializa dos reservas concurrentes del mismo turno (sección 11).
+5. Toda la secuencia corre en una única transacción declarativa (`@TransactionAttribute(REQUIRED)`); si cualquier paso falla (incluida la cobertura, sección 6.3), se hace rollback de los anteriores y el turno vuelve a `DISPONIBLE`.
+6. El paciente confirma con `PUT /api/turnos/{id}/confirmar` (con `{ "tokenMedioDePago": "..." }` en el cuerpo si el turno tiene copago); `ServicioDeTurnos.confirmarTurno` dispara `TurnoEnConfirmacion`, que observan `CobroAlConfirmar` (cobra el copago, SCRUM-93) y `SalaAlConfirmar` (crea la sala de los turnos de telemedicina, SCRUM-95), sección 9.4, y, dentro de la misma transacción JTA, publica `TurnoConfirmado` en el tópico JMS (sección 9.1). Dos suscriptores lo consumen de forma asincrónica: `NotificacionMDB` (`ServicioDeNotificaciones`) y `TurnoConfirmadoFacturacionMDB`, que encola el reclamo a la obra social en la cola `ReclamosFacturacion` si el turno tenía cobertura autorizada (sección 9.3).
+7. La SPA recibe `200 OK` al reservar y al confirmar.
 
-Los pasos 1 a 4, 6 (parcialmente, sección 11) y la mitad publicadora del paso 7 (sección 9.1) están respaldados por código real, verificado en la sección 10. El paso 4 lo ejecuta `CoberturaEnLaReserva`, un observador de `TurnoEnReserva` que llama a `ServicioDeObrasSociales` (sección 6.3). El paso 5 y el lado consumidor del paso 7 (`ServicioDeNotificaciones`) describen el diseño previsto para los componentes aún no implementados (secciones 4 y 11).
+Los pasos 1 a 6 y los dos lados (publicador y consumidores) del paso 6 están respaldados por código real, verificado en la sección 10 y en la sección 10.1 para el reclamo de facturación. El cobro del copago (SCRUM-93) y la sala de video (SCRUM-95) se disparan desde `confirmarTurno`, dentro de su transacción (sección 9.4); el comportamiento ante una falla a mitad de la confirmación está en el [documento técnico de la Entrega N.º 2](documento-tecnico-entrega-2.md). Los diagramas de secuencia de la sección 10.2 muestran el detalle método a método de cada integración.
 
 ## 6. Evidencia de implementación
 
 Esta sección documenta lo que existe en el código; la sección 3 ya muestra dónde vive cada clase.
 
-- **ServicioDeUsuarios** (`@Stateless`, `@PermitAll` de clase): `UsuarioDAO`, `Usuario` (entidad `usuarios`), `UsuariosResource` (`@RolesAllowed("ADMINISTRADOR")` en el listado), `PasswordUtil` (SHA-256 sin salt, sección 11). El `@PermitAll` no es descuido: sin él, WildFly bloquearía registro y login en cuanto el bean tuviera alguna anotación de seguridad.
+- **ServicioDeUsuarios** (`@Stateless`, `@PermitAll` de clase): `UsuarioDAO`, `Usuario` (entidad `usuarios`), `UsuariosResource` (`@RolesAllowed("ADMINISTRADOR")` en el listado), `PasswordUtil` (PBKDF2 con HMAC-SHA256 y salt por usuario, sección 11). El `@PermitAll` no es descuido: sin él, WildFly bloquearía registro y login en cuanto el bean tuviera alguna anotación de seguridad.
 - **ServicioDeTurnos y `ExpiradorDeHolds`**: el cambio más importante de esta entrega, detallado en 6.1.
 - **ServicioDeHistoriaClinica** (`@Stateless`, Facade, sección 8.2): `ServicioDeHistoriaClinicaLocal` (`@Local`, cinco operaciones), `EntradaClinicaFactory` (Factory, sección 8.3), `HistoriaClinicaDAO`/`EntradaClinicaDAO`, `HistoriaClinica` (paciente por id, no `@ManyToOne`, porque esa tabla es de otro componente), `EntradaClinica` (herencia de tabla única; subclases `Antecedente`/`Diagnostico`/`Receta`), `HistoriaClinicaResource`.
 
@@ -231,7 +230,7 @@ El mensaje de la tercera está pensado para mostrarse tal cual ("El sistema de l
 | Afiliado a un plan sin cobertura (OS-4004) | El legado no autoriza; no se guarda nada | Valor total que informa el legado |
 | Sin obra social registrada | No se llama al legado; se reserva como particular | Valor total: `Prestacion.getArancel()` (20000.00 / 15000.00) |
 
-Sin cobertura el paciente no queda bloqueado: el turno se reserva igual y `copago` es el valor total, que es lo que SCRUM-93 va a cobrar.
+Sin cobertura el paciente no queda bloqueado: el turno se reserva igual y `copago` es el valor total, que es lo que `CobroAlConfirmar` (SCRUM-93) cobra al confirmar.
 
 **Si el legado no responde, la reserva falla entera (`503`).** Se eligió esto y no reservar como particular con un aviso, por tres motivos:
 
@@ -285,9 +284,9 @@ La llamada HTTP real y el cableado de seguridad se verifican con `deploy/smoke-t
 
 ## 7. Autenticación y autorización
 
-La autenticación, pendiente antes, ya está implementada y verificada en ejecución (sección 10). Toda la configuración se declara en una única clase, `ConfiguracionDeSeguridad`, mediante dos anotaciones de Jakarta Security: `@BasicAuthenticationMechanismDefinition`, que establece autenticación HTTP Basic, y `@DatabaseIdentityStoreDefinition`, que apunta el almacén de identidades al mismo datasource de la aplicación. Esa segunda anotación define dos consultas: una recupera el hash de la contraseña a partir del correo, y otra recupera el rol del usuario, que el contenedor publica como grupo.
+La autenticación, pendiente antes, ya está implementada y verificada en ejecución (sección 10). Toda la configuración se declara en una única clase, `ConfiguracionDeSeguridad`, mediante dos anotaciones de Jakarta Security: `AutenticacionBasica`, un mecanismo HTTP Basic propio (SCRUM-103) que omite `WWW-Authenticate` en los pedidos AJAX de la SPA, y `@DatabaseIdentityStoreDefinition`, que apunta el almacén de identidades al mismo datasource de la aplicación. Esa segunda anotación define dos consultas: una recupera el hash de la contraseña a partir del correo, y otra recupera el rol del usuario, que el contenedor publica como grupo.
 
-El valor de resolverlo así es que **no hay código de autenticación escrito por el equipo**. No se validan credenciales a mano ni se gestionan sesiones: el contenedor resuelve la identidad antes de que la petición llegue al componente de negocio, y recién entonces las anotaciones de autorización tienen contra qué decidir. La única pieza propia es un verificador de contraseñas que implementa la interfaz `PasswordHash` de la especificación, necesario porque los hashes existentes usan SHA-256 y no el algoritmo por defecto (sin salt; sección 11).
+El valor de resolverlo así es que **no hay código de autenticación escrito por el equipo**. No se validan credenciales a mano ni se gestionan sesiones: el contenedor resuelve la identidad antes de que la petición llegue al componente de negocio, y recién entonces las anotaciones de autorización tienen contra qué decidir. La única pieza propia es un verificador de contraseñas que implementa la interfaz `PasswordHash` de la especificación, necesario porque los hashes usan PBKDF2 con un formato propio (sección 11).
 
 Cuando el contenedor rechaza una llamada por rol, la `EJBAccessException` se traduce a `403` mediante `AccesoDenegadoMapper`. `ErrorInesperadoMapper` cumple un rol complementario: intercepta cualquier otra excepción, la registra y devuelve `500` genérico, salvo que ya sea una `WebApplicationException`.
 
@@ -296,8 +295,9 @@ Cuando el contenedor rechaza una llamada por rol, la `EJBAccessException` se tra
 | Recurso | Rol grueso (`web.xml`) | Operación de negocio | Rol fino (`@RolesAllowed`) |
 |---|---|---|---|
 | `/api/usuarios` (GET) | ADMINISTRADOR | `listarUsuarios` | ADMINISTRADOR |
+| `/api/usuarios/{id}` (GET) | PACIENTE, PROFESIONAL, ADMINISTRADOR | `consultarUsuario` | propio id, o ADMINISTRADOR (SCRUM-102) |
 | `/api/turnos/*` (todos) | PACIENTE, PROFESIONAL, ADMINISTRADOR | `abrirDisponibilidad` | PROFESIONAL |
-| `/api/turnos` (POST) | PACIENTE, ADMINISTRADOR | `reservarTurno`, `confirmarTurno`, `cancelarTurno` | PACIENTE |
+| `/api/turnos` (POST) | PACIENTE | `reservarTurno`, `confirmarTurno`, `cancelarTurno` | PACIENTE |
 | `/api/historias/*` (todos) | PROFESIONAL, PACIENTE, ADMINISTRADOR | `crearHistoria`, `agregarEntrada`, `registrarConsulta` | PROFESIONAL |
 | `/api/historias/*` (todos) | PROFESIONAL, PACIENTE, ADMINISTRADOR | `obtenerHistoriaDePaciente`, `listarEntradas` | PROFESIONAL, PACIENTE, ADMINISTRADOR |
 
@@ -337,6 +337,45 @@ El javadoc de la clase documenta que concentra dos responsabilidades: decidir qu
 
 **Por qué no un switch disperso:** la alternativa sería un `switch` sobre el tipo de entrada dentro de `ServicioDeHistoriaClinica`, repetido en `agregarEntrada` y `registrarConsulta`. Se descartó porque cada tipo tiene validaciones propias e incompatibles: una receta exige `medicamento`, `dosis` y `diasTratamiento` mayor a cero; un diagnóstico exige `codigoCIE10` y `descripcion`; un antecedente exige `tipoAntecedente` y `detalle`. Concentradas en el Factory, agregar un cuarto tipo se resuelve modificando un solo archivo. Si el texto de una entrada llegara sin control hasta el `INSERT`, el error saldría como `500` de base de datos, cuando en realidad es un dato inválido del cliente y corresponde `400`.
 
+### 8.4 Adapter
+
+**Dónde:** tres integraciones independientes, cada una con su propio puerto e implementación:
+
+| Integración | Puerto (interfaz) | Implementación | Qué traduce |
+|---|---|---|---|
+| Obras sociales | `SistemaDeObraSocial` | `obrassociales.negocio.soap.SistemaDeObraSocialSoap` | DNI, número de afiliado, código de prestación y sobres SOAP del legado (sección 6.2) a `Cobertura`/`ResultadoPresentacion` del dominio, y viceversa (sección 6.3) |
+| Pagos | `PasarelaDePagoAdapter` | `PasarelaDePagoRestClient` | El JSON y los códigos de estado en inglés (`APPROVED`, `REJECTED`, `REFUNDED`) de la pasarela externa a `ResultadoPasarela`/`EstadoPago` del dominio |
+| Telemedicina | `ProveedorDeVideoAdapter` | `ProveedorDeVideoRestClient` | El JSON del proveedor de video (`roomId`, `hostUrl`, `guestUrl`) a `SalaDeVideo`, asignando anfitrión al profesional e invitado al paciente |
+
+**Problema que resuelve:** en los tres casos, la fachada de negocio (`ServicioDeObrasSociales`, `ServicioDePagos`, `ServicioDeTelemedicina`) necesita hablar con un sistema externo que no comparte su vocabulario ni su protocolo (SOAP con sobres y faults en un caso, REST con un JSON y un vocabulario propio en los otros dos). El Adapter aísla esa traducción en una sola clase por integración: el resto del componente, y cualquier otro componente que dependa de la fachada, sólo conoce tipos de dominio (`Cobertura`, `ResultadoPasarela`, `SalaDeVideo`), nunca un tipo SOAP ni un DTO del tercero.
+
+**Alternativa descartada:** que la fachada misma armara el sobre SOAP o el `Client` JAX-RS y leyera la respuesta del tercero. Se descartó porque mezclaría dos responsabilidades que cambian por motivos distintos (la regla de negocio de cuándo cobrar o cuándo validar cobertura, y el detalle de cómo se habla con ese proveedor en particular) y porque, si el proveedor cambiara (de SOAP a REST, o de un partner de pagos a otro), el cambio se filtraría a la fachada y a sus consumidores en vez de quedar contenido en una clase. Es el mismo argumento, verificado con los imports, que ya documenta la sección 6.3 para obras sociales: fuera de la implementación del Adapter, ningún archivo del componente importa un tipo del protocolo externo.
+
+### 8.5 Observer
+
+**Dónde:** los eventos CDI síncronos `TurnoEnReserva` y `TurnoEnConfirmacion` (`turnos.negocio`), con `PuntosDeExtension` fijando el orden por `@Priority`. `CoberturaEnLaReserva` (`obrassociales.negocio`) observa `TurnoEnReserva` con `@Observes @Priority(PuntosDeExtension.COBERTURA)` (sección 9.2).
+
+**Problema que resuelve:** `ServicioDeTurnos.reservarTurno` y `confirmarTurno` necesitan que otros componentes reaccionen en puntos precisos del flujo (validar cobertura antes del hold; cobrar el copago y crear la sala de video antes de confirmar) sin que `ServicioDeTurnos` conozca ni importe esos componentes. El evento desacopla al sujeto (`ServicioDeTurnos`, que dispara y no sabe quién escucha) de los observadores (que se agregan en su propio componente sin tocar el método que dispara). Al ser síncrono (`@Observes`, nunca `@ObservesAsync`) y `@Transactional(MANDATORY)` del lado del observador, corre en la misma transacción JTA que la reserva o la confirmación: si el observador falla, revierte todo el flujo, no solo su propio paso.
+
+**Alternativa descartada:** que `ServicioDeTurnos` inyectara e invocara directamente la fachada de cada componente interesado (obras sociales, pagos, telemedicina, facturación). Se descartó porque cuatro componentes editando el mismo método en paralelo generaba conflictos de merge constantes, y porque invertía la dirección de dependencias que el sistema ya usaba con el tópico `TurnoConfirmado`: el componente de turnos anuncia, los demás reaccionan (sección 9.2).
+
+**Estado real:** `TurnoEnReserva` tiene un observador (`CoberturaEnLaReserva`, prioridad `COBERTURA`) y `TurnoEnConfirmacion` tiene dos: `CobroAlConfirmar` (`COBRO_COPAGO`, SCRUM-93) y `SalaAlConfirmar` (`SALA_DE_VIDEO`, SCRUM-95). `RECLAMO` quedó reservada pero sin usar a propósito: facturación se conectó como suscriptor del tópico JMS en vez de como observador (sección 9.3, y 8.6 más abajo).
+
+### 8.6 Publish/Subscribe y Point-to-Point (JMS)
+
+**Dónde:**
+
+| Destino | Semántica | Productor | Consumidores |
+|---|---|---|---|
+| Tópico `java:/jms/topic/TurnoConfirmado` | Publish/Subscribe | `ServicioDeTurnos.confirmarTurno` | `NotificacionMDB` (`ServicioDeNotificaciones`) y `TurnoConfirmadoFacturacionMDB` (`ServicioDeFacturacion`), cada uno con su propia copia del mensaje |
+| Cola `java:/jms/queue/ReclamosFacturacion` | Point-to-Point | `ServicioDeFacturacion.registrarReclamo` | `ReclamoMDB`, un único consumidor, con reintentos (2 s a 30 s, hasta 5 intentos) y `ReclamosFacturacionDLQ` si se agotan |
+
+**Problema que resuelve:** son dos problemas distintos y por eso dos canales distintos, no uno reutilizado para los dos casos. El tópico resuelve "más de un interesado necesita el mismo evento sin saberlo el uno del otro" (notificar al paciente y armar el reclamo son reacciones independientes a que el turno se confirmó). La cola resuelve "un trabajo tiene que hacerlo exactamente un consumidor, una vez, con reintentos propios" (el reclamo a la obra social no se puede duplicar ni dejar de intentar si falla transitoriamente). La sección 4.1 desarrolla el criterio completo de elección de canal.
+
+**Alternativa descartada:** usar una sola cola para los dos casos (duplicaría el reclamo apenas se agregara un segundo suscriptor interesado en `TurnoConfirmado`, porque una cola entrega cada mensaje a un solo consumidor) o un solo tópico para los dos (el reintento de un reclamo fallido le llegaría de nuevo a *todos* los suscriptores, no solo al que falló). La sección 4.1 lo explica con el caso concreto de `TurnoConfirmadoFacturacionMDB` encolando en `ReclamosFacturacion` en vez de procesar el reclamo directamente.
+
+**Nota sobre Strategy en pagos.** El enunciado de esta tarjeta menciona explorar Strategy en pagos; revisado el código, `ServicioDePagos` no selecciona entre varias estrategias intercambiables en tiempo de ejecución, sino que delega toda la integración externa en una única implementación de `PasarelaDePagoAdapter` (`PasarelaDePagoRestClient`), inyectada por CDI. Es Adapter, documentado en la sección 8.4; no hay Strategy en pagos.
+
 ## 9. Decisión de diseño destacada: dónde vive el estado del hold
 
 El estado del hold **no** se guarda únicamente en memoria del bean stateful `ServicioDeTurnos`: se guarda en la entidad `Turno`, en los campos `estado` (`EN_HOLD`) e `inicioHold`.
@@ -359,7 +398,7 @@ La publicación ocurre **dentro de la misma transacción JTA** que la confirmaci
 - Si `confirmarTurno` hace rollback (turno sin hold, hold de otro paciente), el mensaje nunca se envía, porque nunca se llega a publicar.
 - Si la publicación fallara, la excepción no controlada aborta la transacción y la confirmación tampoco queda persistida — no puede quedar un turno `CONFIRMADO` en la base sin que el evento haya salido, ni viceversa.
 
-El mensaje es un `MapMessage` (no JSON) con cuatro campos: `turnoId`, `pacienteId`, `profesionalId` (los tres como `long`) y `fechaHora` (como `String` ISO-8601, porque `MapMessage` no admite `LocalDateTime`). Es un formato provisorio: falta acordarlo con quien implemente `ServicioDeNotificaciones` (sección 4, aún no implementado).
+El mensaje es un `MapMessage` (no JSON) con cuatro campos: `turnoId`, `pacienteId`, `profesionalId` (los tres como `long`) y `fechaHora` (como `String` ISO-8601, porque `MapMessage` no admite `LocalDateTime`). Es el formato que leen los dos suscriptores, `NotificacionMDB` y `TurnoConfirmadoFacturacionMDB`.
 
 `ServicioDeTurnos` no importa ninguna clase de `ServicioDeNotificaciones`: publica por nombre JNDI del tópico, sin saber si hay algún consumidor suscripto. La configuración del propio tópico en Artemis (WildFly) es una dependencia externa a este cambio, no algo que resuelva el código de la aplicación.
 
@@ -435,7 +474,7 @@ Se eligió **B**. El invariante "un turno de telemedicina confirmado tiene su en
 
 **Lo que B no resuelve: los sistemas externos.** El rollback JTA solo alcanza a la base y a JMS. Hay dos casos a tener en cuenta:
 
-1. **El cobro del copago (SCRUM-93).** Va antes que la sala (`COBRO_COPAGO` = 100). Si se engancha como un cobro REST inmediato y después falla la sala, la base se revierte pero el cobro ya salió. SCRUM-93 tiene que resolverlo de alguna de estas formas: cobrar recién cuando la confirmación queda firme (por ejemplo, con un observador `@Observes(during = AFTER_SUCCESS)`), preautorizar y capturar después, o compensar con un reembolso (`ServicioDePagos.reembolsar` ya existe). Hoy no hay cobro enganchado, así que el caso todavía no se da.
+1. **El cobro del copago (SCRUM-93).** Va antes que la sala (`COBRO_COPAGO` = 100) y es un cobro REST inmediato: si después falla la sala (o el commit), la base se revierte pero el cobro ya salió (cobro huérfano). Hoy no se compensa: el `Pago` que `ServicioDePagos` guarda en `REQUIRES_NEW` queda `PENDIENTE` y sin id de transacción externa (ese dato solo se escribe en la actualización que se revierte), y `ServicioDePagos.reembolsar` solo acepta pagos `APROBADO` con ese id. Las alternativas para la entrega final (crear la sala antes de cobrar, guardar el id en `REQUIRES_NEW` y reembolsar desde un observador `AFTER_FAILURE`, una clave de idempotencia por turno, o preautorizar y capturar con `AFTER_SUCCESS`) están en el [documento técnico de la Entrega N.º 2](documento-tecnico-entrega-2.md), sección 6.
 2. **Salas huérfanas en el proveedor.** Si el proveedor creó la sala pero la respuesta no llegó, o si un paso posterior revierte la transacción, la sala queda creada del otro lado sin registro acá. Con Jitsi no cuesta nada, porque la sala solo existe mientras alguien está conectado. Con un proveedor pago haría falta un barrido de limpieza.
 
 ## 10. Verificación en ejecución
@@ -493,7 +532,258 @@ Desplegado el WAR con `ServicioDeFacturacion` (sección 9.3), con un turno confi
 
 **Hallazgo:** la primera corrida (antes de agregar `@PermitAll`, ver sección 9.3) falló de otra forma de la prevista: no fue `obtenerTurno` el que rechazó por falta de rol, sino el propio `onMessage` del MDB, denegado por el contenedor antes de llegar al cuerpo del método. El mensaje `TurnoConfirmado` de esa corrida agotó los reintentos de la política por defecto del tópico (10 intentos, sin backoff) y terminó en la `DLQ` general de Artemis (`count-messages` → `1`), no en `ReclamosFacturacionDLQ` (esa es la de la cola de reclamos, que nunca llegó a recibir el mensaje porque `registrarReclamo` nunca se ejecutó). Con `@PermitAll` agregado, se repitió el turno completo desde cero y dio la tabla de arriba.
 
+### 10.2 Diagramas de secuencia de las integraciones
+
+Para la Entrega Obligatoria N.º 2, esta sección detalla método a método cada integración del sistema: quién llama a quién, en qué transacción corre cada paso y qué código HTTP o excepción produce cada camino de falla. Los nombres de clase, método y los códigos de estado están tomados del código real, no del diseño previsto; donde el código difiere de lo que podría esperarse (por ejemplo, la pasarela de pago responde `502`, no `503`), el diagrama refleja lo que hay.
+
+**Convención de flechas.** `->>` es una llamada síncrona que espera respuesta; `-->>` es la respuesta (o un evento/mensaje ya enviado); `--x` es una llamada que no obtiene respuesta útil (timeout o conexión rechazada).
+
+#### 10.2.1 Reservar un turno con cobertura
+
+Corresponde al paso 2 del caso de uso de la sección 5. Todo lo que sigue corre dentro de la transacción `REQUIRED` de `ServicioDeTurnos.reservarTurno`.
+
+```mermaid
+sequenceDiagram
+    participant SPA
+    participant TurnosResource
+    participant ServicioDeTurnos
+    participant CoberturaEnLaReserva as CoberturaEnLaReserva (Observer de TurnoEnReserva)
+    participant ServicioDeObrasSociales
+    participant Soap as SistemaDeObraSocialSoap (Adapter)
+    participant Legado as Legado SOAP de la obra social
+
+    SPA->>TurnosResource: POST /api/turnos { turnoId }
+    TurnosResource->>ServicioDeTurnos: reservarTurno(turnoId)
+    activate ServicioDeTurnos
+    Note over ServicioDeTurnos: TurnoDAO.buscarParaActualizar (lock pesimista); asigna el paciente
+    ServicioDeTurnos->>CoberturaEnLaReserva: fire TurnoEnReserva(turno) - evento CDI sincronico, misma tx
+    activate CoberturaEnLaReserva
+    CoberturaEnLaReserva->>ServicioDeObrasSociales: cotizarReserva(pacienteId, prestacion)
+    activate ServicioDeObrasSociales
+    alt paciente sin obra social registrada
+        ServicioDeObrasSociales-->>CoberturaEnLaReserva: Cobertura no autorizada, copago = arancel total (no llama al legado)
+    else paciente afiliado
+        ServicioDeObrasSociales->>Soap: autorizar(dni, numeroAfiliado, prestacion)
+        activate Soap
+        Soap->>Legado: SOAP autorizarPrestacion(dni, numeroAfiliado, codigoPrestacion)
+        activate Legado
+        alt respuesta de negocio (autorizado o sin cobertura)
+            Legado-->>Soap: respuestaCobertura { autorizado, porcentaje, copago, numeroAutorizacion }
+            Soap-->>ServicioDeObrasSociales: Cobertura
+            Note over ServicioDeObrasSociales: REQUIRED - si autorizo, guarda AutorizacionDePrestacion
+            ServicioDeObrasSociales-->>CoberturaEnLaReserva: Cobertura
+        else SOAP Fault Client (DNI, afiliado o prestacion invalidos)
+            Legado-->>Soap: SOAP Fault codigo Client/Sender
+            Soap-->>ServicioDeObrasSociales: DatosInvalidosException
+            ServicioDeObrasSociales-->>CoberturaEnLaReserva: DatosInvalidosException
+        else timeout de 5s, conexion rechazada o Fault Server
+            Legado--xSoap: sin respuesta util
+            Soap-->>ServicioDeObrasSociales: ObraSocialNoDisponibleException
+            ServicioDeObrasSociales-->>CoberturaEnLaReserva: ObraSocialNoDisponibleException (ApplicationException rollback=true)
+        end
+        deactivate Legado
+        deactivate Soap
+    end
+    deactivate ServicioDeObrasSociales
+    CoberturaEnLaReserva->>CoberturaEnLaReserva: turno.coberturaAutorizada / coberturaPorcentaje / copago / numeroAutorizacion
+    deactivate CoberturaEnLaReserva
+    alt cobertura resuelta (autorizada, parcial o particular)
+        ServicioDeTurnos->>ServicioDeTurnos: estado = EN_HOLD, inicioHold = now, ExpiradorDeHolds.programar
+        ServicioDeTurnos-->>TurnosResource: Turno EN_HOLD
+        TurnosResource-->>SPA: 200 OK
+    else DatosInvalidosException
+        ServicioDeTurnos-->>TurnosResource: rollback (DatosInvalidosMapper)
+        TurnosResource-->>SPA: 400 Bad Request
+    else ObraSocialNoDisponibleException
+        ServicioDeTurnos-->>TurnosResource: rollback, turno vuelve a DISPONIBLE (ObraSocialNoDisponibleMapper)
+        TurnosResource-->>SPA: 503 Service Unavailable
+    end
+    deactivate ServicioDeTurnos
+```
+
+#### 10.2.2 Confirmar el turno y publicar TurnoConfirmado
+
+`ServicioDeTurnos.confirmarTurno` dispara también `TurnoEnConfirmacion`, que observan `CobroAlConfirmar` (copago, SCRUM-93) y `SalaAlConfirmar` (sala de video, SCRUM-95) antes de publicar. Este diagrama se concentra en el tópico; esos dos pasos y sus fallas están en el diagrama de confirmación del [documento técnico de la Entrega N.º 2](documento-tecnico-entrega-2.md).
+
+```mermaid
+sequenceDiagram
+    participant SPA
+    participant TurnosResource
+    participant ServicioDeTurnos
+    participant Topico as Topico JMS TurnoConfirmado
+    participant NotiMDB as NotificacionMDB
+    participant ServicioDeNotificaciones
+    participant FactMDB as TurnoConfirmadoFacturacionMDB
+    participant ServicioDeFacturacion
+    participant Cola as Cola JMS ReclamosFacturacion
+
+    SPA->>TurnosResource: PUT /api/turnos/{id}/confirmar { tokenMedioDePago }
+    TurnosResource->>ServicioDeTurnos: confirmarTurno(turnoId)
+    activate ServicioDeTurnos
+    Note over ServicioDeTurnos: TurnoDAO.buscarParaActualizar; verificarQueElHoldEsDelCaller
+    ServicioDeTurnos->>ServicioDeTurnos: fire TurnoEnConfirmacion(turno, token) - CobroAlConfirmar (100) y SalaAlConfirmar (200), misma tx
+    ServicioDeTurnos->>ServicioDeTurnos: estado = CONFIRMADO, ExpiradorDeHolds.cancelar(turnoId)
+    ServicioDeTurnos->>Topico: JMSContext.createProducer().send(MapMessage { turnoId, pacienteId, profesionalId, fechaHora }) - misma tx JTA
+    ServicioDeTurnos-->>TurnosResource: Turno CONFIRMADO
+    TurnosResource-->>SPA: 200 OK
+    deactivate ServicioDeTurnos
+
+    par suscriptor 1 - notificaciones
+        Topico->>NotiMDB: onMessage(MapMessage) - no durable, hasta 10 reintentos sin backoff, luego DLQ de Artemis
+        NotiMDB->>ServicioDeNotificaciones: notificarTurnoConfirmado(turnoId, pacienteId, fechaHora)
+    and suscriptor 2 - facturacion
+        Topico->>FactMDB: onMessage(MapMessage) - RunAs ADMINISTRADOR, PermitAll
+        FactMDB->>ServicioDeFacturacion: registrarReclamo(turnoId)
+        activate ServicioDeFacturacion
+        ServicioDeFacturacion->>ServicioDeTurnos: obtenerTurno(turnoId)
+        alt coberturaAutorizada = true y sin reclamo previo para ese turno
+            ServicioDeFacturacion->>ServicioDeFacturacion: guarda Reclamo PENDIENTE
+            ServicioDeFacturacion->>Cola: send MapMessage { reclamoId } - misma tx
+        else sin cobertura autorizada, o reclamo ya existente
+            ServicioDeFacturacion->>ServicioDeFacturacion: no hace nada (idempotente)
+        end
+        deactivate ServicioDeFacturacion
+    end
+```
+
+#### 10.2.3 Procesar el reclamo desde la cola
+
+```mermaid
+sequenceDiagram
+    participant Cola as Cola JMS ReclamosFacturacion
+    participant ReclamoMDB
+    participant ServicioDeFacturacion
+    participant Canal as CanalDeReclamosSoap
+    participant ServicioDeObrasSociales
+    participant Legado as Legado SOAP de la obra social
+    participant DLQ as ReclamosFacturacionDLQ
+
+    Cola->>ReclamoMDB: onMessage(MapMessage { reclamoId }) - JMSXDeliveryCount = intento
+    ReclamoMDB->>ServicioDeFacturacion: procesarReclamo(reclamoId, intento)
+    activate ServicioDeFacturacion
+    alt reclamo ya ENVIADO o EN_REVISION_MANUAL
+        ServicioDeFacturacion->>ServicioDeFacturacion: no hace nada (reentrega idempotente)
+    else reclamo PENDIENTE
+        ServicioDeFacturacion->>Canal: presentarReclamo(turnoId, pacienteId, numeroAutorizacion, coberturaPorcentaje)
+        Canal->>ServicioDeObrasSociales: presentarReclamo(pacienteId, numeroAutorizacion) - NOT_SUPPORTED
+        ServicioDeObrasSociales->>Legado: SOAP presentarReclamo(dni, numeroAfiliado, numeroAutorizacion)
+        alt presentado
+            Legado-->>ServicioDeObrasSociales: respuestaReclamo { numeroPresentacion, montoReconocido }
+            ServicioDeObrasSociales-->>Canal: ResultadoPresentacion
+            Canal-->>ServicioDeFacturacion: ResultadoReclamo
+            ServicioDeFacturacion->>ServicioDeFacturacion: reclamo.estado = ENVIADO
+        else SOAP Fault Client (autorizacion no corresponde o es desconocida)
+            Legado-->>ServicioDeObrasSociales: SOAP Fault Client
+            ServicioDeObrasSociales-->>Canal: DatosInvalidosException
+            Canal-->>ServicioDeFacturacion: ReclamoRechazadoException
+            ServicioDeFacturacion->>ServicioDeFacturacion: registrarIntentoFallido (REQUIRES_NEW); reclamo.estado = EN_REVISION_MANUAL, no relanza
+        else timeout o Fault Server (transitorio)
+            Legado--xServicioDeObrasSociales: sin respuesta util
+            ServicioDeObrasSociales-->>Canal: ObraSocialNoDisponibleException
+            Canal-->>ServicioDeFacturacion: CanalDeReclamosNoDisponibleException
+            ServicioDeFacturacion->>ServicioDeFacturacion: registrarIntentoFallido (REQUIRES_NEW, sobrevive al rollback)
+            alt intento menor a MAX_INTENTOS (5)
+                ServicioDeFacturacion-->>ReclamoMDB: relanza CanalDeReclamosNoDisponibleException
+                ReclamoMDB-->>Cola: el contenedor no confirma el mensaje
+                Cola->>Cola: Artemis reentrega con backoff de 2s a 30s
+            else intento = MAX_INTENTOS (5)
+                ServicioDeFacturacion->>ServicioDeFacturacion: reclamo.estado = EN_REVISION_MANUAL, no relanza; el mensaje se confirma
+            end
+        end
+    end
+    deactivate ServicioDeFacturacion
+    Note over Cola,DLQ: un mensaje no procesable (no es MapMessage, falta reclamoId) se descarta en ReclamoMDB sin llegar aca
+```
+
+#### 10.2.4 Cobro con la pasarela de pago (REST)
+
+Se puede invocar por separado (`POST /api/pagos`) y, además, `CobroAlConfirmar` invoca `ServicioDePagos.cobrar` al confirmar un turno con copago (SCRUM-93), dentro de la transacción de la confirmación.
+
+```mermaid
+sequenceDiagram
+    participant Caller as SPA o caller autenticado
+    participant PagosResource
+    participant ServicioDePagos
+    participant PagoDAO
+    participant Adapter as PasarelaDePagoRestClient (Adapter)
+    participant Simulador as Simulador POST /api/externo/pagos
+
+    Caller->>PagosResource: POST /api/pagos { turnoId, monto, moneda, tokenMedioDePago }
+    PagosResource->>ServicioDePagos: cobrar(CobroDTO) - REQUIRED
+    activate ServicioDePagos
+    ServicioDePagos->>ServicioDePagos: valida datos; verificarQueElTurnoEsDelCaller(turnoId)
+    ServicioDePagos->>PagoDAO: guardarEnNuevaTransaccion(Pago) - REQUIRES_NEW, sobrevive si el cobro hace rollback despues
+    ServicioDePagos->>Adapter: cobrar(monto, moneda, tokenMedioDePago)
+    activate Adapter
+    Adapter->>Simulador: POST /api/externo/pagos { amount, currency, cardToken }
+    alt HTTP 200 OK
+        Simulador-->>Adapter: { status: APPROVED|REJECTED|REFUNDED, transactionId }
+        Adapter-->>ServicioDePagos: ResultadoPasarela
+        ServicioDePagos->>PagoDAO: actualizar(Pago con estado e idTransaccionExterna)
+        ServicioDePagos-->>PagosResource: Pago
+        PagosResource-->>Caller: 201 Created
+    else HTTP distinto de 200, o sin conexion (ProcessingException)
+        Simulador-->>Adapter: status != 200, o no responde
+        Adapter-->>ServicioDePagos: PasarelaNoDisponibleException
+        ServicioDePagos-->>PagosResource: rollback de la transaccion del cobro (el Pago PENDIENTE en su propia tx sobrevive)
+        PagosResource-->>Caller: 502 Bad Gateway (PasarelaNoDisponibleMapper)
+    end
+    deactivate Adapter
+    deactivate ServicioDePagos
+```
+
+Nota de verificación: el enunciado de esta tarjeta anticipaba `503` para la caída de la pasarela; el código (`PasarelaNoDisponibleMapper`) devuelve `502 Bad Gateway`. El diagrama refleja el código, no la expectativa.
+
+#### 10.2.5 Sala de telemedicina (REST)
+
+Se puede invocar por separado y, además, `SalaAlConfirmar` llama a `crearSesion` al confirmar un turno de telemedicina (SCRUM-95, sección 9.4).
+
+```mermaid
+sequenceDiagram
+    participant Caller as SPA o caller autenticado
+    participant TelemedicinaResource
+    participant ServicioDeTelemedicina
+    participant ServicioDeTurnos
+    participant SesionVideoDAO
+    participant Adapter as ProveedorDeVideoRestClient (Adapter)
+    participant Simulador as Simulador POST /api/externo/salas
+
+    Caller->>TelemedicinaResource: POST /api/telemedicina/turno/{turnoId}
+    TelemedicinaResource->>ServicioDeTelemedicina: crearSesion(turnoId) - REQUIRED
+    activate ServicioDeTelemedicina
+    ServicioDeTelemedicina->>ServicioDeTurnos: obtenerTurno(turnoId)
+    ServicioDeTelemedicina->>ServicioDeTelemedicina: verifica caller, modalidad TELEMEDICINA, turno EN_HOLD o CONFIRMADO
+    ServicioDeTelemedicina->>SesionVideoDAO: buscarPorTurno(turnoId)
+    alt ya existe sesion vigente para este paciente
+        SesionVideoDAO-->>ServicioDeTelemedicina: SesionVideo existente
+        ServicioDeTelemedicina-->>TelemedicinaResource: SesionCreada(nueva=false)
+        TelemedicinaResource-->>Caller: 200 OK
+    else crea sala nueva (o la reemplaza si era de un paciente anterior)
+        ServicioDeTelemedicina->>Adapter: crearSala(turnoId, fechaHora)
+        activate Adapter
+        Adapter->>Simulador: POST /api/externo/salas { referencia, fecha }
+        alt HTTP 200 con roomId, hostUrl y guestUrl completos
+            Simulador-->>Adapter: SalaExternaResponse
+            Adapter-->>ServicioDeTelemedicina: SalaDeVideo
+            ServicioDeTelemedicina->>SesionVideoDAO: guardar o actualizar SesionVideo
+            ServicioDeTelemedicina-->>TelemedicinaResource: SesionCreada(nueva=true)
+            TelemedicinaResource-->>Caller: 201 Created
+        else HTTP distinto de 200, timeout (3s conexion / 5s lectura), o respuesta incompleta
+            Simulador-->>Adapter: status != 200, sin respuesta, o roomId/hostUrl/guestUrl vacio
+            Adapter-->>ServicioDeTelemedicina: ProveedorDeVideoNoDisponibleException (rollback=true)
+            ServicioDeTelemedicina-->>TelemedicinaResource: rollback, no se guarda nada a medias
+            TelemedicinaResource-->>Caller: 503 Service Unavailable, Retry-After 30 (ProveedorDeVideoNoDisponibleMapper)
+        end
+        deactivate Adapter
+    end
+    deactivate ServicioDeTelemedicina
+```
+
+**Cómo se enganchan a la confirmación.** `ServicioDeTurnos.confirmarTurno` invoca a `ServicioDePagos` y a `ServicioDeTelemedicina` a través de los observadores `CobroAlConfirmar` y `SalaAlConfirmar` del evento `TurnoEnConfirmacion` (sección 9.4). Los diagramas 10.2.4 y 10.2.5 muestran cada componente por sí solo; la secuencia completa de la confirmación, con sus puntos de falla, está en el [documento técnico de la Entrega N.º 2](documento-tecnico-entrega-2.md).
+
 ## 11. Estado actual y trabajo pendiente
+
+> El estado vigente para la Entrega N.º 2 y lo pendiente para la entrega final están en el [documento técnico de la Entrega N.º 2](documento-tecnico-entrega-2.md) (sección 8). Esta sección conserva el estado al cierre de la Entrega N.º 1; SCRUM-93, SCRUM-95 y SCRUM-102 ya están resueltos.
 
 Las seis brechas que este documento listaba como abiertas están resueltas, y cada una se cerró dentro de la capa a la que pertenecía.
 
@@ -505,11 +795,16 @@ Las seis brechas que este documento listaba como abiertas están resueltas, y ca
 
 **Contraseñas.** El esquema pasó de un resumen SHA-256 sin salt a una derivación PBKDF2 con HMAC-SHA256, salt aleatorio por usuario y ciento veinte mil iteraciones, con comparación en tiempo constante. Ataca dos problemas distintos: sin salt, dos usuarios con la misma contraseña producían el mismo resumen y una tabla precomputada los revertía sin esfuerzo; y SHA-256 está diseñado para ser rápido, lo contrario de lo que conviene acá. El formato guardado incluye el número de iteraciones, de modo que subir el costo más adelante no invalide lo existente. La superficie pública de la clase no cambió, así que el adaptador hacia el contrato de Jakarta Security siguió funcionando sin tocarse: es la ventaja concreta de haber encapsulado la decisión en un solo lugar.
 
-**Nombre del artefacto.** El `artifactId` pasó de `mediconecta-usuarios` a `mediconecta`. El nombre viejo describía el proyecto cuando tenía un solo componente y, con tres implementados, decía algo falso sobre el alcance.
+**Nombre del artefacto.** El `artifactId` pasó de `mediconecta-usuarios` a `mediconecta`. El nombre viejo describía el proyecto cuando tenía un solo componente y, con los ocho implementados, decía algo falso sobre el alcance.
 
 **Contraseñas del sembrado inicial.** Ninguna queda escrita en el código: cada usuario inicial toma la suya de una variable de entorno y, si no está definida, el arranque genera una al azar y la registra una sola vez. Una contraseña fija en el fuente es idéntica en todas las instalaciones y queda publicada en el repositorio.
 
-Lo que sigue abierto es alcance, no deuda: no hay interfaz de usuario, la verificación de integración contra el sistema desplegado sigue siendo la principal (las pruebas de unidad, con JUnit y Mockito, cubren por ahora el flujo de turnos), y los tres componentes conviven en un único módulo Maven, que es lo correcto mientras se desplieguen juntos.
+Los ocho componentes conviven en un único módulo Maven, que es lo correcto mientras se desplieguen juntos. Lo que sigue abierto son puntos concretos, cada uno con su card de Jira, no deuda difusa:
+
+- **SCRUM-83 y SCRUM-87 — pantallas de la SPA pendientes de conectar.** El login (PR #12/#14) y el flujo de disponibilidad, reserva, hold y agenda (SCRUM-82/84/85/86) ya hablan con la API real. `HomePage` (home del paciente) e `HistoriaPage` (historia clínica) siguen mostrando datos de prototipo cableados a mano, sin ningún `fetch` a la API (sección 4.1).
+- **SCRUM-73 — demostración explícita del flujo asincrónico.** La evidencia funcional del tópico y la cola ya existe (sección 10.1), pero la demostración dedicada que pide la cátedra para este flujo todavía no se armó como entregable separado.
+- **Compensación de integraciones externas no transaccionales.** Sigue vigente el límite de la sección 6.3: ni la autorización remota de la obra social ni un cobro ya aprobado en la pasarela se deshacen si un paso posterior de la misma operación falla; el rollback JTA sólo alcanza a los recursos transaccionales (base de datos, JMS), nunca a una llamada REST o SOAP ya completada. En el cobro del copago al confirmar, este caso ya se da: ver sección 9.4, ítem 1.
+- **Verificación.** La verificación de integración contra el sistema desplegado sigue siendo la principal (sección 10); las pruebas de unidad, con JUnit y Mockito, cubren turnos, obras sociales, pagos, telemedicina y facturación, pero no reemplazan esa verificación end-to-end.
 
 ## 12. Uso de inteligencia artificial generativa
 
