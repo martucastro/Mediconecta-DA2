@@ -41,7 +41,9 @@ import jakarta.transaction.Transactional.TxType;
  *   - Cobro aprobado pero un paso posterior (la sala) falla -> JTA revierte la
  *     fila Pago, pero el cobro externo ya salio (cobro huerfano). El rastro
  *     PENDIENTE que ServicioDePagos inserta en REQUIRES_NEW sobrevive al
- *     rollback para poder reconciliar/compensar con ServicioDePagos.reembolsar.
+ *     rollback como rastro para conciliar a mano. Hoy no hay compensacion
+ *     automatica: reembolsar exige un Pago APROBADO con id de transaccion,
+ *     y ese dato se pierde en el rollback.
  */
 @ApplicationScoped
 public class CobroAlConfirmar {

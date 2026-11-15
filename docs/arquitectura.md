@@ -147,8 +147,8 @@ sequenceDiagram
         G-->>C: APROBADO ($ ya se movió)
         T->>S: fire → crear sala
         S--xT: ProveedorDeVideoNoDisponibleException (rollback=true)
-        Note over T,G: rollback deshace la fila Pago,<br/>pero el $ externo ya salió = COBRO HUÉRFANO.<br/>El rastro PENDIENTE (REQUIRES_NEW) sobrevive<br/>→ compensar con ServicioDePagos.reembolsar
-        T-->>P: 502/503
+        Note over T,G: rollback deshace la actualización del Pago,<br/>pero el $ externo ya salió = COBRO HUÉRFANO.<br/>Sobrevive solo el rastro PENDIENTE (REQUIRES_NEW), sin id de transacción:<br/>hoy no se compensa (trabajo futuro)
+        T-->>P: 503 (proveedor de video caído)
     else B') la pasarela rechaza el cobro
         G-->>C: RECHAZADO (no lanza)
         C--xT: ConflictoDeNegocioException (rollback=true)
@@ -165,7 +165,7 @@ sequenceDiagram
 **Defensa de cada caso:**
 
 - **A — pasarela caída:** `PasarelaNoDisponibleException` es `@ApplicationException(rollback = true)`; atraviesa el `fire()`, revierte todo, el turno sigue `EN_HOLD` con su temporizador vivo y el paciente reintenta. **No se cobró nada.** Mismo patrón que la sala (sección 9.4 del documento técnico).
-- **B — cobro huérfano (el caso que la consigna pide defender):** si el cobro se aprueba y después falla la sala, JTA revierte la base pero el dinero externo ya se movió. Es inevitable con un cobro REST inmediato porque el recurso externo no es transaccional. Se acota así: `ServicioDePagos` inserta el `Pago` en `PENDIENTE` con `REQUIRES_NEW` **antes** de llamar a la pasarela, así ese rastro sobrevive al rollback y permite **compensar con un reembolso** (`ServicioDePagos.reembolsar`, que ya existe).
+- **B — cobro huérfano (el caso que la consigna pide defender):** si el cobro se aprueba y después falla la sala, JTA revierte la base pero el dinero externo ya se movió. Es inevitable con un cobro REST inmediato porque el recurso externo no es transaccional. Hoy **no se compensa**: `ServicioDePagos` inserta el `Pago` en `PENDIENTE` con `REQUIRES_NEW` antes de llamar a la pasarela y ese rastro sobrevive al rollback, pero el id de la transacción externa solo se guarda en la actualización que se revierte, y `ServicioDePagos.reembolsar` solo acepta pagos `APROBADO` con ese id. El rastro sirve para conciliar a mano contra la pasarela; la compensación automática (crear la sala antes de cobrar, guardar el id en `REQUIRES_NEW` y reembolsar desde un observador `AFTER_FAILURE`, o idempotencia por turno) queda para la entrega final ([documento técnico de la Entrega N.º 2](documento-tecnico-entrega-2.md), sección 6).
 - **B' — rechazo del cobro:** la pasarela no lanza ante un rechazo; devuelve el `Pago` en `RECHAZADO`. `CobroAlConfirmar` lo traduce a `ConflictoDeNegocioException` (409) para no dejar un turno confirmado sin pagar.
 - **C — camino feliz:** una sola transacción confirma el turno, aprueba el pago y publica `TurnoConfirmado` de forma atómica.
 
