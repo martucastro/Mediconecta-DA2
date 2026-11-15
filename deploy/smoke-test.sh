@@ -36,6 +36,31 @@ comprobar "admin lista usuarios"              200 "$(codigo -u "$ADMIN" "$BASE/u
 comprobar "paciente NO lista usuarios"        403 "$(codigo -u "$PACI" "$BASE/usuarios")"
 comprobar "profesional NO lista usuarios"     403 "$(codigo -u "$PROF" "$BASE/usuarios")"
 
+
+echo
+echo "Consulta de usuario por id (SCRUM-102)"
+# Los ids dependen de la base de cada uno: se piden al listado del administrador.
+LISTA=$(curl -s -u "$ADMIN" "$BASE/usuarios")
+id_de() { printf '%s' "$LISTA" | grep -o "\"email\":\"$1\",\"id\":[0-9]*" | grep -o '[0-9]*$'; }
+ID_ADMIN=$(id_de "${ADMIN%%:*}")
+ID_PACI=$(id_de "${PACI%%:*}")
+comprobar "se resolvieron los ids de admin y paciente" "si" "$([ -n "$ID_ADMIN" ] && [ -n "$ID_PACI" ] && echo si || echo no)"
+comprobar "anonimo NO consulta un usuario"            401 "$(codigo "$BASE/usuarios/$ID_PACI")"
+comprobar "credencial incorrecta NO consulta"         401 "$(codigo -u "${PACI%%:*}:mal" "$BASE/usuarios/$ID_PACI")"
+comprobar "paciente consulta su propio usuario"       200 "$(codigo -u "$PACI" "$BASE/usuarios/$ID_PACI")"
+comprobar "paciente NO consulta a otro usuario"       403 "$(codigo -u "$PACI" "$BASE/usuarios/$ID_ADMIN")"
+comprobar "profesional NO consulta a un paciente"     403 "$(codigo -u "$PROF" "$BASE/usuarios/$ID_PACI")"
+comprobar "admin consulta a cualquier usuario"        200 "$(codigo -u "$ADMIN" "$BASE/usuarios/$ID_PACI")"
+comprobar "admin con un id inexistente"               404 "$(codigo -u "$ADMIN" "$BASE/usuarios/999999999")"
+comprobar "paciente con id inexistente tambien 403"   403 "$(codigo -u "$PACI" "$BASE/usuarios/999999999")"
+comprobar "profesionales sigue siendo publico"        200 "$(codigo "$BASE/usuarios/profesionales")"
+comprobar "el login sigue siendo publico"             200 "$(codigo -H "Content-Type: application/json" \
+                                                             -d "{\"email\":\"${PACI%%:*}\",\"contrasena\":\"${PACI#*:}\"}" \
+                                                             "$BASE/usuarios/login")"
+comprobar "el registro sigue siendo publico"          201 "$(codigo -H "Content-Type: application/json" \
+                                                             -d "{\"nombre\":\"Registro publico\",\"email\":\"smoke-reg-$(date +%s)@mediconecta.com\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
+                                                             "$BASE/usuarios")"
+
 echo
 echo "Turnos"
 NUEVO=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
