@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,6 +46,7 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.ejb.EJBAccessException;
 import jakarta.ejb.SessionContext;
 import jakarta.jms.JMSContext;
 import jakarta.jms.JMSProducer;
@@ -303,6 +305,42 @@ class ServicioDeTurnosTest {
         verify(jmsContext, never()).createProducer();
     }
 
+    @Test
+    void otroPacienteRecibe403SinEnterarseDelEstadoDelTurno() {
+        Turno turno = turnoEnHold(31L, ModalidadTurno.PRESENCIAL);
+        turno.setEstado(EstadoTurno.CONFIRMADO);
+        autenticadoComo(usuario(9L, "otro@mediconecta.com", ServicioDeUsuarios.ROL_PACIENTE));
+        when(turnoDAO.buscarParaActualizar(31L)).thenReturn(turno);
+
+        // Antes respondia 409 "esta CONFIRMADO": le contaba el estado del turno de otro.
+        assertThrows(EJBAccessException.class, () -> servicio.confirmarTurno(31L));
+        assertThrows(EJBAccessException.class, () -> servicio.cancelarTurno(31L));
+        verify(turnoDAO, never()).actualizar(any());
+    }
+
+    @Test
+    void confirmarUnTurnoQueYaVolvioALaAgendaSigueSiendo409() {
+        // Sin paciente no hay nada ajeno que proteger: HoldPage usa este 409
+        // para mostrar "reserva vencida".
+        when(turnoDAO.buscarParaActualizar(32L)).thenReturn(turnoDisponible(32L));
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.confirmarTurno(32L));
+    }
+
+    @Test
+    void unHoldVencidoNoSeConfirmaAunqueElBarridoTodaviaNoLoLibero() {
+        Turno turno = turnoEnHold(33L, ModalidadTurno.PRESENCIAL);
+        turno.setInicioHold(LocalDateTime.now()
+                .minusNanos(ExpiradorDeHolds.DURACION_HOLD_MS * 1_000_000).minusSeconds(1));
+        autenticadoComo(paciente);
+        when(turnoDAO.buscarParaActualizar(33L)).thenReturn(turno);
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.confirmarTurno(33L));
+        assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
+        assertTrue(eventoConfirmacion.disparados().isEmpty());
+        verify(turnoDAO, never()).actualizar(any());
+    }
+
     // ---- Sala de video al confirmar (SCRUM-95) --------------------------------
     //
     // El evento de confirmacion se conecta al observador real SalaAlConfirmar,
@@ -465,6 +503,20 @@ class ServicioDeTurnosTest {
 
         assertEquals(EstadoTurno.CONFIRMADO, turno.getEstado());
         assertEquals(paciente, turno.getPaciente());
+        verify(turnoDAO, never()).actualizar(any());
+    }
+
+    @Test
+    void cancelarUnTurnoYaCanceladoEs409() {
+        Turno turno = turnoDisponible(44L);
+        turno.setEstado(EstadoTurno.CANCELADO);
+        when(turnoDAO.buscarParaActualizar(44L)).thenReturn(turno);
+        // lenient: con el arreglo ya no se consulta quien llama (el turno no tiene paciente).
+        Principal principal = paciente::getEmail;
+        lenient().when(contexto.getCallerPrincipal()).thenReturn(principal);
+        lenient().when(servicioDeUsuarios.obtenerPorEmail(paciente.getEmail())).thenReturn(paciente);
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.cancelarTurno(44L));
         verify(turnoDAO, never()).actualizar(any());
     }
 
