@@ -132,6 +132,14 @@ export default function AgendaPage() {
     return () => clearInterval(intervalo)
   }, [hayHolds])
 
+  // El error de alta se va solo: si el profesional no toca el formulario,
+  // no tiene por que quedar fijo en pantalla.
+  useEffect(() => {
+    if (!errorAlta) return
+    const temporizador = setTimeout(() => setErrorAlta(''), 5000)
+    return () => clearTimeout(temporizador)
+  }, [errorAlta])
+
   function cambiarDia(nuevo: string) {
     setTurnos(null)
     setDia(nuevo)
