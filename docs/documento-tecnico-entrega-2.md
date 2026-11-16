@@ -322,7 +322,7 @@ sequenceDiagram
 | Documento de 8 a 12 páginas con diagramas de secuencia de cada integración | Cumplido | Seis diagramas que cubren las siete integraciones |
 | Declaración del uso de IA generativa | Cumplido | §9 |
 
-**Verificación.** Pruebas de unidad con JUnit y Mockito (`mvn test`, 245 en verde en `main`), sin contenedor ni red, para las fachadas, los Adapter (incluidos los SOAP Fault simulados), los observadores y los simuladores, y 28 pruebas de la SPA con Vitest (`npm test`). La integración real se verifica contra el servidor desplegado con `deploy/smoke-test.sh` y las colecciones de Postman de `postman/` y `deploy/`, que recorren seguridad, turnos, SOAP, telemedicina y el cobro al confirmar; el smoke test comprueba además que un pago rechazado responde 409 y deja el turno `EN_HOLD`.
+**Verificación.** Pruebas de unidad con JUnit y Mockito (`mvn test`, 245 en verde en `main`), sin contenedor ni red, para las fachadas, los Adapter (incluidos los SOAP Fault simulados), los observadores y los simuladores, y 28 pruebas de la SPA con Vitest (`npm test`). La integración real se verifica contra el servidor desplegado con `deploy/smoke-test.sh` y la colección de Postman de `postman/` (con su entorno), que recorren seguridad, turnos, SOAP, telemedicina y el cobro al confirmar; el smoke test comprueba además que un pago rechazado responde 409 y deja el turno `EN_HOLD`.
 
 **Pendiente para la entrega final.** La compensación del cobro huérfano (y del reembolso que precede a un commit fallido), la idempotencia del cobro y los timeouts del cliente de la pasarela (§6); la pantalla de historia clínica de la SPA (`HistoriaPage`, SCRUM-87, hoy con la ruta deshabilitada); un canal real de notificación en lugar del log; y la documentación final consolidada.
 
