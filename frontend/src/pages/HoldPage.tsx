@@ -4,6 +4,7 @@ import { api, ApiError } from '../api'
 import { leerTurnoEnHold, limpiarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
+import UnirseAConsulta from './UnirseAConsulta'
 
 // Mismo valor que ExpiradorDeHolds.DURACION_HOLD_MS en el backend. El backend
 // es quien decide de verdad: si el hold ya vencio, confirmar responde 409.
@@ -222,7 +223,12 @@ export default function HoldPage() {
 
           <div className="actions">
             {confirmado ? (
-              <Link className="btn btn-primary" to="/home">Volver al inicio</Link>
+              <>
+                {/* La sala se crea dentro de la confirmacion (SCRUM-95): un turno
+                    de telemedicina confirmado ya tiene su enlace (SCRUM-104). */}
+                {turno.modalidad === 'TELEMEDICINA' && <UnirseAConsulta turnoId={turno.id} />}
+                <Link className={turno.modalidad === 'TELEMEDICINA' ? 'btn' : 'btn btn-primary'} to="/home">Volver al inicio</Link>
+              </>
             ) : vencido ? (
               <Link className="btn btn-primary" to="/disponibilidad" replace>Elegir otro turno</Link>
             ) : (

@@ -5,6 +5,7 @@ import { api, obtenerSesion } from '../api'
 import { type ModalidadTurno, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
+import UnirseAConsulta from './UnirseAConsulta'
 
 // Mismo valor que ExpiradorDeHolds.DURACION_HOLD_MS en el backend: solo sirve
 // para mostrar cuanto le queda a un hold, el backend es quien lo vence.
@@ -209,6 +210,11 @@ export default function AgendaPage() {
                       <p className="appt-name">Sin paciente</p>
                     )}
                     <p className="appt-sub">{detalle(turno)}</p>
+                    {turno.modalidad === 'TELEMEDICINA' && turno.estado === 'CONFIRMADO' && (
+                      <div style={{ marginTop: 10 }}>
+                        <UnirseAConsulta turnoId={turno.id} style={{ padding: '9px 14px', fontSize: 13 }} />
+                      </div>
+                    )}
                   </div>
                   <span className="status" style={{ background: estado.color }}>{estado.texto}</span>
                 </li>
