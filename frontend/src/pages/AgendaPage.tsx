@@ -166,8 +166,9 @@ export default function AgendaPage() {
   const lista = turnos ?? []
   const confirmados = lista.filter((t) => t.estado === 'CONFIRMADO').length
   const enHold = lista.filter((t) => t.estado === 'EN_HOLD').length
-  const telemedicina = lista.filter((t) => t.modalidad === 'TELEMEDICINA' && t.estado !== 'CANCELADO').length
-  const tomados = lista.filter((t) => t.estado === 'CONFIRMADO' || t.estado === 'EN_HOLD').length
+  const tomadosDelDia = lista.filter((t) => t.estado === 'CONFIRMADO' || t.estado === 'EN_HOLD')
+  const tomados = tomadosDelDia.length
+  const telemedicina = tomadosDelDia.filter((t) => t.modalidad === 'TELEMEDICINA').length
   // En un dia que ya paso no se puede abrir un horario: el backend lo rechaza.
   const diaPasado = dia < claveDelDia(new Date())
 
