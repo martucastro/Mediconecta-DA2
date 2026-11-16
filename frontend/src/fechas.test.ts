@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aDate, formatearDiaLargo, formatearHora, instante, parsearFechaHora, partesDeCaja } from './fechas'
+import { aDate, claveDelDia, formatearDiaLargo, formatearHora, horaSugerida, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
 
 describe('parsearFechaHora', () => {
   it('lee un LocalDateTime con segundos como hora local', () => {
@@ -73,5 +73,45 @@ describe('formatos', () => {
 
   it('arma la caja de fecha de la tarjeta', () => {
     expect(partesDeCaja(jueves)).toEqual({ diaSemana: 'JUE', dia: '19', mes: 'NOV' })
+  })
+})
+
+describe('soloFuturos', () => {
+  const ahora = new Date(2026, 10, 18, 14, 30, 0).getTime()
+
+  it('descarta los turnos que ya empezaron o empiezan justo ahora', () => {
+    const turnos = [
+      { id: 1, fechaHora: '2026-11-18T09:00:00' },
+      { id: 2, fechaHora: '2026-11-18T14:30:00' },
+      { id: 3, fechaHora: '2026-11-18T15:00:00' },
+      { id: 4, fechaHora: '2026-11-19T09:00:00' },
+    ]
+
+    expect(soloFuturos(turnos, ahora).map((t) => t.id)).toEqual([3, 4])
+  })
+
+  it('descarta los que tienen una fecha ilegible', () => {
+    expect(soloFuturos([{ fechaHora: 'mañana' }], ahora)).toEqual([])
+  })
+})
+
+describe('claveDelDia', () => {
+  it('arma AAAA-MM-DD en hora local', () => {
+    expect(claveDelDia(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05')
+  })
+})
+
+describe('horaSugerida', () => {
+  it('propone la proxima hora en punto si el dia es hoy', () => {
+    expect(horaSugerida('2026-11-18', new Date(2026, 10, 18, 10, 15))).toBe('11:00')
+    expect(horaSugerida('2026-11-18', new Date(2026, 10, 18, 8, 0))).toBe('09:00')
+  })
+
+  it('propone las 09:00 para cualquier otro dia', () => {
+    expect(horaSugerida('2026-11-19', new Date(2026, 10, 18, 15, 40))).toBe('09:00')
+  })
+
+  it('no pasa de las 23:00 aunque ya sea de noche', () => {
+    expect(horaSugerida('2026-11-18', new Date(2026, 10, 18, 23, 10))).toBe('23:00')
   })
 })

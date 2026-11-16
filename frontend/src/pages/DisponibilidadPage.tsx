@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
+import { soloFuturos } from '../fechas'
 import { guardarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
@@ -94,8 +95,10 @@ export default function DisponibilidadPage() {
     if (profesionalId === null) return
     let cancelado = false
     api<TurnoDTO[]>(`/turnos?profesionalId=${profesionalId}`)
-      .then((disponibles) => {
+      .then((todos) => {
         if (cancelado) return
+        // Las franjas que ya empezaron no se pueden reservar (el backend da 409).
+        const disponibles = soloFuturos(todos, Date.now())
         setTurnos(disponibles)
         setDiaSeleccionado([...agruparPorDia(disponibles).keys()][0] ?? null)
       })
@@ -138,7 +141,7 @@ export default function DisponibilidadPage() {
         // Otro paciente se quedo con el turno primero: se refresca la grilla
         // para que no siga mostrando un horario que ya no existe.
         try {
-          const disponibles = await api<TurnoDTO[]>(`/turnos?profesionalId=${profesionalId}`)
+          const disponibles = soloFuturos(await api<TurnoDTO[]>(`/turnos?profesionalId=${profesionalId}`), Date.now())
           setTurnos(disponibles)
           setTurnoSeleccionado(null)
           // Si el dia elegido se quedo sin turnos, se pasa al siguiente que

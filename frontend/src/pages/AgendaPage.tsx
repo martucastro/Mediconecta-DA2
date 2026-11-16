@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import BotonCerrarSesion from './BotonCerrarSesion'
 import { api, obtenerSesion } from '../api'
+import { claveDelDia, horaSugerida } from '../fechas'
 import { type ModalidadTurno, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
@@ -19,11 +20,6 @@ const MESES = [
 
 function dosDigitos(n: number): string {
   return String(n).padStart(2, '0')
-}
-
-/** AAAA-MM-DD en hora local: el formato que espera ?fecha= y el input date. */
-function claveDelDia(fecha: Date): string {
-  return `${fecha.getFullYear()}-${dosDigitos(fecha.getMonth() + 1)}-${dosDigitos(fecha.getDate())}`
 }
 
 function moverDias(clave: string, dias: number): string {
@@ -84,7 +80,7 @@ export default function AgendaPage() {
   const [recarga, setRecarga] = useState(0)
   const [ahora, setAhora] = useState(() => Date.now())
 
-  const [horaNueva, setHoraNueva] = useState('09:00')
+  const [horaNueva, setHoraNueva] = useState(() => horaSugerida(dia, new Date()))
   const [modalidad, setModalidad] = useState<ModalidadTurno>('PRESENCIAL')
   const [consultorio, setConsultorio] = useState('')
   const [errorAlta, setErrorAlta] = useState('')
@@ -121,6 +117,8 @@ export default function AgendaPage() {
   function cambiarDia(nuevo: string) {
     setTurnos(null)
     setDia(nuevo)
+    setHoraNueva(horaSugerida(nuevo, new Date()))
+    setErrorAlta('')
   }
 
   async function abrirHorario(e: FormEvent<HTMLFormElement>) {
@@ -152,6 +150,8 @@ export default function AgendaPage() {
   const enHold = lista.filter((t) => t.estado === 'EN_HOLD').length
   const telemedicina = lista.filter((t) => t.modalidad === 'TELEMEDICINA' && t.estado !== 'CANCELADO').length
   const tomados = lista.filter((t) => t.estado === 'CONFIRMADO' || t.estado === 'EN_HOLD').length
+  // En un dia que ya paso no se puede abrir un horario: el backend lo rechaza.
+  const diaPasado = dia < claveDelDia(new Date())
 
   return (
     <>
@@ -221,32 +221,34 @@ export default function AgendaPage() {
           </ul>
         )}
 
-        <form className="card stack" onSubmit={abrirHorario} style={{ gap: 16, padding: 22 }} noValidate>
-          <h2 className="h2" style={{ fontSize: 18 }}>Abrir un horario el {titulo(dia).toLowerCase()}</h2>
-          <div className="row" style={{ gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div className="field">
-              <label htmlFor="hora-nueva">HORA</label>
-              <input className="input" id="hora-nueva" type="time" required value={horaNueva} onChange={(e) => setHoraNueva(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="modalidad-nueva">MODALIDAD</label>
-              <select className="input" id="modalidad-nueva" value={modalidad} onChange={(e) => setModalidad(e.target.value as ModalidadTurno)}>
-                <option value="PRESENCIAL">Presencial</option>
-                <option value="TELEMEDICINA">Telemedicina</option>
-              </select>
-            </div>
-            {modalidad === 'PRESENCIAL' && (
+        {!diaPasado && (
+          <form className="card stack" onSubmit={abrirHorario} style={{ gap: 16, padding: 22 }} noValidate>
+            <h2 className="h2" style={{ fontSize: 18 }}>Abrir un horario el {titulo(dia).toLowerCase()}</h2>
+            <div className="row" style={{ gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div className="field">
-                <label htmlFor="consultorio-nuevo">CONSULTORIO (OPCIONAL)</label>
-                <input className="input" id="consultorio-nuevo" maxLength={60} value={consultorio} onChange={(e) => setConsultorio(e.target.value)} />
+                <label htmlFor="hora-nueva">HORA</label>
+                <input className="input" id="hora-nueva" type="time" required value={horaNueva} onChange={(e) => setHoraNueva(e.target.value)} />
               </div>
-            )}
-            <button className="btn btn-primary" type="submit" disabled={abriendo || !horaNueva}>
-              {abriendo ? 'Abriendo...' : 'Abrir horario'}
-            </button>
-          </div>
-          {errorAlta && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{errorAlta}</p>}
-        </form>
+              <div className="field">
+                <label htmlFor="modalidad-nueva">MODALIDAD</label>
+                <select className="input" id="modalidad-nueva" value={modalidad} onChange={(e) => setModalidad(e.target.value as ModalidadTurno)}>
+                  <option value="PRESENCIAL">Presencial</option>
+                  <option value="TELEMEDICINA">Telemedicina</option>
+                </select>
+              </div>
+              {modalidad === 'PRESENCIAL' && (
+                <div className="field">
+                  <label htmlFor="consultorio-nuevo">CONSULTORIO (OPCIONAL)</label>
+                  <input className="input" id="consultorio-nuevo" maxLength={60} value={consultorio} onChange={(e) => setConsultorio(e.target.value)} />
+                </div>
+              )}
+              <button className="btn btn-primary" type="submit" disabled={abriendo || !horaNueva}>
+                {abriendo ? 'Abriendo...' : 'Abrir horario'}
+              </button>
+            </div>
+            {errorAlta && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{errorAlta}</p>}
+          </form>
+        )}
       </main>
     </>
   )
