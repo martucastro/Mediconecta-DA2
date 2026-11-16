@@ -66,7 +66,7 @@ La DLQ no se demuestra en vivo: con la lógica actual, el quinto intento marca e
 
 **¿Por qué 502 para la pasarela y 503 para el legado y el video?** 502 indica que un servidor intermedio recibió una respuesta inválida o nula del proveedor de pagos; los otros dos se modelaron como servicio no disponible con posibilidad de reintentar. Es una decisión de cada `ExceptionMapper`.
 
-**¿Cuál es el componente stateful y cuáles stateless?** `ServicioDeTurnos` es `@Stateful` (sostiene el hold de la conversación). El hold es durable en la fila del turno y su expiración vive en `ExpiradorDeHolds` (`@Singleton`), porque la especificación no permite timers en un stateful. El resto de las fachadas son `@Stateless`.
+**¿Cuál es el componente stateful y cuáles stateless?** `ServicioDeTurnos` es `@Stateful` porque su proceso es una conversación (reservar → confirmar o cancelar); el contenedor crea una instancia por petición. El estado de esa conversación es durable a propósito, en la fila del turno (`EN_HOLD` e `inicioHold`), para sobrevivir a un reinicio y poder confirmarse desde otra petición o dispositivo y su expiración vive en `ExpiradorDeHolds` (`@Singleton`), porque la especificación no permite timers en un stateful. El resto de las fachadas son `@Stateless`.
 
 **¿Dónde está el WSDL y cómo se consume?** En `/mediconecta/legado/obrasocial?wsdl`. El Adapter `SistemaDeObraSocialSoap` usa `Service.create` sin descargarlo y fija timeouts de 2 s y 5 s.
 
