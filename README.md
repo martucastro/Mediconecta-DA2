@@ -220,18 +220,18 @@ las mismas variables `MEDICONECTA_*_PASSWORD` (por defecto `cambiar123`).
 
 Abre franjas en horarios fijos, así que **una segunda corrida contra la misma
 base falla** con `409` al abrir disponibilidad (el profesional ya tiene esa
-franja). Para repetirlo, recreá la base (paso 1) y redesplegá. Lo mismo pasa
-con la colección de Postman.
+franja). Para repetirlo, recreá la base (paso 1) y redesplegá. Las colecciones
+de Postman, en cambio, generan fechas al azar y se pueden correr varias veces.
 
 **Postman.** Importá la colección `postman/MediConecta-Demo.postman_collection.json`
 **y** el entorno `postman/MediConecta-Demo.postman_environment.json`, y
 **seleccioná ese entorno** antes de correr nada: de ahí salen las credenciales
 y ahí se guardan los ids que la colección va creando.
-`deploy/MediConecta.postman_collection.json` es una colección anterior con ids
-fijos (`turnoId` = 6) que solo coinciden con una base en un estado puntual:
-preferí la de `postman/`.
+`deploy/MediConecta.postman_collection.json` es una colección anterior y más
+corta; también toma los ids de las respuestas, pero la de `postman/` cubre más
+casos: preferí esa.
 
-Las pruebas de unidad corren sin servidor: 245 del backend (JUnit y Mockito) y
+Las pruebas de unidad corren sin servidor: 256 del backend (JUnit y Mockito) y
 28 del frontend (Vitest):
 
 ```bash
