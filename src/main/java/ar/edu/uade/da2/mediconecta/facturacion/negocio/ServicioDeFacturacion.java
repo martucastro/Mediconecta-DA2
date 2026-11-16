@@ -140,6 +140,33 @@ public class ServicioDeFacturacion {
     }
 
     /** Listado completo de reclamos, para el panel del administrador. */
+    /**
+     * El paciente cancelo un turno confirmado (SCRUM-124): a la obra social no
+     * tiene que llegar nada. Un reclamo PENDIENTE pasa a ANULADO y
+     * procesarReclamo lo saltea (solo procesa PENDIENTE). Uno ya ENVIADO no se
+     * puede retirar por SOAP, porque el legado no tiene operacion de
+     * anulacion: pasa a EN_REVISION_MANUAL para que un administrador lo
+     * resuelva con la obra social. Sin reclamo (sin cobertura) no hay nada que
+     * hacer, y registrarReclamo ya no lo crea despues: cancelar borra la
+     * cobertura del turno.
+     */
+    public void anularReclamo(Long turnoId) {
+        Reclamo reclamo = reclamoDAO.buscarPorTurno(turnoId);
+        if (reclamo == null) {
+            return;
+        }
+        if (reclamo.getEstado() == EstadoReclamo.PENDIENTE) {
+            reclamo.setEstado(EstadoReclamo.ANULADO);
+        } else if (reclamo.getEstado() == EstadoReclamo.ENVIADO) {
+            reclamo.setEstado(EstadoReclamo.EN_REVISION_MANUAL);
+            reclamo.setUltimoError("El turno se cancelo despues de presentar el reclamo: "
+                    + "anularlo con la obra social.");
+        } else {
+            return;
+        }
+        reclamo.setActualizadoEn(LocalDateTime.now());
+    }
+
     @RolesAllowed(ServicioDeUsuarios.ROL_ADMINISTRADOR)
     public List<Reclamo> listarReclamos() {
         return reclamoDAO.listarTodos();

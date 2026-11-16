@@ -3,6 +3,7 @@ package ar.edu.uade.da2.mediconecta.facturacion.negocio;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -59,6 +61,35 @@ class ServicioDeFacturacionTest {
 
     @InjectMocks
     private ServicioDeFacturacion servicio;
+
+    // ---- anularReclamo (SCRUM-124) ------------------------------------------
+
+    @Test
+    void cancelarElTurnoAnulaElReclamoPendienteYYaNoSeEnvia() {
+        Reclamo reclamo = new Reclamo(5L, 1L, "AUT-5", null);
+        reclamo.setId(50L);
+        when(reclamoDAO.buscarPorTurno(5L)).thenReturn(reclamo);
+        when(reclamoDAO.buscar(50L)).thenReturn(reclamo);
+
+        servicio.anularReclamo(5L);
+        servicio.procesarReclamo(50L, 1);
+
+        assertEquals(EstadoReclamo.ANULADO, reclamo.getEstado());
+        verifyNoInteractions(canal);
+    }
+
+    @Test
+    void unReclamoYaEnviadoPasaARevisionManual() {
+        Reclamo reclamo = new Reclamo(6L, 1L, "AUT-6", null);
+        reclamo.setEstado(EstadoReclamo.ENVIADO);
+        when(reclamoDAO.buscarPorTurno(6L)).thenReturn(reclamo);
+
+        servicio.anularReclamo(6L);
+
+        // El legado no tiene operacion de anulacion: lo resuelve un administrador.
+        assertEquals(EstadoReclamo.EN_REVISION_MANUAL, reclamo.getEstado());
+        assertTrue(reclamo.getUltimoError().contains("cancel"));
+    }
 
     // ---- registrarReclamo -------------------------------------------------
 

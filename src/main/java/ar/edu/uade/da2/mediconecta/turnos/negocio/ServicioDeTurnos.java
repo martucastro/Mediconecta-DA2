@@ -66,6 +66,9 @@ public class ServicioDeTurnos {
     @Inject
     private Event<TurnoEnConfirmacion> eventoConfirmacion;
 
+    @Inject
+    private Event<TurnoEnCancelacion> eventoCancelacion;
+
     // JMSContext inyectado por el contenedor: participa de la misma transaccion
     // JTA que confirmarTurno (ver publicarTurnoConfirmado). No conoce el nombre
     // de ningun consumidor: publica en un topico y listo.
@@ -291,6 +294,14 @@ public class ServicioDeTurnos {
                     "El turno no esta reservado, no hay nada que cancelar");
         }
         verificarQueElHoldEsDelCaller(turno);
+
+        if (turno.getEstado() == EstadoTurno.CONFIRMADO) {
+            // Deshace lo que dejo la confirmacion: reembolso del copago y
+            // anulacion del reclamo (SCRUM-124). Antes de soltar al paciente,
+            // que los observadores todavia necesitan; si alguno falla, la
+            // cancelacion entera se revierte y el turno sigue CONFIRMADO.
+            eventoCancelacion.fire(new TurnoEnCancelacion(turno));
+        }
 
         // Liberar un hold devuelve el turno a la agenda, igual que cuando vence
         // (ExpiradorDeHolds); solo un turno confirmado queda CANCELADO.

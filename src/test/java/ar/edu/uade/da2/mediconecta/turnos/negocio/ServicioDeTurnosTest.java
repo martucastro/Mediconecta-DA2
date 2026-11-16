@@ -84,6 +84,7 @@ class ServicioDeTurnosTest {
 
     private final EventoSincronico<TurnoEnReserva> eventoReserva = new EventoSincronico<>();
     private final EventoSincronico<TurnoEnConfirmacion> eventoConfirmacion = new EventoSincronico<>();
+    private final EventoSincronico<TurnoEnCancelacion> eventoCancelacion = new EventoSincronico<>();
 
     private Usuario paciente;
     private Usuario profesional;
@@ -94,6 +95,7 @@ class ServicioDeTurnosTest {
         profesional = usuario(2L, "profesional@mediconecta.com", ServicioDeUsuarios.ROL_PROFESIONAL);
         inyectar(servicio, "eventoReserva", eventoReserva);
         inyectar(servicio, "eventoConfirmacion", eventoConfirmacion);
+        inyectar(servicio, "eventoCancelacion", eventoCancelacion);
     }
 
     // ---- Modelo y apertura de franjas -----------------------------------------
@@ -385,6 +387,8 @@ class ServicioDeTurnosTest {
         assertNull(liberado.getNumeroAutorizacion());
         assertNull(liberado.getCopago());
         verify(expirador).cancelar(41L);
+        // Un hold no tiene copago cobrado ni reclamo: no hay nada que compensar.
+        assertTrue(eventoCancelacion.disparados().isEmpty());
     }
 
     @Test
@@ -395,11 +399,34 @@ class ServicioDeTurnosTest {
         when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
         when(turnoDAO.actualizar(turno)).thenReturn(turno);
 
+        eventoCancelacion.observadoPor(e -> assertEquals(paciente, e.getTurno().getPaciente()));
+
         Turno cancelado = servicio.cancelarTurno(42L);
 
         assertEquals(EstadoTurno.CANCELADO, cancelado.getEstado());
         assertNull(cancelado.getPaciente());
         assertNull(cancelado.getCopago());
+        // Reembolso del copago y anulacion del reclamo (SCRUM-124), con el
+        // paciente todavia en el turno.
+        assertEquals(1, eventoCancelacion.disparados().size());
+        assertSame(turno, eventoCancelacion.disparados().get(0).getTurno());
+    }
+
+    @Test
+    void siLaCompensacionFallaElTurnoSigueConfirmado() {
+        Turno turno = turnoEnHoldConCobertura(43L);
+        turno.setEstado(EstadoTurno.CONFIRMADO);
+        prepararReserva(turno);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
+        eventoCancelacion.observadoPor(e -> {
+            throw new ConflictoDeNegocioException("Pasarela caida al reembolsar");
+        });
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.cancelarTurno(43L));
+
+        assertEquals(EstadoTurno.CONFIRMADO, turno.getEstado());
+        assertEquals(paciente, turno.getPaciente());
+        verify(turnoDAO, never()).actualizar(any());
     }
 
     // ---- Mis turnos ------------------------------------------------------------
