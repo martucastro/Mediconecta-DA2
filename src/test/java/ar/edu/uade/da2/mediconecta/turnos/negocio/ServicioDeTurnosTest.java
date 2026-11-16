@@ -131,6 +131,32 @@ class ServicioDeTurnosTest {
     }
 
     @Test
+    void noSePuedeAbrirDosVecesLaMismaFranja() {
+        autenticadoComo(profesional);
+        LocalDateTime fechaHora = LocalDateTime.now().plusDays(1).withNano(0);
+        when(turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate()))
+                .thenReturn(List.of(new Turno(profesional, fechaHora)));
+
+        assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.abrirDisponibilidad(fechaHora, null, null));
+        verify(turnoDAO, never()).guardar(any());
+    }
+
+    @Test
+    void unaFranjaCanceladaNoImpideVolverAAbrirEseHorario() {
+        autenticadoComo(profesional);
+        LocalDateTime fechaHora = LocalDateTime.now().plusDays(1).withNano(0);
+        Turno cancelado = new Turno(profesional, fechaHora);
+        cancelado.setEstado(EstadoTurno.CANCELADO);
+        when(turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate()))
+                .thenReturn(List.of(cancelado, new Turno(profesional, fechaHora.plusHours(1))));
+
+        Turno turno = servicio.abrirDisponibilidad(fechaHora, null, null);
+
+        verify(turnoDAO).guardar(turno);
+    }
+
+    @Test
     void unaFranjaNuevaTieneLaCoberturaVacia() {
         autenticadoComo(profesional);
 

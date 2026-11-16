@@ -178,6 +178,18 @@ public class ServicioDeTurnos {
             throw new DatosInvalidosException("El consultorio admite hasta 60 caracteres");
         }
         Usuario profesional = usuarioAutenticado();
+        // Una franja por horario (SCRUM-125). Se valida aca y no con una
+        // restriccion unica en la base: las bases ya creadas pueden tener
+        // duplicados y hbm2ddl update fallaria al agregarla.
+        // ponytail: dos pedidos simultaneos aun pueden colarse; restriccion
+        // unica parcial si alguna vez hace falta.
+        boolean ocupada = turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate())
+                .stream()
+                .anyMatch(t -> t.getEstado() != EstadoTurno.CANCELADO
+                        && t.getFechaHora().equals(fechaHora));
+        if (ocupada) {
+            throw new ConflictoDeNegocioException("El profesional ya tiene una franja abierta el " + fechaHora);
+        }
         Turno turno = new Turno(profesional, fechaHora, modalidadEfectiva, consultorioEfectivo);
         turnoDAO.guardar(turno);
         return turno;
