@@ -1,12 +1,14 @@
 package ar.edu.uade.da2.mediconecta.historiaclinica.negocio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.security.Principal;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.EntradaClinica;
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.EntradaClinicaDAO;
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.HistoriaClinica;
@@ -93,6 +96,21 @@ class ServicioDeHistoriaClinicaTest {
         ArgumentCaptor<EntradaClinica> guardadas = ArgumentCaptor.forClass(EntradaClinica.class);
         verify(entradaDAO, times(2)).guardar(guardadas.capture());
         guardadas.getAllValues().forEach(e -> assertEquals(autor.getId(), e.getProfesionalId()));
+    }
+
+    @Test
+    void unaRecetaNulaEnLaListaEsDatoInvalidoYNoUn500() {
+        RegistrarConsultaDTO datos = new RegistrarConsultaDTO();
+        datos.setDiagnostico(diagnostico());
+        NuevaEntradaDTO receta = new NuevaEntradaDTO();
+        receta.setMedicamento("Paracetamol");
+        receta.setDosis("500mg");
+        receta.setDiasTratamiento(5);
+        // Asi llega "recetas":[{...}, null] desde JSON-B.
+        datos.setRecetas(Arrays.asList(receta, null));
+
+        assertThrows(DatosInvalidosException.class,
+                () -> servicio.registrarConsulta(PACIENTE_ID, datos));
     }
 
     private static NuevaEntradaDTO diagnostico() {
