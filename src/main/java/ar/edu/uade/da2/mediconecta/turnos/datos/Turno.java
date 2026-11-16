@@ -91,7 +91,8 @@ public class Turno {
     // Suelta al paciente junto con todo lo que era suyo: la cobertura, el copago
     // y la autorizacion. Si quedaran, el proximo paciente los heredaria y el
     // listado publico de disponibilidad los mostraria. El estado lo decide quien
-    // llama (DISPONIBLE al vencer el hold, CANCELADO al cancelar).
+    // llama (DISPONIBLE al vencer o liberar el hold, CANCELADO al cancelar uno
+    // confirmado).
     public void liberar() {
         this.paciente = null;
         this.inicioHold = null;

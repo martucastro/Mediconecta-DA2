@@ -368,17 +368,37 @@ class ServicioDeTurnosTest {
     }
 
     @Test
-    void cancelarNoDejaLaCoberturaDelPacienteEnElTurno() {
+    void liberarUnHoldLoDevuelveADisponibleComoAlVencer() {
         Turno turno = turnoEnHoldConCobertura(41L);
         prepararReserva(turno);
         when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
         when(turnoDAO.actualizar(turno)).thenReturn(turno);
 
-        Turno cancelado = servicio.cancelarTurno(41L);
+        Turno liberado = servicio.cancelarTurno(41L);
+
+        // Igual que ExpiradorDeHolds: vuelve a la agenda sin nada del paciente.
+        assertEquals(EstadoTurno.DISPONIBLE, liberado.getEstado());
+        assertNull(liberado.getPaciente());
+        assertNull(liberado.getInicioHold());
+        assertNull(liberado.getCoberturaAutorizada());
+        assertNull(liberado.getCoberturaPorcentaje());
+        assertNull(liberado.getNumeroAutorizacion());
+        assertNull(liberado.getCopago());
+        verify(expirador).cancelar(41L);
+    }
+
+    @Test
+    void cancelarUnTurnoConfirmadoLoDejaCancelado() {
+        Turno turno = turnoEnHoldConCobertura(42L);
+        turno.setEstado(EstadoTurno.CONFIRMADO);
+        prepararReserva(turno);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
+        when(turnoDAO.actualizar(turno)).thenReturn(turno);
+
+        Turno cancelado = servicio.cancelarTurno(42L);
 
         assertEquals(EstadoTurno.CANCELADO, cancelado.getEstado());
         assertNull(cancelado.getPaciente());
-        assertNull(cancelado.getNumeroAutorizacion());
         assertNull(cancelado.getCopago());
     }
 

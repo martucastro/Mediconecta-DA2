@@ -292,7 +292,11 @@ public class ServicioDeTurnos {
         }
         verificarQueElHoldEsDelCaller(turno);
 
-        turno.setEstado(EstadoTurno.CANCELADO);
+        // Liberar un hold devuelve el turno a la agenda, igual que cuando vence
+        // (ExpiradorDeHolds); solo un turno confirmado queda CANCELADO.
+        turno.setEstado(turno.getEstado() == EstadoTurno.EN_HOLD
+                ? EstadoTurno.DISPONIBLE
+                : EstadoTurno.CANCELADO);
         turno.liberar();
         expirador.cancelar(turnoId);
         return turnoDAO.actualizar(turno);
