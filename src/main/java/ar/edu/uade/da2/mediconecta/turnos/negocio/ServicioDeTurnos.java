@@ -2,6 +2,7 @@ package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -173,7 +174,7 @@ public class ServicioDeTurnos {
         // (+999999-12-31) llegaba a PostgreSQL y salia 500 (timestamp out of range).
         if (fechaHora.isAfter(LocalDateTime.now().plusYears(2))) {
             throw new DatosInvalidosException(
-                    "No se puede abrir una franja a mas de dos anios de hoy");
+                    "No se puede abrir una franja a más de dos años de hoy");
         }
         ModalidadTurno modalidadEfectiva = modalidad != null ? modalidad : ModalidadTurno.PRESENCIAL;
         String consultorioEfectivo = consultorio != null && !consultorio.isBlank()
@@ -197,7 +198,8 @@ public class ServicioDeTurnos {
                 .anyMatch(t -> t.getEstado() != EstadoTurno.CANCELADO
                         && t.getFechaHora().truncatedTo(ChronoUnit.MINUTES).equals(minuto));
         if (ocupada) {
-            throw new ConflictoDeNegocioException("El profesional ya tiene una franja abierta el " + fechaHora);
+            throw new ConflictoDeNegocioException("El profesional ya tiene una franja abierta el "
+                    + FECHA_HORA_PARA_PERSONAS.format(fechaHora));
         }
         Turno turno = new Turno(profesional, fechaHora, modalidadEfectiva, consultorioEfectivo);
         turnoDAO.guardar(turno);
@@ -225,11 +227,11 @@ public class ServicioDeTurnos {
         }
         if (turno.getEstado() != EstadoTurno.DISPONIBLE) {
             throw new ConflictoDeNegocioException(
-                    "El turno ya no esta disponible: esta " + turno.getEstado());
+                    "El turno ya no está disponible: está " + enPalabras(turno.getEstado()));
         }
         // La agenda todavia lista franjas DISPONIBLE ya pasadas; reservarlas no.
         if (turno.getFechaHora().isBefore(LocalDateTime.now())) {
-            throw new ConflictoDeNegocioException("El turno ya paso: no se puede reservar");
+            throw new ConflictoDeNegocioException("El turno ya pasó: no se puede reservar");
         }
 
         turno.setPaciente(paciente);
@@ -279,7 +281,7 @@ public class ServicioDeTurnos {
         verificarQueElHoldEsDelCaller(turno);
         if (turno.getEstado() != EstadoTurno.EN_HOLD) {
             throw new ConflictoDeNegocioException(
-                    "El turno no tiene un hold activo: esta " + turno.getEstado());
+                    "El turno no tiene un hold activo: está " + enPalabras(turno.getEstado()));
         }
         // El temporizador de ExpiradorDeHolds no es persistente: tras un
         // reinicio un hold vencido sigue EN_HOLD hasta el proximo barrido
@@ -287,7 +289,7 @@ public class ServicioDeTurnos {
         if (turno.getInicioHold() != null && turno.getInicioHold()
                 .plus(ExpiradorDeHolds.DURACION_HOLD_MS, ChronoUnit.MILLIS)
                 .isBefore(LocalDateTime.now())) {
-            throw new ConflictoDeNegocioException("El turno no tiene un hold activo: el hold vencio");
+            throw new ConflictoDeNegocioException("El turno no tiene un hold activo: el hold venció");
         }
 
         // PUNTO DE EXTENSION (confirmacion). Observadores, en este orden:
@@ -326,7 +328,7 @@ public class ServicioDeTurnos {
         if (turno.getEstado() == EstadoTurno.DISPONIBLE
                 || turno.getEstado() == EstadoTurno.CANCELADO) {
             throw new ConflictoDeNegocioException(
-                    "El turno no esta reservado, no hay nada que cancelar");
+                    "El turno no está reservado, no hay nada que cancelar");
         }
 
         if (turno.getEstado() == EstadoTurno.CONFIRMADO) {
@@ -388,6 +390,20 @@ public class ServicioDeTurnos {
         } catch (JMSException e) {
             throw new JMSRuntimeException(e.getMessage(), e.getErrorCode(), e);
         }
+    }
+
+    // Los mensajes de error llegan tal cual a la pantalla: fechas y estados se
+    // escriben como los lee una persona, no en ISO-8601 ni con el nombre del enum.
+    private static final DateTimeFormatter FECHA_HORA_PARA_PERSONAS =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+    private static String enPalabras(EstadoTurno estado) {
+        return switch (estado) {
+            case DISPONIBLE -> "disponible";
+            case EN_HOLD -> "reservado";
+            case CONFIRMADO -> "confirmado";
+            case CANCELADO -> "cancelado";
+        };
     }
 
     private Usuario usuarioAutenticado() {

@@ -149,12 +149,17 @@ class ServicioDeTurnosTest {
     @Test
     void noSePuedeAbrirDosVecesLaMismaFranja() {
         autenticadoComo(profesional);
-        LocalDateTime fechaHora = LocalDateTime.now().plusDays(1).withNano(0);
+        LocalDateTime fechaHora = LocalDateTime.now().plusDays(1)
+                .withHour(9).withMinute(5).withSecond(0).withNano(0);
         when(turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate()))
                 .thenReturn(List.of(new Turno(profesional, fechaHora)));
 
-        assertThrows(ConflictoDeNegocioException.class,
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
                 () -> servicio.abrirDisponibilidad(fechaHora, null, null));
+        // La fecha se lee como la escribe una persona, no en ISO-8601.
+        assertEquals(String.format("El profesional ya tiene una franja abierta el %02d/%02d/%d 09:05",
+                fechaHora.getDayOfMonth(), fechaHora.getMonthValue(), fechaHora.getYear()),
+                e.getMessage());
         verify(turnoDAO, never()).guardar(any());
     }
 
@@ -276,11 +281,23 @@ class ServicioDeTurnosTest {
         turno.setId(12L);
         prepararReserva(turno);
 
-        assertThrows(ConflictoDeNegocioException.class, () -> servicio.reservarTurno(12L));
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.reservarTurno(12L));
+        assertEquals("El turno ya pasó: no se puede reservar", e.getMessage());
         assertEquals(EstadoTurno.DISPONIBLE, turno.getEstado());
         assertNull(turno.getPaciente());
         assertTrue(eventoReserva.disparados().isEmpty());
         verify(expirador, never()).programar(anyLong(), anyLong());
+    }
+
+    @Test
+    void reservarUnTurnoRetenidoDiceQueEstaReservadoEnPalabras() {
+        Turno turno = turnoEnHold(14L, ModalidadTurno.PRESENCIAL);
+        prepararReserva(turno);
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.reservarTurno(14L));
+        assertEquals("El turno ya no está disponible: está reservado", e.getMessage());
     }
 
     @Test
@@ -351,7 +368,10 @@ class ServicioDeTurnosTest {
         // para mostrar "reserva vencida".
         when(turnoDAO.buscarParaActualizar(32L)).thenReturn(turnoDisponible(32L));
 
-        assertThrows(ConflictoDeNegocioException.class, () -> servicio.confirmarTurno(32L));
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.confirmarTurno(32L));
+        // El estado se nombra con palabras, no con el enum.
+        assertEquals("El turno no tiene un hold activo: está disponible", e.getMessage());
     }
 
     @Test
@@ -362,7 +382,9 @@ class ServicioDeTurnosTest {
         autenticadoComo(paciente);
         when(turnoDAO.buscarParaActualizar(33L)).thenReturn(turno);
 
-        assertThrows(ConflictoDeNegocioException.class, () -> servicio.confirmarTurno(33L));
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.confirmarTurno(33L));
+        assertEquals("El turno no tiene un hold activo: el hold venció", e.getMessage());
         assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
         assertTrue(eventoConfirmacion.disparados().isEmpty());
         verify(turnoDAO, never()).actualizar(any());
