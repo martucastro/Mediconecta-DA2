@@ -86,9 +86,10 @@ public class TurnoDAO {
     }
 
     /**
-     * Turnos EN_HOLD o CONFIRMADO de un paciente: lo que necesita ver en su
-     * home o agenda. Los DISPONIBLE no son "suyos" y los CANCELADO no le
-     * interesan una vez pasado el momento de la cancelacion.
+     * Turnos EN_HOLD, CONFIRMADO o CANCELADO de un paciente: lo que necesita
+     * ver en su home o agenda. Los DISPONIBLE no son "suyos". Los CANCELADO
+     * son los confirmados que cancelo: conservan al paciente para que siga
+     * viendo el turno y su reembolso.
      */
     public List<Turno> listarPorPaciente(Long pacienteId) {
         return em.createQuery(
@@ -96,7 +97,8 @@ public class TurnoDAO {
                         + "AND t.estado IN :estados ORDER BY t.fechaHora",
                 Turno.class)
                 .setParameter("pacienteId", pacienteId)
-                .setParameter("estados", List.of(EstadoTurno.EN_HOLD, EstadoTurno.CONFIRMADO))
+                .setParameter("estados",
+                        List.of(EstadoTurno.EN_HOLD, EstadoTurno.CONFIRMADO, EstadoTurno.CANCELADO))
                 .getResultList();
     }
 

@@ -494,8 +494,11 @@ class ServicioDeTurnosTest {
         Turno cancelado = servicio.cancelarTurno(42L);
 
         assertEquals(EstadoTurno.CANCELADO, cancelado.getEstado());
-        assertNull(cancelado.getPaciente());
-        assertNull(cancelado.getCopago());
+        // Conserva al paciente: sigue viendo el turno en /mios y su pago
+        // REEMBOLSADO (ServicioDePagos lo autoriza por el paciente del turno).
+        assertSame(paciente, cancelado.getPaciente());
+        assertEquals(new BigDecimal("1500.00"), cancelado.getCopago());
+        verify(expirador).cancelar(42L);
         // Reembolso del copago y anulacion del reclamo (SCRUM-124), con el
         // paciente todavia en el turno.
         assertEquals(1, eventoCancelacion.disparados().size());
