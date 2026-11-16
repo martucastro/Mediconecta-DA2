@@ -164,6 +164,24 @@ class ExpiradorDeHoldsTest {
         verify(turnoDAO, never()).actualizar(any());
     }
 
+    @Test
+    void elBarridoNoPisaLaConfirmacionSobreLaMismaInstancia() {
+        // Caso real: la consulta y el lock devuelven la MISMA entidad del
+        // contexto de persistencia. buscarParaActualizar la relee al tomar el
+        // lock (em.refresh), asi que el barrido ve CONFIRMADO y no la toca.
+        Turno turno = enHold(10L, AHORA.minusMinutes(6));
+        when(turnoDAO.listarHoldsVencidos(LIMITE)).thenReturn(List.of(turno));
+        when(turnoDAO.buscarParaActualizar(10L)).thenAnswer(invocacion -> {
+            turno.setEstado(EstadoTurno.CONFIRMADO);
+            return turno;
+        });
+
+        expirador.barrerHoldsVencidos();
+
+        assertNoLiberado(turno);
+        verify(turnoDAO, never()).actualizar(any());
+    }
+
     // ---- Temporizador por turno (@Timeout) ------------------------------------
 
     @Test

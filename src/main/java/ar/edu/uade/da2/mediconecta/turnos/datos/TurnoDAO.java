@@ -37,11 +37,24 @@ public class TurnoDAO {
      * a los que compiten por la misma fila, asi que el segundo lee el estado ya
      * actualizado y su validacion falla como corresponde.
      *
-     * Se usa solo en reservar, confirmar y cancelar. Las consultas de lectura
-     * siguen usando buscarPorId sin lock, porque no deciden nada.
+     * Despues del lock se relee la fila (refresh). Si el turno ya estaba en el
+     * contexto de persistencia (el barrido de ExpiradorDeHolds lo cargo con su
+     * consulta), em.find toma el lock pero devuelve esa copia vieja, y Turno no
+     * tiene @Version que lo detecte: el barrido veia EN_HOLD un turno que otro
+     * pedido acababa de confirmar y lo devolvia a DISPONIBLE. Ningun llamador
+     * tiene cambios sin guardar sobre el turno al pedir el lock, asi que el
+     * refresh no pisa nada.
+     *
+     * Se usa solo en reservar, confirmar, cancelar y liberar holds. Las
+     * consultas de lectura siguen usando buscarPorId sin lock, porque no
+     * deciden nada.
      */
     public Turno buscarParaActualizar(Long id) {
-        return em.find(Turno.class, id, LockModeType.PESSIMISTIC_WRITE);
+        Turno turno = em.find(Turno.class, id, LockModeType.PESSIMISTIC_WRITE);
+        if (turno != null) {
+            em.refresh(turno);
+        }
+        return turno;
     }
 
     public List<Turno> listarDisponiblesPorProfesional(Long profesionalId) {
