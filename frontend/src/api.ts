@@ -1,3 +1,5 @@
+import { limpiarTurnoEnHold } from './turnoEnHold'
+
 export type Rol = 'PACIENTE' | 'PROFESIONAL' | 'ADMINISTRADOR'
 
 export interface Sesion {
@@ -45,6 +47,9 @@ export function obtenerSesion(): Sesion | null {
 export function cerrarSesion() {
   sessionStorage.removeItem(CLAVE_SESION)
   sessionStorage.removeItem(CLAVE_AUTH)
+  // El hold guardado es del usuario que sale: el proximo que entre en esta
+  // pestana no tiene que verlo (confirmarlo le daria 403).
+  limpiarTurnoEnHold()
 }
 
 /** Pantalla de inicio de cada rol, o null si ese rol no tiene pantallas. */
