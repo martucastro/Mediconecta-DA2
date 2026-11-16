@@ -41,7 +41,8 @@ function hora(fechaHora: string): string {
 // inicioHold llega con hasta nanosegundos: se recorta a milisegundos.
 function restanteDelHold(inicioHold: string, ahora: number): string {
   const vence = new Date(inicioHold.replace(/(\.\d{3})\d+/, '$1')).getTime() + DURACION_HOLD_MS
-  const segundos = Math.max(0, Math.ceil((vence - ahora) / 1000))
+  // El tope cubre un reloj del navegador algo atrasado respecto del servidor.
+  const segundos = Math.min(DURACION_HOLD_MS / 1000, Math.max(0, Math.ceil((vence - ahora) / 1000)))
   return `${dosDigitos(Math.floor(segundos / 60))}:${dosDigitos(segundos % 60)}`
 }
 
@@ -94,6 +95,9 @@ export default function AgendaPage() {
       .then((delDia) => {
         if (cancelado) return
         setTurnos(delDia)
+        // El reloj de los holds solo corre si habia holds: sin esto, un hold
+        // que aparece en una agenda quieta se mostraba con el reloj viejo.
+        setAhora(Date.now())
         setErrorLista('')
       })
       .catch((err: unknown) => {
@@ -236,7 +240,9 @@ export default function AgendaPage() {
         )}
 
         {!diaPasado && (
-          <form className="card stack" onSubmit={abrirHorario} style={{ gap: 16, padding: 22 }} noValidate>
+          // onChange burbujea desde hora, modalidad y consultorio: al editar
+          // cualquiera, el error del intento anterior deja de aplicar.
+          <form className="card stack" onSubmit={abrirHorario} onChange={() => setErrorAlta('')} style={{ gap: 16, padding: 22 }} noValidate>
             <h2 className="h2" style={{ fontSize: 18 }}>Abrir un horario el {titulo(dia).toLowerCase()}</h2>
             <div className="row" style={{ gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div className="field">
