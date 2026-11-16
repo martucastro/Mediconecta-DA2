@@ -33,6 +33,8 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
+import jakarta.ejb.Lock;
+import jakarta.ejb.LockType;
 import jakarta.ejb.Timer;
 import jakarta.ejb.TimerConfig;
 import jakarta.ejb.TimerService;
@@ -69,6 +71,19 @@ class ExpiradorDeHoldsTest {
     @BeforeEach
     void preparar() throws Exception {
         relojEn(AHORA);
+    }
+
+    // ---- Concurrencia del singleton -------------------------------------------
+
+    @Test
+    void elSingletonNoTomaElLockDeEscrituraDelContenedor() {
+        // Con el WRITE por defecto, un @Timeout esperando la fila de un turno
+        // que confirmarTurno tiene bloqueada frenaba a esa confirmacion en
+        // expirador.cancelar: deadlock hasta el timeout del lock.
+        Lock lock = ExpiradorDeHolds.class.getAnnotation(Lock.class);
+
+        assertNotNull(lock);
+        assertEquals(LockType.READ, lock.value());
     }
 
     // ---- Barrido periodico (@Schedule) ----------------------------------------
