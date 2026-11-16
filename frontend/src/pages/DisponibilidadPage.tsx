@@ -179,7 +179,7 @@ export default function DisponibilidadPage() {
       </header>
 
       <main className="content avail">
-        <Link className="muted" to="/home" style={{ fontSize: 14, fontWeight: 500 }}>← Volver a la búsqueda</Link>
+        <Link className="muted" to="/home" style={{ fontSize: 14, fontWeight: 500 }}>← Volver al inicio</Link>
 
         <section className="field" style={{ maxWidth: 360 }}>
           <label htmlFor="profesional">PROFESIONAL</label>

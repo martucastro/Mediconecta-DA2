@@ -160,14 +160,6 @@ export default function HomePage() {
         <section className="stack" style={{ gap: 18 }}>
           <h2 className="h2">Reservar un turno</h2>
           <Link className="btn btn-primary" to="/disponibilidad" style={{ alignSelf: 'flex-start' }}>Elegir profesional y horario</Link>
-          <input className="input" type="search" aria-label="Buscar" placeholder="Buscar por especialidad, profesional o clínica" style={{ padding: '16px 20px' }} />
-          <div className="chips" data-single-select>
-            <button className="chip" aria-pressed="true">Clínica médica</button>
-            <button className="chip" aria-pressed="false">Cardiología</button>
-            <button className="chip" aria-pressed="false">Dermatología</button>
-            <button className="chip" aria-pressed="false">Pediatría</button>
-            <button className="chip" aria-pressed="false">Telemedicina</button>
-          </div>
         </section>
       </main>
     </>
