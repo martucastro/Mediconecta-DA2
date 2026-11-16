@@ -139,7 +139,6 @@ public class ServicioDeFacturacion {
         }
     }
 
-    /** Listado completo de reclamos, para el panel del administrador. */
     /**
      * El paciente cancelo un turno confirmado (SCRUM-124): a la obra social no
      * tiene que llegar nada. Un reclamo PENDIENTE pasa a ANULADO y
@@ -167,6 +166,7 @@ public class ServicioDeFacturacion {
         reclamo.setActualizadoEn(LocalDateTime.now());
     }
 
+    /** Listado completo de reclamos, para el panel del administrador. */
     @RolesAllowed(ServicioDeUsuarios.ROL_ADMINISTRADOR)
     public List<Reclamo> listarReclamos() {
         return reclamoDAO.listarTodos();
