@@ -95,6 +95,14 @@ public class ServicioDePagos implements ServicioDePagosLocal {
 
         pago.setEstado(resultado.getEstado());
         pago.setIdTransaccionExterna(resultado.getIdTransaccionExterna());
+        // Un rechazo es un resultado conocido, pero CobroAlConfirmar lo
+        // convierte en 409 y la confirmacion se revierte: con actualizar() el
+        // intento quedaba PENDIENTE para siempre. Se guarda aparte. Si la
+        // pasarela no respondio (excepcion arriba), el resultado es desconocido
+        // y el intento queda PENDIENTE a proposito.
+        if (resultado.getEstado() == EstadoPago.RECHAZADO) {
+            return pagoDAO.actualizarEnNuevaTransaccion(pago);
+        }
         return pagoDAO.actualizar(pago);
     }
 

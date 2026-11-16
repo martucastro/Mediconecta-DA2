@@ -36,8 +36,9 @@ import jakarta.transaction.Transactional.TxType;
  *     (rollback=true): sale por el fire(), la confirmacion entera se revierte,
  *     el turno sigue EN_HOLD y el paciente recibe 502. Nada se cobro.
  *   - Pasarela rechaza el cobro -> ServicioDePagos NO lanza, devuelve el Pago
- *     en RECHAZADO; aca se lo traduce a ConflictoDeNegocioException (409) para
- *     no confirmar un turno impago, y la transaccion se revierte.
+ *     en RECHAZADO (ya guardado en REQUIRES_NEW, sobrevive al rollback); aca
+ *     se lo traduce a ConflictoDeNegocioException (409) para no confirmar un
+ *     turno impago, y la transaccion se revierte.
  *   - Cobro aprobado pero un paso posterior (la sala) falla -> JTA revierte la
  *     fila Pago, pero el cobro externo ya salio (cobro huerfano). El rastro
  *     PENDIENTE que ServicioDePagos inserta en REQUIRES_NEW sobrevive al
