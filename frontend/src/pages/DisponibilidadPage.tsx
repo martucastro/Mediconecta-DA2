@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { soloFuturos } from '../fechas'
+import { paginar } from '../paginado'
+import Paginador from './Paginador'
 import { guardarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
@@ -75,6 +77,9 @@ export default function DisponibilidadPage() {
   )
   const [turnos, setTurnos] = useState<TurnoDTO[] | null>(null)
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
+  // La pagina es de un dia: cualquier cambio de dia (boton, otro profesional,
+  // refresco) vuelve a la pagina 1 sin tener que resetearla en cada lugar.
+  const [paginaHorarios, setPaginaHorarios] = useState<{ dia: string | null; n: number }>({ dia: null, n: 0 })
   const [turnoSeleccionado, setTurnoSeleccionado] = useState<TurnoDTO | null>(null)
   const [error, setError] = useState('')
   const [reservando, setReservando] = useState(false)
@@ -171,6 +176,7 @@ export default function DisponibilidadPage() {
   const grupos = turnos ? agruparPorDia(turnos) : new Map<string, TurnoDTO[]>()
   const dias = [...grupos.keys()]
   const turnosDelDia = diaSeleccionado ? grupos.get(diaSeleccionado) ?? [] : []
+  const horarios = paginar(turnosDelDia, paginaHorarios.dia === diaSeleccionado ? paginaHorarios.n : 0)
 
   return (
     <>
@@ -258,7 +264,7 @@ export default function DisponibilidadPage() {
                 {diaSeleccionado && etiquetaLarga(fechaDesdeClave(diaSeleccionado))} · {turnosDelDia.length} {turnosDelDia.length === 1 ? 'turno disponible' : 'turnos disponibles'}
               </p>
               <div className="slots" data-single-select>
-                {turnosDelDia.map((turno) => (
+                {horarios.items.map((turno) => (
                   <button
                     key={turno.id}
                     type="button"
@@ -273,6 +279,11 @@ export default function DisponibilidadPage() {
                   </button>
                 ))}
               </div>
+              <Paginador
+                pagina={horarios.pagina}
+                totalPaginas={horarios.totalPaginas}
+                onCambiar={(n) => setPaginaHorarios({ dia: diaSeleccionado, n })}
+              />
             </section>
 
             <button

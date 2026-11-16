@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import BotonCerrarSesion from './BotonCerrarSesion'
 import { api, obtenerSesion } from '../api'
 import { claveDelDia, horaSugerida } from '../fechas'
+import { paginar } from '../paginado'
+import Paginador from './Paginador'
 import { type ModalidadTurno, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
@@ -80,6 +82,7 @@ export default function AgendaPage() {
   const [errorLista, setErrorLista] = useState('')
   const [recarga, setRecarga] = useState(0)
   const [ahora, setAhora] = useState(() => Date.now())
+  const [pagina, setPagina] = useState(0)
 
   const [horaNueva, setHoraNueva] = useState(() => horaSugerida(dia, new Date()))
   const [modalidad, setModalidad] = useState<ModalidadTurno>('PRESENCIAL')
@@ -132,6 +135,7 @@ export default function AgendaPage() {
   function cambiarDia(nuevo: string) {
     setTurnos(null)
     setDia(nuevo)
+    setPagina(0)
     // Sin esto, "Hoy" estando ya en hoy no cambia dia, el efecto no vuelve a
     // pedir la agenda y queda "Cargando la agenda..." para siempre.
     setRecarga((n) => n + 1)
@@ -164,6 +168,7 @@ export default function AgendaPage() {
   }
 
   const lista = turnos ?? []
+  const paginaActual = paginar(lista, pagina)
   const confirmados = lista.filter((t) => t.estado === 'CONFIRMADO').length
   const enHold = lista.filter((t) => t.estado === 'EN_HOLD').length
   const tomadosDelDia = lista.filter((t) => t.estado === 'CONFIRMADO' || t.estado === 'EN_HOLD')
@@ -209,39 +214,6 @@ export default function AgendaPage() {
           <div className="card stat"><strong style={{ color: 'var(--primary)' }}>{telemedicina}</strong><span>Telemedicina</span></div>
         </div>
 
-        {errorLista && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{errorLista}</p>}
-
-        {turnos === null ? (
-          <p className="muted">Cargando la agenda...</p>
-        ) : lista.length === 0 ? (
-          <p className="muted">No hay turnos para este día.</p>
-        ) : (
-          <ul className="appts" style={{ listStyle: 'none', padding: 0 }}>
-            {lista.map((turno) => {
-              const estado = etiquetaEstado(turno, ahora)
-              return (
-                <li key={turno.id} className={`card appt${turno.estado === 'EN_HOLD' ? ' on-hold' : ''}`}>
-                  <span className="appt-time">{hora(turno.fechaHora)}</span>
-                  <div className="grow">
-                    {turno.pacienteId != null ? (
-                      <p className="appt-name">{turno.pacienteNombre}</p>
-                    ) : (
-                      <p className="appt-name">Sin paciente</p>
-                    )}
-                    <p className="appt-sub">{detalle(turno)}</p>
-                    {turno.modalidad === 'TELEMEDICINA' && turno.estado === 'CONFIRMADO' && (
-                      <div style={{ marginTop: 10 }}>
-                        <UnirseAConsulta turnoId={turno.id} style={{ padding: '9px 14px', fontSize: 13 }} />
-                      </div>
-                    )}
-                  </div>
-                  <span className="status" style={{ background: estado.color }}>{estado.texto}</span>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-
         {!diaPasado && (
           // onChange burbujea desde hora, modalidad y consultorio: al editar
           // cualquiera, el error del intento anterior deja de aplicar.
@@ -272,6 +244,40 @@ export default function AgendaPage() {
             {errorAlta && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{errorAlta}</p>}
           </form>
         )}
+
+        {errorLista && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{errorLista}</p>}
+
+        {turnos === null ? (
+          <p className="muted">Cargando la agenda...</p>
+        ) : lista.length === 0 ? (
+          <p className="muted">No hay turnos para este día.</p>
+        ) : (
+          <ul className="appts" style={{ listStyle: 'none', padding: 0 }}>
+            {paginaActual.items.map((turno) => {
+              const estado = etiquetaEstado(turno, ahora)
+              return (
+                <li key={turno.id} className={`card appt${turno.estado === 'EN_HOLD' ? ' on-hold' : ''}`}>
+                  <span className="appt-time">{hora(turno.fechaHora)}</span>
+                  <div className="grow">
+                    {turno.pacienteId != null ? (
+                      <p className="appt-name">{turno.pacienteNombre}</p>
+                    ) : (
+                      <p className="appt-name">Sin paciente</p>
+                    )}
+                    <p className="appt-sub">{detalle(turno)}</p>
+                    {turno.modalidad === 'TELEMEDICINA' && turno.estado === 'CONFIRMADO' && (
+                      <div style={{ marginTop: 10 }}>
+                        <UnirseAConsulta turnoId={turno.id} style={{ padding: '9px 14px', fontSize: 13 }} />
+                      </div>
+                    )}
+                  </div>
+                  <span className="status" style={{ background: estado.color }}>{estado.texto}</span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        <Paginador pagina={paginaActual.pagina} totalPaginas={paginaActual.totalPaginas} onCambiar={setPagina} />
       </main>
     </>
   )
