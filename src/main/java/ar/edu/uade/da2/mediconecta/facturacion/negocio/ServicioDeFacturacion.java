@@ -8,6 +8,7 @@ import java.util.logging.Logger;
 import ar.edu.uade.da2.mediconecta.facturacion.datos.EstadoReclamo;
 import ar.edu.uade.da2.mediconecta.facturacion.datos.Reclamo;
 import ar.edu.uade.da2.mediconecta.facturacion.datos.ReclamoDAO;
+import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
@@ -68,10 +69,12 @@ public class ServicioDeFacturacion {
      * Registra el reclamo de un turno recien confirmado, si corresponde.
      *
      * Se saltea si el turno no tiene cobertura autorizada (coberturaAutorizada
-     * distinto de TRUE: null todavia no se consulto, false fue rechazada) y es
-     * idempotente por turnoId: TurnoConfirmadoFacturacionMDB no es durable, pero
-     * una reentrega del topico (o cualquier otra forma de que esto se llame dos
-     * veces para el mismo turno) no tiene que crear un segundo reclamo.
+     * distinto de TRUE: null todavia no se consulto, false fue rechazada) o ya
+     * no esta CONFIRMADO (el paciente lo cancelo antes de que llegara el
+     * mensaje), y es idempotente por turnoId: TurnoConfirmadoFacturacionMDB no
+     * es durable, pero una reentrega del topico (o cualquier otra forma de que
+     * esto se llame dos veces para el mismo turno) no tiene que crear un
+     * segundo reclamo.
      */
     public void registrarReclamo(Long turnoId) {
         Turno turno = servicioDeTurnos.obtenerTurno(turnoId);
@@ -81,6 +84,15 @@ public class ServicioDeFacturacion {
             return;
         }
         if (!Boolean.TRUE.equals(turno.getCoberturaAutorizada())) {
+            return;
+        }
+        // Cancelar un turno confirmado conserva la cobertura, asi que un
+        // TurnoConfirmado tardio o reentregado facturaria un turno ya cancelado
+        // y reembolsado.
+        if (turno.getEstado() != EstadoTurno.CONFIRMADO) {
+            LOGGER.log(Level.INFO,
+                    "TurnoConfirmado para un turno que ya no esta confirmado ({0}), no se factura: {1}",
+                    new Object[] {turno.getEstado(), turnoId});
             return;
         }
         if (reclamoDAO.buscarPorTurno(turnoId) != null) {

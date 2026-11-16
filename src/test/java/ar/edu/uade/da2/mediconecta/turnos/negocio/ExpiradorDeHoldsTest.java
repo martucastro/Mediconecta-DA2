@@ -182,7 +182,36 @@ class ExpiradorDeHoldsTest {
         verify(turnoDAO, never()).actualizar(any());
     }
 
+    @Test
+    void elBarridoNoLiberaElHoldNuevoDeOtroPaciente() {
+        // La consulta vio el hold vencido de A, pero antes del lock el
+        // temporizador de A lo libero y B lo volvio a reservar: la relectura
+        // trae el hold de B, que todavia esta vigente.
+        Turno vistoPorLaConsulta = enHold(11L, AHORA.minusMinutes(6));
+        Turno holdNuevo = enHold(11L, AHORA.minusMinutes(1));
+        when(turnoDAO.listarHoldsVencidos(LIMITE)).thenReturn(List.of(vistoPorLaConsulta));
+        when(turnoDAO.buscarParaActualizar(11L)).thenReturn(holdNuevo);
+
+        expirador.barrerHoldsVencidos();
+
+        assertSigueRetenido(holdNuevo);
+        verify(turnoDAO, never()).actualizar(any());
+    }
+
     // ---- Temporizador por turno (@Timeout) ------------------------------------
+
+    @Test
+    void elTemporizadorNoLiberaUnHoldRecienTomado() {
+        // El temporizador de A ya estaba corriendo cuando el barrido libero el
+        // turno y B lo reservo: ese hold es de B y lo libera su temporizador.
+        Turno holdNuevo = enHold(12L, AHORA.minusSeconds(30));
+        when(turnoDAO.buscarParaActualizar(12L)).thenReturn(holdNuevo);
+
+        expirador.expirar(timerDe(12L));
+
+        assertSigueRetenido(holdNuevo);
+        verify(turnoDAO, never()).actualizar(any());
+    }
 
     @Test
     void elTemporizadorLiberaElHoldDeSuTurno() {

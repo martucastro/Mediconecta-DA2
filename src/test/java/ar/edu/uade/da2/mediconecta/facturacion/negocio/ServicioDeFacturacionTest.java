@@ -29,6 +29,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ar.edu.uade.da2.mediconecta.facturacion.datos.EstadoReclamo;
 import ar.edu.uade.da2.mediconecta.facturacion.datos.Reclamo;
 import ar.edu.uade.da2.mediconecta.facturacion.datos.ReclamoDAO;
+import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
@@ -121,6 +122,20 @@ class ServicioDeFacturacionTest {
         when(reclamoDAO.buscarPorTurno(3L)).thenReturn(new Reclamo(3L, 1L, "AUT-1", null));
 
         servicio.registrarReclamo(3L);
+
+        verify(reclamoDAO, never()).guardar(any());
+        verify(jmsContext, never()).createProducer();
+    }
+
+    @Test
+    void unTurnoYaCanceladoNoSeFacturaAunqueConserveLaCobertura() {
+        // Un TurnoConfirmado tardio o reentregado puede llegar despues de que el
+        // paciente cancelo y se le reembolso: cancelar conserva la cobertura.
+        Turno turno = turno(5L, true);
+        turno.setEstado(EstadoTurno.CANCELADO);
+        when(servicioDeTurnos.obtenerTurno(5L)).thenReturn(turno);
+
+        servicio.registrarReclamo(5L);
 
         verify(reclamoDAO, never()).guardar(any());
         verify(jmsContext, never()).createProducer();
@@ -230,6 +245,7 @@ class ServicioDeFacturacionTest {
         Turno turno = new Turno(null, LocalDateTime.now().plusDays(1), ModalidadTurno.PRESENCIAL, null);
         turno.setId(id);
         turno.setPaciente(paciente);
+        turno.setEstado(EstadoTurno.CONFIRMADO);
         turno.setCoberturaAutorizada(coberturaAutorizada);
         turno.setCoberturaPorcentaje(new BigDecimal("70.00"));
         turno.setNumeroAutorizacion("AUT-1");

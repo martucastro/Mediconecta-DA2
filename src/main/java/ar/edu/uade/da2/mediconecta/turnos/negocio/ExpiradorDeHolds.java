@@ -102,7 +102,11 @@ public class ExpiradorDeHolds {
     @Timeout
     @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
     public void expirar(Timer timer) {
-        liberar((Long) timer.getInfo(), "temporizador");
+        // Este temporizador vence DURACION_HOLD_MS despues de que empezo su
+        // hold: uno de menos de un minuto es de otro paciente, que reservo
+        // mientras este ya corria, y lo libera su propio temporizador. El
+        // minuto de margen absorbe la precision de inicioHold y del timer.
+        liberar((Long) timer.getInfo(), "temporizador", LocalDateTime.now(reloj).minusMinutes(1));
     }
 
     /**
@@ -118,13 +122,22 @@ public class ExpiradorDeHolds {
         LocalDateTime limite = LocalDateTime.now(reloj).minusNanos(DURACION_HOLD_MS * 1_000_000);
         List<Turno> vencidos = turnoDAO.listarHoldsVencidos(limite);
         for (Turno turno : vencidos) {
-            liberar(turno.getId(), "barrido");
+            liberar(turno.getId(), "barrido", limite);
         }
     }
 
-    private void liberar(Long turnoId, String origen) {
+    /**
+     * Libera el hold si al tomar el lock sigue EN_HOLD y no empezo despues de
+     * limite. Entre la consulta del barrido (o el disparo del temporizador) y
+     * el lock, el hold vencido pudo liberarse y otro paciente reservar el
+     * turno: ese hold nuevo empezo despues de limite y no se toca.
+     */
+    private void liberar(Long turnoId, String origen, LocalDateTime limite) {
         Turno turno = turnoDAO.buscarParaActualizar(turnoId);
         if (turno == null || turno.getEstado() != EstadoTurno.EN_HOLD) {
+            return;
+        }
+        if (turno.getInicioHold() != null && turno.getInicioHold().isAfter(limite)) {
             return;
         }
         turno.setEstado(EstadoTurno.DISPONIBLE);
