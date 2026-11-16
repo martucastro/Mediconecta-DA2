@@ -182,7 +182,7 @@ export default function HoldPage() {
           MediConecta
         </Link>
         <Link className="m" to="/disponibilidad" style={{ fontWeight: 500 }}>← Turno</Link>
-        <img className="avatar d" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar d" src={ASSETS.avatar} alt="" />
         <img className="m" src={ASSETS.logo} alt="MediConecta" style={{ width: 18, height: 18 }} />
       </header>
 
@@ -192,7 +192,7 @@ export default function HoldPage() {
             {confirmado ? (
               <>
                 <span className="label-caps">TURNO CONFIRMADO</span>
-                <p>Te vamos a avisar por notificación. Podés verlo en tu inicio.</p>
+                <p>Podés verlo en tu inicio.</p>
               </>
             ) : vencido ? (
               <>

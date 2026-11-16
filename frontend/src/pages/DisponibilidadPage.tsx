@@ -175,10 +175,10 @@ export default function DisponibilidadPage() {
           MediConecta
         </Link>
         <nav className="nav">
-          <Link to="/home" aria-current="page">Mis turnos</Link>
-          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
+          <Link to="/home">Mis turnos</Link>
+          <img className="avatar" src={ASSETS.avatar} alt="" />
         </nav>
-        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="" />
       </header>
 
       <main className="content avail">
@@ -250,7 +250,7 @@ export default function DisponibilidadPage() {
 
             <section className="stack" style={{ gap: 14 }}>
               <p className="muted" style={{ fontWeight: 500 }}>
-                {diaSeleccionado && etiquetaLarga(fechaDesdeClave(diaSeleccionado))} · {turnosDelDia.length} turnos disponibles
+                {diaSeleccionado && etiquetaLarga(fechaDesdeClave(diaSeleccionado))} · {turnosDelDia.length} {turnosDelDia.length === 1 ? 'turno disponible' : 'turnos disponibles'}
               </p>
               <div className="slots" data-single-select>
                 {turnosDelDia.map((turno) => (

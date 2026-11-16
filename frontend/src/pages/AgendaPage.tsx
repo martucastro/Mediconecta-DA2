@@ -176,10 +176,10 @@ export default function AgendaPage() {
         </Link>
         <nav className="nav">
           <Link to="/agenda" aria-current="page">Mi agenda</Link>
-          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="" />
           <BotonCerrarSesion />
         </nav>
-        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="" />
       </header>
 
       <main className="content stack" style={{ gap: 26 }}>
@@ -196,7 +196,7 @@ export default function AgendaPage() {
         </div>
 
         <div className="stats">
-          <div className="card stat"><strong>{tomados}</strong><span>Turnos del día</span></div>
+          <div className="card stat"><strong>{tomados}</strong><span>Turnos tomados</span></div>
           <div className="card stat"><strong style={{ color: 'var(--success)' }}>{confirmados}</strong><span>Confirmados</span></div>
           <div className="card stat"><strong style={{ color: 'var(--accent)' }}>{enHold}</strong><span>En hold</span></div>
           <div className="card stat"><strong style={{ color: 'var(--primary)' }}>{telemedicina}</strong><span>Telemedicina</span></div>
