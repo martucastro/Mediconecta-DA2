@@ -162,8 +162,6 @@ export default function AgendaPage() {
         </Link>
         <nav className="nav">
           <Link to="/agenda" aria-current="page">Mi agenda</Link>
-          <Link to="/historia">Pacientes</Link>
-          <a href="#">Facturación</a>
           <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
           <BotonCerrarSesion />
         </nav>
@@ -205,7 +203,7 @@ export default function AgendaPage() {
                   <span className="appt-time">{hora(turno.fechaHora)}</span>
                   <div className="grow">
                     {turno.pacienteId != null ? (
-                      <Link className="appt-name" to={`/historia?pacienteId=${turno.pacienteId}`}>{turno.pacienteNombre}</Link>
+                      <p className="appt-name">{turno.pacienteNombre}</p>
                     ) : (
                       <p className="appt-name">Sin paciente</p>
                     )}
