@@ -169,6 +169,15 @@ class ServicioDeUsuariosTest {
     }
 
     @Test
+    void elRegistroRechazaUnaContrasenaDeMasDe128Caracteres() {
+        DatosInvalidosException e = assertThrows(DatosInvalidosException.class,
+                () -> servicio.registrarUsuario("Ana Perez", "ana@test.com", "PACIENTE",
+                        "x".repeat(129)));
+        assertTrue(e.getMessage().contains("128"), e.getMessage());
+        verify(usuarioDAO, never()).guardar(any());
+    }
+
+    @Test
     void elRegistroExigeNombre() {
         assertThrows(DatosInvalidosException.class,
                 () -> servicio.registrarUsuario("   ", "ana@test.com", "PACIENTE", "cambiar123"));

@@ -127,7 +127,7 @@ public class ServicioDeTurnos {
 
     /**
      * Turnos del usuario autenticado: lo que necesita su home (proximo turno)
-     * o su agenda (confirmados y en hold).
+     * o su agenda (en hold, confirmados y los confirmados que cancelo).
      *
      * El id nunca llega por parametro, siempre sale del caller autenticado:
      * si viniera del cliente, un paciente podria pedir los turnos de otro
@@ -137,7 +137,7 @@ public class ServicioDeTurnos {
      * sobre cualquier agenda.
      *
      * El filtro de fecha solo aplica al profesional (agenda del dia); para un
-     * paciente se ignora, porque sus turnos EN_HOLD/CONFIRMADO ya son pocos.
+     * paciente se ignora, porque sus turnos ya son pocos.
      */
     @RolesAllowed({ ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL })
     public List<Turno> misTurnos(LocalDate fecha) {
@@ -168,6 +168,12 @@ public class ServicioDeTurnos {
         }
         if (fechaHora.isBefore(LocalDateTime.now())) {
             throw new DatosInvalidosException("No se puede abrir una franja en el pasado");
+        }
+        // Tope razonable de agenda. Sin el, una fecha absurda
+        // (+999999-12-31) llegaba a PostgreSQL y salia 500 (timestamp out of range).
+        if (fechaHora.isAfter(LocalDateTime.now().plusYears(2))) {
+            throw new DatosInvalidosException(
+                    "No se puede abrir una franja a mas de dos anios de hoy");
         }
         ModalidadTurno modalidadEfectiva = modalidad != null ? modalidad : ModalidadTurno.PRESENCIAL;
         String consultorioEfectivo = consultorio != null && !consultorio.isBlank()
@@ -325,18 +331,23 @@ public class ServicioDeTurnos {
 
         if (turno.getEstado() == EstadoTurno.CONFIRMADO) {
             // Deshace lo que dejo la confirmacion: reembolso del copago y
-            // anulacion del reclamo (SCRUM-124). Antes de soltar al paciente,
-            // que los observadores todavia necesitan; si alguno falla, la
-            // cancelacion entera se revierte y el turno sigue CONFIRMADO.
+            // anulacion del reclamo (SCRUM-124). Antes de cambiar el estado;
+            // si alguno falla, la cancelacion entera se revierte y el turno
+            // sigue CONFIRMADO.
             eventoCancelacion.fire(new TurnoEnCancelacion(turno));
         }
 
         // Liberar un hold devuelve el turno a la agenda, igual que cuando vence
-        // (ExpiradorDeHolds); solo un turno confirmado queda CANCELADO.
-        turno.setEstado(turno.getEstado() == EstadoTurno.EN_HOLD
-                ? EstadoTurno.DISPONIBLE
-                : EstadoTurno.CANCELADO);
-        turno.liberar();
+        // (ExpiradorDeHolds). Un turno confirmado queda CANCELADO y conserva al
+        // paciente: si lo soltara, el paciente perdia el turno de /mios y su
+        // pago REEMBOLSADO le daba 403. La franja no vuelve a la agenda: el
+        // profesional abre otra (abrirDisponibilidad ignora las CANCELADO).
+        if (turno.getEstado() == EstadoTurno.EN_HOLD) {
+            turno.setEstado(EstadoTurno.DISPONIBLE);
+            turno.liberar();
+        } else {
+            turno.setEstado(EstadoTurno.CANCELADO);
+        }
         expirador.cancelar(turnoId);
         return turnoDAO.actualizar(turno);
     }

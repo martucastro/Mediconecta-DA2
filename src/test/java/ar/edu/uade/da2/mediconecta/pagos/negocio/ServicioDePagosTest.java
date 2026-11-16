@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.Pago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.PagoDAO;
@@ -53,6 +54,64 @@ class ServicioDePagosTest {
 
     @InjectMocks
     private ServicioDePagos servicio;
+
+    // ---- Cobro ---------------------------------------------------------------
+
+    @Test
+    void unCobroRechazadoQuedaRechazadoAunqueLaConfirmacionSeRevierta() {
+        comoElPacienteDelTurno();
+        when(pasarela.cobrar(any(), any(), any()))
+                .thenReturn(new ResultadoPasarela(EstadoPago.RECHAZADO, null));
+        when(pagoDAO.actualizarEnNuevaTransaccion(any())).thenAnswer(i -> i.getArgument(0));
+
+        Pago pago = servicio.cobrar(cobro("rechazar_demo"));
+
+        // El rechazo es un resultado conocido: se guarda en su propia
+        // transaccion, asi sobrevive al rollback de la confirmacion (409).
+        assertEquals(EstadoPago.RECHAZADO, pago.getEstado());
+        verify(pagoDAO).guardarEnNuevaTransaccion(pago);
+        verify(pagoDAO).actualizarEnNuevaTransaccion(pago);
+        verify(pagoDAO, never()).actualizar(any());
+    }
+
+    @Test
+    void unCobroAprobadoSeActualizaEnLaTransaccionDeLaConfirmacion() {
+        comoElPacienteDelTurno();
+        when(pasarela.cobrar(any(), any(), any()))
+                .thenReturn(new ResultadoPasarela(EstadoPago.APROBADO, "tx-9"));
+        when(pagoDAO.actualizar(any())).thenAnswer(i -> i.getArgument(0));
+
+        assertEquals(EstadoPago.APROBADO, servicio.cobrar(cobro("tok_visa_demo")).getEstado());
+
+        verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
+    }
+
+    @Test
+    void conLaPasarelaCaidaElIntentoQuedaPendiente() {
+        comoElPacienteDelTurno();
+        when(pasarela.cobrar(any(), any(), any())).thenThrow(new PasarelaNoDisponibleException("caida"));
+
+        assertThrows(PasarelaNoDisponibleException.class, () -> servicio.cobrar(cobro("caer_demo")));
+
+        // Resultado desconocido: el rastro PENDIENTE no se toca.
+        verify(pagoDAO).guardarEnNuevaTransaccion(any());
+        verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
+        verify(pagoDAO, never()).actualizar(any());
+    }
+
+    @Test
+    void unTokenDeMasDe255CaracteresEsDatoInvalido() {
+        // Sin tope, un token de 200 KB se aceptaba y se cobraba.
+        DatosInvalidosException e = assertThrows(DatosInvalidosException.class,
+                () -> servicio.cobrar(cobro("t".repeat(256))));
+
+        assertTrue(e.getMessage().contains("255"), e.getMessage());
+
+        verify(pagoDAO, never()).guardarEnNuevaTransaccion(any());
+        verify(pasarela, never()).cobrar(any(), any(), any());
+    }
+
+    // ---- Reembolso al cancelar ----------------------------------------------
 
     @Test
     void cancelarReembolsaElCopagoAprobadoDelTurno() {
@@ -122,6 +181,15 @@ class ServicioDePagosTest {
         when(servicioDeTurnos.obtenerTurno(TURNO)).thenReturn(turno);
         when(contexto.getCallerPrincipal()).thenReturn(principal);
         when(servicioDeUsuarios.obtenerPorEmail(paciente.getEmail())).thenReturn(paciente);
+    }
+
+    private static CobroDTO cobro(String token) {
+        CobroDTO cobro = new CobroDTO();
+        cobro.setTurnoId(TURNO);
+        cobro.setMonto(new BigDecimal("6000.00"));
+        cobro.setMoneda("ARS");
+        cobro.setTokenMedioDePago(token);
+        return cobro;
     }
 
     private static Pago pago(EstadoPago estado, String idTransaccion) {

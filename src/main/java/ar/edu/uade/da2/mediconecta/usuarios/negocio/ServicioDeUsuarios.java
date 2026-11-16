@@ -41,6 +41,9 @@ public class ServicioDeUsuarios {
 
     private static final int MINIMO_CONTRASENA = 8;
 
+    // Sin tope, una contraseña de 200 KB se aceptaba y se hasheaba entera.
+    private static final int MAXIMO_CONTRASENA = 128;
+
     // Largo de las columnas nombre y email (varchar(255) en Usuario). Sin este
     // chequeo un texto mas largo fallaba recien en el INSERT, como 500.
     private static final int MAXIMO_TEXTO = 255;
@@ -85,6 +88,11 @@ public class ServicioDeUsuarios {
         if (contrasenaPlana.length() < MINIMO_CONTRASENA) {
             throw new DatosInvalidosException(
                     "La contraseña debe tener al menos " + MINIMO_CONTRASENA + " caracteres.");
+        }
+
+        if (contrasenaPlana.length() > MAXIMO_CONTRASENA) {
+            throw new DatosInvalidosException(
+                    "La contraseña admite hasta " + MAXIMO_CONTRASENA + " caracteres.");
         }
 
         if (!ROLES_VALIDOS.contains(rol)) {

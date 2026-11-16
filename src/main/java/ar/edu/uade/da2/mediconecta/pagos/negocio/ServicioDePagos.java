@@ -44,6 +44,10 @@ public class ServicioDePagos implements ServicioDePagosLocal {
 
     private static final int MAX_MONEDA = 3;
 
+    // Un token real de la pasarela mide decenas de caracteres. Sin tope, uno de
+    // 200 KB se aceptaba y se mandaba a cobrar.
+    private static final int MAX_TOKEN = 255;
+
     @Inject
     private PagoDAO pagoDAO;
 
@@ -95,6 +99,14 @@ public class ServicioDePagos implements ServicioDePagosLocal {
 
         pago.setEstado(resultado.getEstado());
         pago.setIdTransaccionExterna(resultado.getIdTransaccionExterna());
+        // Un rechazo es un resultado conocido, pero CobroAlConfirmar lo
+        // convierte en 409 y la confirmacion se revierte: con actualizar() el
+        // intento quedaba PENDIENTE para siempre. Se guarda aparte. Si la
+        // pasarela no respondio (excepcion arriba), el resultado es desconocido
+        // y el intento queda PENDIENTE a proposito.
+        if (resultado.getEstado() == EstadoPago.RECHAZADO) {
+            return pagoDAO.actualizarEnNuevaTransaccion(pago);
+        }
         return pagoDAO.actualizar(pago);
     }
 
@@ -196,6 +208,10 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         }
         if (datos.getTokenMedioDePago() == null || datos.getTokenMedioDePago().isBlank()) {
             throw new DatosInvalidosException("El token del medio de pago es obligatorio.");
+        }
+        if (datos.getTokenMedioDePago().length() > MAX_TOKEN) {
+            throw new DatosInvalidosException(
+                    "El token del medio de pago admite hasta " + MAX_TOKEN + " caracteres.");
         }
     }
 

@@ -233,27 +233,27 @@ sequenceDiagram
 
 ## 6. Flujo transaccional crítico: reservar, retener, confirmar
 
-El flujo de negocio crítico tiene tres pasos: **reservar** (lock del turno, cobertura SOAP, hold), **retener** (el hold de 5 minutos, durable en la fila y expirado por el contenedor) y **confirmar** (cobro del copago por REST, sala de video por REST, cambio a `CONFIRMADO` y publicación en el tópico). Reservar y confirmar son, cada uno, una única transacción JTA declarativa. Cancelar un turno confirmado es el camino inverso, también en una sola transacción: anula el reclamo, reembolsa el copago y deja el turno `CANCELADO`; liberar un hold solo lo devuelve a `DISPONIBLE`.
+El flujo de negocio crítico tiene tres pasos: **reservar** (lock del turno, cobertura SOAP, hold), **retener** (el hold de 5 minutos, durable en la fila y expirado por el contenedor) y **confirmar** (cobro del copago por REST, sala de video por REST, cambio a `CONFIRMADO` y publicación en el tópico). Reservar y confirmar son, cada uno, una única transacción JTA declarativa. Cancelar un turno confirmado es el camino inverso, también en una sola transacción: anula el reclamo, reembolsa el copago y deja el turno `CANCELADO` con su paciente, que lo sigue viendo junto con el pago `REEMBOLSADO`; liberar un hold solo lo devuelve a `DISPONIBLE`.
 
 | Elemento | Atributo | Por qué |
 |---|---|---|
 | `ServicioDeTurnos.reservarTurno`, `confirmarTurno`, `cancelarTurno` | `@TransactionAttribute(REQUIRED)` | Una transacción por paso del paciente; todo se confirma o se revierte junto. |
 | `CoberturaEnLaReserva`, `CobroAlConfirmar`, `SalaAlConfirmar`, `ReclamoAlCancelar`, `ReembolsoAlCancelar` | `@Transactional(MANDATORY)` | Solo tienen sentido dentro de la transacción del turno; fuera de una, el contenedor los rechaza. |
 | `cotizarReserva`, `cobrar`, `reembolsarCopagoDelTurno`, `crearSesion`, `anularReclamo` | `REQUIRED` | Se unen a la transacción en curso. |
-| `PagoDAO.guardarEnNuevaTransaccion`, `ReclamoDAO.registrarIntentoFallido` | `REQUIRES_NEW` | Dejan un rastro que sobrevive al rollback de quien los llama. |
+| `PagoDAO.guardarEnNuevaTransaccion`, `actualizarEnNuevaTransaccion`, `ReclamoDAO.registrarIntentoFallido` | `REQUIRES_NEW` | Dejan un rastro que sobrevive al rollback de quien los llama. |
 | `ExpiradorDeHolds.expirar` (`@Timeout`), `barrerHoldsVencidos` (`@Schedule`) | `REQUIRES_NEW` | No tienen quien los llame: los invoca el contenedor, y cada vencimiento libera el turno en una transacción propia. |
 | `ServicioDeObrasSociales.validarCobertura`, `presentarReclamo` | `NOT_SUPPORTED` | Llamadas remotas que no persisten nada: no retienen una transacción. |
 | Excepciones de negocio e indisponibilidad | `@ApplicationException(rollback = true)` | Atraviesan el `fire()` sin envolverse en `EJBException`, revierten todo y llegan intactas al `ExceptionMapper`. |
 
-El evento `TurnoEnConfirmacion` se dispara antes de cambiar el estado y de cancelar el temporizador. Por eso, ante cualquier falla de un observador, el turno no llega a quedar `CONFIRMADO`, el hold sigue vivo y el paciente puede reintentar mientras dure. Antes del evento, `confirmarTurno` verifica que el hold sea del caller (403, sin revelar el estado de un turno ajeno) y después el estado y el vencimiento por `inicioHold` (409). `TurnoEnCancelacion`, igual, se dispara antes de marcar el turno `CANCELADO`. El comportamiento según el punto de falla es el siguiente:
+El evento `TurnoEnConfirmacion` se dispara antes de cambiar el estado y de cancelar el temporizador. Por eso, ante cualquier falla de un observador, el turno no llega a quedar `CONFIRMADO`, el hold sigue vivo y el paciente puede reintentar mientras dure. Antes del evento, `confirmarTurno` verifica que el hold sea del caller (403, sin revelar el estado de un turno ajeno) y después el estado y el vencimiento por `inicioHold` (409). `TurnoEnCancelacion`, igual, se dispara antes de marcar el turno `CANCELADO`. El lock de la fila (`TurnoDAO.buscarParaActualizar`) relee el turno al tomarlo: sin eso, el barrido de holds vencidos, que ya lo tenía cargado `EN_HOLD`, pisaba una confirmación recién commiteada y lo devolvía a `DISPONIBLE`. El comportamiento según el punto de falla es el siguiente:
 
 | Punto de falla | Excepción y respuesta | Estado en la base tras el rollback | Efecto fuera de la transacción |
 |---|---|---|---|
 | Legado caído al reservar | `ObraSocialNoDisponibleException`, 503 | Turno `DISPONIBLE`, sin hold ni autorización local | Ninguno |
 | Hold vencido antes de confirmar | `ConflictoDeNegocioException`, 409 | Turno liberado por `ExpiradorDeHolds` (o vencido según `inicioHold` si el timer se perdió en un reinicio) | Queda la autorización emitida por el legado, que no tiene operación de anulación |
 | Copago mayor a 0 sin token | `DatosInvalidosException`, 400 | Turno `EN_HOLD`, temporizador vivo | Ninguno |
-| Pasarela caída | `PasarelaNoDisponibleException`, 502 | Turno `EN_HOLD`; `Pago` en `PENDIENTE` (rastro `REQUIRES_NEW`) | Sin cobro |
-| Pago rechazado | `ConflictoDeNegocioException`, 409 | Turno `EN_HOLD`; `Pago` en `PENDIENTE` (el `RECHAZADO` se revierte) | Sin cobro |
+| Pasarela caída | `PasarelaNoDisponibleException`, 502 | Turno `EN_HOLD`; `Pago` en `PENDIENTE` (rastro `REQUIRES_NEW`, resultado desconocido) | Sin cobro |
+| Pago rechazado | `ConflictoDeNegocioException`, 409 | Turno `EN_HOLD`; `Pago` en `RECHAZADO` (guardado en `REQUIRES_NEW`) | Sin cobro |
 | Proveedor de video caído, con el cobro ya aprobado | `ProveedorDeVideoNoDisponibleException`, 503 | Turno `EN_HOLD`, sin `SesionVideo`; `Pago` en `PENDIENTE` sin id de transacción | **Cobro aprobado en la pasarela (huérfano)** y posible sala sin uso |
 | Falla al publicar o en el commit | Rollback total, 500 | Igual que la fila anterior | Igual que la fila anterior |
 | Falla de un suscriptor tras el commit | Reentrega de Artemis | Turno `CONFIRMADO`, intacto | Ninguno sobre la confirmación |
@@ -322,7 +322,7 @@ sequenceDiagram
 | Documento de 8 a 12 páginas con diagramas de secuencia de cada integración | Cumplido | Seis diagramas que cubren las siete integraciones |
 | Declaración del uso de IA generativa | Cumplido | §9 |
 
-**Verificación.** Pruebas de unidad con JUnit y Mockito (`mvn test`, 245 en verde en `main`), sin contenedor ni red, para las fachadas, los Adapter (incluidos los SOAP Fault simulados), los observadores y los simuladores, y 28 pruebas de la SPA con Vitest (`npm test`). La integración real se verifica contra el servidor desplegado con `deploy/smoke-test.sh` y la colección de Postman de `postman/` (con su entorno), que recorren seguridad, turnos, SOAP, telemedicina y el cobro al confirmar; el smoke test comprueba además que un pago rechazado responde 409 y deja el turno `EN_HOLD`.
+**Verificación.** Pruebas de unidad con JUnit y Mockito (`mvn test`, 255 en verde en `main`), sin contenedor ni red, para las fachadas, los Adapter (incluidos los SOAP Fault simulados), los observadores y los simuladores, y 28 pruebas de la SPA con Vitest (`npm test`). La integración real se verifica contra el servidor desplegado con `deploy/smoke-test.sh` y la colección de Postman de `postman/` (con su entorno), que recorren seguridad, turnos, SOAP, telemedicina y el cobro al confirmar; el smoke test comprueba además que un pago rechazado responde 409 y deja el turno `EN_HOLD`.
 
 **Pendiente para la entrega final.** La compensación del cobro huérfano (y del reembolso que precede a un commit fallido), la idempotencia del cobro y los timeouts del cliente de la pasarela (§6); la pantalla de historia clínica de la SPA (`HistoriaPage`, SCRUM-87, hoy con la ruta deshabilitada); un canal real de notificación en lugar del log; y la documentación final consolidada.
 

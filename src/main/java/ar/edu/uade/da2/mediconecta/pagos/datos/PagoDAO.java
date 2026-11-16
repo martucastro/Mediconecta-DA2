@@ -41,6 +41,17 @@ public class PagoDAO {
         return pago;
     }
 
+    /**
+     * Guarda el resultado del intento en una transacción propia, igual que
+     * guardarEnNuevaTransaccion. Lo usa ServicioDePagos cuando la pasarela
+     * rechaza el cobro: la confirmación del turno se revierte (409), pero el
+     * intento tiene que quedar RECHAZADO y no PENDIENTE para siempre.
+     */
+    @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
+    public Pago actualizarEnNuevaTransaccion(Pago pago) {
+        return em.merge(pago);
+    }
+
     public Pago actualizar(Pago pago) {
         return em.merge(pago);
     }
