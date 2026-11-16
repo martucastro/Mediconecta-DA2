@@ -2,6 +2,7 @@ package ar.edu.uade.da2.mediconecta;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.net.ConnectException;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,17 @@ class ErrorInesperadoMapperTest {
         Response respuesta = mapper.toResponse(new JsonbException("Invalid token=EOF"));
 
         assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), respuesta.getStatus());
+    }
+
+    @Test
+    void unaProcessingExceptionDeUnaLlamadaSalienteEs500() {
+        // Un cliente REST que no conecta tambien lanza ProcessingException:
+        // no es culpa del pedido, no puede ser 400.
+        Response respuesta = mapper.toResponse(new ProcessingException(
+                "RESTEASY004655: Unable to invoke request",
+                new ConnectException("Connection refused")));
+
+        assertEquals(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), respuesta.getStatus());
     }
 
     @Test
