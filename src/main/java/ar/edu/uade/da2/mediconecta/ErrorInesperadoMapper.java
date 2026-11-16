@@ -5,7 +5,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import jakarta.json.bind.JsonbException;
-import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -35,12 +34,10 @@ public class ErrorInesperadoMapper implements ExceptionMapper<Throwable> {
 
         // Un cuerpo que JSON-B no puede leer (JSON roto, un texto donde va un
         // numero, un enum o una fecha que no existen) llega como
-        // ProcessingException de RESTEasy: es un error del cliente, 400.
-        // Las llamadas salientes (pasarela, video) atrapan su propia
-        // ProcessingException, asi que aca solo llegan las de lectura.
-        // ponytail: un error al ESCRIBIR la respuesta tambien seria 400; si
-        // aparece, distinguirlo por la causa.
-        if (excepcion instanceof ProcessingException || excepcion instanceof JsonbException) {
+        // ProcessingException de RESTEasy con una JsonbException como causa:
+        // es un error del cliente, 400. Una ProcessingException por otra causa
+        // (un cliente saliente que no conecta) es un error nuestro y sigue al 500.
+        if (esErrorDeJsonb(excepcion)) {
             LOGGER.log(Level.INFO, "Cuerpo del pedido ilegible: {0}", excepcion.getMessage());
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(Map.of("error",
@@ -55,5 +52,14 @@ public class ErrorInesperadoMapper implements ExceptionMapper<Throwable> {
                 .entity("Error interno del servidor. Consulte el log para el detalle.")
                 .type("text/plain")
                 .build();
+    }
+
+    private static boolean esErrorDeJsonb(Throwable excepcion) {
+        for (Throwable t = excepcion; t != null; t = t.getCause()) {
+            if (t instanceof JsonbException) {
+                return true;
+            }
+        }
+        return false;
     }
 }

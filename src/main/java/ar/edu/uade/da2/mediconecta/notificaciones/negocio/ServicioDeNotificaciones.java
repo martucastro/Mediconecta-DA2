@@ -2,6 +2,8 @@ package ar.edu.uade.da2.mediconecta.notificaciones.negocio;
 
 import ar.edu.uade.da2.mediconecta.notificaciones.datos.Notificacion;
 import ar.edu.uade.da2.mediconecta.notificaciones.datos.NotificacionDAO;
+import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -10,6 +12,11 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import jakarta.annotation.Resource;
+import jakarta.annotation.security.PermitAll;
+import jakarta.annotation.security.RolesAllowed;
+import jakarta.ejb.EJBAccessException;
+import jakarta.ejb.SessionContext;
 import jakarta.ejb.Stateless;
 import jakarta.inject.Inject;
 
@@ -18,8 +25,14 @@ import jakarta.inject.Inject;
  * (email/SMS) todavia no existe: se simula con un log. El metodo enviar()
  * es el punto de extension pensado para un Strategy por canal el dia que
  * haya un proveedor real - cambia la implementacion de adentro, no la firma.
+ *
+ * @PermitAll de clase hace falta (mismo caso que ServicioDeFacturacion): en
+ * WildFly, con default-missing-method-permissions-deny-access en true, el
+ * @RolesAllowed de listarMias dejaria denegados los demas metodos, y
+ * NotificacionMDB no podria llamar a notificarTurnoConfirmado.
  */
 @Stateless
+@PermitAll
 public class ServicioDeNotificaciones {
 
     private static final Logger LOG = Logger.getLogger(ServicioDeNotificaciones.class.getName());
@@ -29,6 +42,12 @@ public class ServicioDeNotificaciones {
 
     @Inject
     private NotificacionDAO notificacionDAO;
+
+    @Inject
+    private ServicioDeUsuarios servicioDeUsuarios;
+
+    @Resource
+    private SessionContext contexto;
 
     public void notificarTurnoConfirmado(Long turnoId, Long pacienteId, String fechaHora) {
         // JMS entrega "al menos una vez": el mismo evento puede llegar dos veces.
@@ -70,7 +89,17 @@ public class ServicioDeNotificaciones {
         }
     }
 
-    public List<Notificacion> listarMias(Long pacienteId) {
-        return notificacionDAO.buscarPorPaciente(pacienteId);
+    /**
+     * Las notificaciones del paciente autenticado. El paciente sale del caller
+     * principal, nunca de un parametro.
+     */
+    @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
+    public List<Notificacion> listarMias() {
+        String email = contexto.getCallerPrincipal().getName();
+        Usuario paciente = servicioDeUsuarios.obtenerPorEmail(email);
+        if (paciente == null) {
+            throw new EJBAccessException("No se pudo resolver el usuario autenticado.");
+        }
+        return notificacionDAO.buscarPorPaciente(paciente.getId());
     }
 }

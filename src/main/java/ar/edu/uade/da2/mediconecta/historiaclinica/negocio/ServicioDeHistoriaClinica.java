@@ -147,6 +147,11 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
 
         if (datos.getRecetas() != null) {
             for (NuevaEntradaDTO datosReceta : datos.getRecetas()) {
+                // "recetas":[null] llega asi desde JSON-B; el rollback deshace
+                // lo ya guardado, igual que cuando el factory rechaza una receta.
+                if (datosReceta == null) {
+                    throw new DatosInvalidosException("Las recetas no pueden ser nulas.");
+                }
                 datosReceta.setTipo(TipoEntrada.RECETA);
                 EntradaClinica receta =
                         factory.crear(datosReceta, historia, autorId);
