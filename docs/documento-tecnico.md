@@ -697,19 +697,19 @@ sequenceDiagram
 
 #### 10.2.4 Cobro con la pasarela de pago (REST)
 
-Se puede invocar por separado (`POST /api/pagos`) y, además, `CobroAlConfirmar` invoca `ServicioDePagos.cobrar` al confirmar un turno con copago (SCRUM-93), dentro de la transacción de la confirmación.
+Solo lo invoca `CobroAlConfirmar`, que llama a `ServicioDePagos.cobrar` al confirmar un turno con copago (SCRUM-93), dentro de la transacción de la confirmación. No hay endpoint REST de cobro: `POST /api/pagos` se quitó porque permitía cobrar cualquier monto sobre cualquier turno, incluso uno ya confirmado.
 
 ```mermaid
 sequenceDiagram
-    participant Caller as SPA o caller autenticado
-    participant PagosResource
+    participant Caller as ServicioDeTurnos.confirmarTurno
+    participant Cobro as CobroAlConfirmar
     participant ServicioDePagos
     participant PagoDAO
     participant Adapter as PasarelaDePagoRestClient (Adapter)
     participant Simulador as Simulador POST /api/externo/pagos
 
-    Caller->>PagosResource: POST /api/pagos { turnoId, monto, moneda, tokenMedioDePago }
-    PagosResource->>ServicioDePagos: cobrar(CobroDTO) - REQUIRED
+    Caller->>Cobro: TurnoEnConfirmacion (evento CDI, misma transaccion)
+    Cobro->>ServicioDePagos: cobrar(CobroDTO) - REQUIRED
     activate ServicioDePagos
     ServicioDePagos->>ServicioDePagos: valida datos; verificarQueElTurnoEsDelCaller(turnoId)
     ServicioDePagos->>PagoDAO: guardarEnNuevaTransaccion(Pago) - REQUIRES_NEW, sobrevive si el cobro hace rollback despues
@@ -720,13 +720,13 @@ sequenceDiagram
         Simulador-->>Adapter: { status: APPROVED|REJECTED|REFUNDED, transactionId }
         Adapter-->>ServicioDePagos: ResultadoPasarela
         ServicioDePagos->>PagoDAO: actualizar(Pago con estado e idTransaccionExterna)
-        ServicioDePagos-->>PagosResource: Pago
-        PagosResource-->>Caller: 201 Created
+        ServicioDePagos-->>Cobro: Pago
+        Cobro-->>Caller: APROBADO sigue la confirmacion; RECHAZADO es 409 y rollback
     else HTTP distinto de 200, o sin conexion (ProcessingException)
         Simulador-->>Adapter: status != 200, o no responde
         Adapter-->>ServicioDePagos: PasarelaNoDisponibleException
-        ServicioDePagos-->>PagosResource: rollback de la transaccion del cobro (el Pago PENDIENTE en su propia tx sobrevive)
-        PagosResource-->>Caller: 502 Bad Gateway (PasarelaNoDisponibleMapper)
+        ServicioDePagos-->>Cobro: rollback de toda la confirmacion (el Pago PENDIENTE en su propia tx sobrevive)
+        Cobro-->>Caller: 502 Bad Gateway (PasarelaNoDisponibleMapper)
     end
     deactivate Adapter
     deactivate ServicioDePagos
