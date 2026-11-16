@@ -176,6 +176,17 @@ class ServicioDeUsuariosTest {
     }
 
     @Test
+    void elRegistroRechazaNombreOEmailDeMasDe255Caracteres() {
+        // Las columnas son varchar(255): sin esto el INSERT fallaba con 500.
+        String largo = "a".repeat(256);
+        assertThrows(DatosInvalidosException.class,
+                () -> servicio.registrarUsuario(largo, "ana@test.com", "PACIENTE", "cambiar123"));
+        assertThrows(DatosInvalidosException.class,
+                () -> servicio.registrarUsuario("Ana Perez", largo + "@test.com", "PACIENTE", "cambiar123"));
+        verify(usuarioDAO, never()).guardar(any());
+    }
+
+    @Test
     void unRegistroValidoGuardaAlPaciente() {
         Usuario nuevo = servicio.registrarUsuario("Ana Perez", "ana@test.com", "PACIENTE", "cambiar123");
 
