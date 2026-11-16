@@ -588,7 +588,7 @@ Operaciones `validarCobertura` y `autorizarPrestacion`, ambas con `dni`,
 
 Cualquier otro afiliado devuelve un SOAP Fault. OS-5005 existe para mostrar que
 MediConecta no se queda colgado: el Adapter corta a los 5 segundos. Los pedidos listos para usar
-están en la carpeta `05` de `postman/MediConecta-Demo.postman_collection.json`;
+están en la carpeta `06` de `postman/MediConecta-Demo.postman_collection.json`;
 también se puede importar el WSDL en SoapUI.
 
 Una tercera operación, `presentarReclamo` (`dni`, `numeroAfiliado`,

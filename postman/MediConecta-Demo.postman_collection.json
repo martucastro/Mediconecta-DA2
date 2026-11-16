@@ -24,7 +24,7 @@
     }
   ],
   "variable": [
-    { "key": "base_url", "value": "http://localhost:8080/api" },
+    { "key": "base_url", "value": "http://localhost:8080/mediconecta/api" },
     { "key": "soap_url", "value": "http://localhost:8080/mediconecta/legado/obrasocial" }
   ],
   "item": [
@@ -1297,7 +1297,226 @@
       ]
     },
     {
-      "name": "05 - Obra social legado (SOAP, sistema externo simulado)",
+      "name": "05 - Mensajeria asincronica (topico TurnoConfirmado, NotificacionMDB)",
+      "description": "Correr los 5 pedidos en orden, sin pausas largas, con la consola de WildFly a la vista. La confirmacion publica un mensaje en el topico TurnoConfirmado dentro de su transaccion; NotificacionMDB lo consume DESPUES, en otro hilo, asi que la respuesta HTTP no espera. Evidencia: (1) en el log, 'Notificacion simulada para paciente...' sale con un hilo distinto de '(default task-N)', el de la peticion; (2) el pedido 4 trae la notificacion que escribio el MDB, sin mirar el log.",
+      "item": [
+        {
+          "name": "1 - Abrir disponibilidad como PROFESIONAL (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.id) {",
+                  "    pm.environment.set('turno_id_async', jsonData.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional_email}}", "type": "string" },
+                { "key": "password", "value": "{{profesional_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/disponibilidad",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "disponibilidad"]
+            },
+            "description": "Guarda el id de la franja en turno_id_async."
+          }
+        },
+        {
+          "name": "2 - Reservar como PACIENTE_A (EN_HOLD)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservado: EN_HOLD', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "    pm.expect(pm.response.json().estado).to.eql('EN_HOLD');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_id_async}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": ["{{base_url}}"],
+              "path": ["turnos"]
+            },
+            "description": "El hold dura 5 minutos: confirmar antes (pedido 3)."
+          }
+        },
+        {
+          "name": "3 - Confirmar como PACIENTE_A (200, publica en el topico)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "// Hora local en que llego la respuesta HTTP, para ubicar en el log de WildFly (misma zona horaria) las lineas del confirmar y las del MDB.",
+                  "pm.environment.set('t_respuesta_confirmar', new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 23));",
+                  "console.log('Respuesta del PUT /confirmar a las ' + pm.environment.get('t_respuesta_confirmar') + ' (hora local). Ahora buscar en el log de WildFly: Notificacion simulada para paciente');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_id_async}}/confirmar",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "{{turno_id_async}}", "confirmar"]
+            },
+            "description": "ServicioDeTurnos.confirmarTurno cobra, confirma y publica TurnoConfirmado en la misma transaccion. La respuesta vuelve sin esperar a NotificacionMDB."
+          }
+        },
+        {
+          "name": "4 - Verificar la notificacion generada (PACIENTE_A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var turnoId = pm.environment.get('turno_id_async');",
+                  "var n = pm.response.json().find(function (x) { return String(x.turnoId) === String(turnoId); });",
+                  "pm.test('Hay una notificacion para el turno ' + turnoId + ' (si no aparece, reenviar este pedido: el MDB corre en otro hilo)', function () {",
+                  "    pm.expect(n, 'notificacion del turno').to.exist;",
+                  "});",
+                  "if (n) {",
+                  "    pm.test('Mensaje de turno confirmado, canal LOG', function () {",
+                  "        pm.expect(n.mensaje).to.include('Tu turno #' + turnoId + ' quedo confirmado');",
+                  "        pm.expect(n.canal).to.eql('LOG');",
+                  "    });",
+                  "    console.log('fechaEnvio de la notificacion: ' + n.fechaEnvio + ' | respuesta del confirmar: ' + pm.environment.get('t_respuesta_confirmar') + ' (hora local). La notificacion la escribe NotificacionMDB despues del commit de confirmarTurno, en otro hilo.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/notificaciones/mias",
+              "host": ["{{base_url}}"],
+              "path": ["notificaciones", "mias"]
+            },
+            "description": "Solo PACIENTE (otros roles: 403, sin credenciales: 401). Evidencia persistida de que NotificacionMDB consumio el mensaje, sin depender del log."
+          }
+        },
+        {
+          "name": "5 - Verificar el reclamo a la obra social (ADMINISTRADOR)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var turnoId = pm.environment.get('turno_id_async');",
+                  "var r = pm.response.json().find(function (x) { return String(x.turnoId) === String(turnoId); });",
+                  "pm.test('Hay un reclamo para el turno ' + turnoId + ' (si no aparece, reenviar este pedido: pasa por el topico, la cola y el SOAP)', function () {",
+                  "    pm.expect(r, 'reclamo del turno').to.exist;",
+                  "});",
+                  "if (r) {",
+                  "    pm.test('Reclamo ENVIADO (o PENDIENTE si todavia esta en la cola)', function () {",
+                  "        pm.expect(['ENVIADO', 'PENDIENTE']).to.include(r.estado);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/reclamos",
+              "host": ["{{base_url}}"],
+              "path": ["reclamos"]
+            },
+            "description": "El segundo suscriptor del topico (TurnoConfirmadoFacturacionMDB) registra el reclamo y lo encola; ReclamoMDB lo presenta por SOAP. Solo ADMINISTRADOR. Si el paciente de la demo no tiene obra social, el turno puede no generar reclamo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Obra social legado (SOAP, sistema externo simulado)",
       "description": "Endpoint JAX-WS que simula el sistema legado de la obra social. No requiere autenticacion. Independiente del resto de las carpetas.",
       "item": [
         {
@@ -1631,7 +1850,7 @@
       ]
     },
     {
-      "name": "06 - ServicioDeTelemedicina (proveedor de video simulado)",
+      "name": "07 - ServicioDeTelemedicina (proveedor de video simulado)",
       "description": "SCRUM-99. Primero se ejercita el proveedor de video simulado solo, como un tercero (POST /externo/salas, sin autenticacion). Despues el componente: se crea y consulta la sesion de un turno de telemedicina sin pasar por la confirmacion del turno (al final, SCRUM-95: confirmar un turno de telemedicina crea la sala sola). Cada participante recibe solo su enlace; un tercero recibe 403.",
       "item": [
         {

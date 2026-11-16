@@ -280,7 +280,7 @@ Límites que siguen vigentes:
 - La traducción del cliente REST.
 - El simulador del proveedor, incluida la caída.
 
-La llamada HTTP real y el cableado de seguridad se verifican con `deploy/smoke-test.sh` y la carpeta 06 de la colección de Postman.
+La llamada HTTP real y el cableado de seguridad se verifican con `deploy/smoke-test.sh` y la carpeta 07 de la colección de Postman.
 
 ## 7. Autenticación y autorización
 
