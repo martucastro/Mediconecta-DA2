@@ -257,6 +257,19 @@ class ServicioDeTurnosTest {
     }
 
     @Test
+    void noSePuedeReservarUnaFranjaQueYaPaso() {
+        Turno turno = new Turno(profesional, LocalDateTime.now().minusHours(1));
+        turno.setId(12L);
+        prepararReserva(turno);
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.reservarTurno(12L));
+        assertEquals(EstadoTurno.DISPONIBLE, turno.getEstado());
+        assertNull(turno.getPaciente());
+        assertTrue(eventoReserva.disparados().isEmpty());
+        verify(expirador, never()).programar(anyLong(), anyLong());
+    }
+
+    @Test
     void siUnObservadorDeLaReservaFallaNoQuedaHold() {
         Turno turno = turnoDisponible(11L);
         prepararReserva(turno);

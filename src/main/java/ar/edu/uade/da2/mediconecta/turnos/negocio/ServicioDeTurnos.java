@@ -221,6 +221,10 @@ public class ServicioDeTurnos {
             throw new ConflictoDeNegocioException(
                     "El turno ya no esta disponible: esta " + turno.getEstado());
         }
+        // La agenda todavia lista franjas DISPONIBLE ya pasadas; reservarlas no.
+        if (turno.getFechaHora().isBefore(LocalDateTime.now())) {
+            throw new ConflictoDeNegocioException("El turno ya paso: no se puede reservar");
+        }
 
         turno.setPaciente(paciente);
 
