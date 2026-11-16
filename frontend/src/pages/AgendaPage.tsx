@@ -98,13 +98,24 @@ export default function AgendaPage() {
       })
       .catch((err: unknown) => {
         if (cancelado) return
-        setTurnos([])
+        // Si falla un refresco de fondo se sigue mostrando la lista que habia.
+        setTurnos((actual) => actual ?? [])
         setErrorLista(err instanceof Error ? err.message : 'No se pudo cargar la agenda')
       })
     return () => {
       cancelado = true
     }
   }, [dia, recarga])
+
+  // Refresco liviano: un hold que vencio o una reserva hecha por un paciente
+  // aparecen sin recargar la pagina. No vacia la lista (no muestra
+  // "Cargando..."), y con la pagina en segundo plano no pide nada.
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      if (document.visibilityState === 'visible') setRecarga((n) => n + 1)
+    }, 15_000)
+    return () => clearInterval(intervalo)
+  }, [])
 
   // Solo hace falta un reloj si hay algun hold que mostrar descontando.
   const hayHolds = turnos?.some((t) => t.estado === 'EN_HOLD') ?? false
@@ -117,6 +128,9 @@ export default function AgendaPage() {
   function cambiarDia(nuevo: string) {
     setTurnos(null)
     setDia(nuevo)
+    // Sin esto, "Hoy" estando ya en hoy no cambia dia, el efecto no vuelve a
+    // pedir la agenda y queda "Cargando la agenda..." para siempre.
+    setRecarga((n) => n + 1)
     setHoraNueva(horaSugerida(nuevo, new Date()))
     setErrorAlta('')
   }
