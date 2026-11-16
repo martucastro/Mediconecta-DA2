@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.logging.Logger;
@@ -56,6 +57,12 @@ public class ExpiradorDeHolds {
     @Inject
     private TurnoDAO turnoDAO;
 
+    // De donde sale "ahora" para decidir que holds vencieron. En produccion es
+    // el reloj del sistema; los tests lo reemplazan por un reloj fijo para que
+    // el limite del barrido no dependa de cuando corren (SCRUM-118). No lleva
+    // @Inject: no hay un productor CDI de Clock y no hace falta uno.
+    private Clock reloj = Clock.systemDefaultZone();
+
     /**
      * Programa la liberacion automatica de un turno retenido.
      * El id del turno viaja como info del timer para poder identificarlo despues.
@@ -97,7 +104,7 @@ public class ExpiradorDeHolds {
     @Schedule(hour = "*", minute = "*", second = "0", persistent = false)
     @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
     public void barrerHoldsVencidos() {
-        LocalDateTime limite = LocalDateTime.now().minusNanos(DURACION_HOLD_MS * 1_000_000);
+        LocalDateTime limite = LocalDateTime.now(reloj).minusNanos(DURACION_HOLD_MS * 1_000_000);
         List<Turno> vencidos = turnoDAO.listarHoldsVencidos(limite);
         for (Turno turno : vencidos) {
             liberar(turno.getId(), "barrido");
