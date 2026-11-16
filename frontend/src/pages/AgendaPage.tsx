@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import BotonCerrarSesion from './BotonCerrarSesion'
 import { api, obtenerSesion } from '../api'
+import { claveDelDia, horaSugerida } from '../fechas'
 import { type ModalidadTurno, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
@@ -19,11 +20,6 @@ const MESES = [
 
 function dosDigitos(n: number): string {
   return String(n).padStart(2, '0')
-}
-
-/** AAAA-MM-DD en hora local: el formato que espera ?fecha= y el input date. */
-function claveDelDia(fecha: Date): string {
-  return `${fecha.getFullYear()}-${dosDigitos(fecha.getMonth() + 1)}-${dosDigitos(fecha.getDate())}`
 }
 
 function moverDias(clave: string, dias: number): string {
@@ -84,7 +80,7 @@ export default function AgendaPage() {
   const [recarga, setRecarga] = useState(0)
   const [ahora, setAhora] = useState(() => Date.now())
 
-  const [horaNueva, setHoraNueva] = useState('09:00')
+  const [horaNueva, setHoraNueva] = useState(() => horaSugerida(dia, new Date()))
   const [modalidad, setModalidad] = useState<ModalidadTurno>('PRESENCIAL')
   const [consultorio, setConsultorio] = useState('')
   const [errorAlta, setErrorAlta] = useState('')
@@ -102,13 +98,24 @@ export default function AgendaPage() {
       })
       .catch((err: unknown) => {
         if (cancelado) return
-        setTurnos([])
+        // Si falla un refresco de fondo se sigue mostrando la lista que habia.
+        setTurnos((actual) => actual ?? [])
         setErrorLista(err instanceof Error ? err.message : 'No se pudo cargar la agenda')
       })
     return () => {
       cancelado = true
     }
   }, [dia, recarga])
+
+  // Refresco liviano: un hold que vencio o una reserva hecha por un paciente
+  // aparecen sin recargar la pagina. No vacia la lista (no muestra
+  // "Cargando..."), y con la pagina en segundo plano no pide nada.
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      if (document.visibilityState === 'visible') setRecarga((n) => n + 1)
+    }, 15_000)
+    return () => clearInterval(intervalo)
+  }, [])
 
   // Solo hace falta un reloj si hay algun hold que mostrar descontando.
   const hayHolds = turnos?.some((t) => t.estado === 'EN_HOLD') ?? false
@@ -121,6 +128,11 @@ export default function AgendaPage() {
   function cambiarDia(nuevo: string) {
     setTurnos(null)
     setDia(nuevo)
+    // Sin esto, "Hoy" estando ya en hoy no cambia dia, el efecto no vuelve a
+    // pedir la agenda y queda "Cargando la agenda..." para siempre.
+    setRecarga((n) => n + 1)
+    setHoraNueva(horaSugerida(nuevo, new Date()))
+    setErrorAlta('')
   }
 
   async function abrirHorario(e: FormEvent<HTMLFormElement>) {
@@ -152,6 +164,8 @@ export default function AgendaPage() {
   const enHold = lista.filter((t) => t.estado === 'EN_HOLD').length
   const telemedicina = lista.filter((t) => t.modalidad === 'TELEMEDICINA' && t.estado !== 'CANCELADO').length
   const tomados = lista.filter((t) => t.estado === 'CONFIRMADO' || t.estado === 'EN_HOLD').length
+  // En un dia que ya paso no se puede abrir un horario: el backend lo rechaza.
+  const diaPasado = dia < claveDelDia(new Date())
 
   return (
     <>
@@ -162,10 +176,10 @@ export default function AgendaPage() {
         </Link>
         <nav className="nav">
           <Link to="/agenda" aria-current="page">Mi agenda</Link>
-          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="" />
           <BotonCerrarSesion />
         </nav>
-        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="" />
       </header>
 
       <main className="content stack" style={{ gap: 26 }}>
@@ -182,7 +196,7 @@ export default function AgendaPage() {
         </div>
 
         <div className="stats">
-          <div className="card stat"><strong>{tomados}</strong><span>Turnos del día</span></div>
+          <div className="card stat"><strong>{tomados}</strong><span>Turnos tomados</span></div>
           <div className="card stat"><strong style={{ color: 'var(--success)' }}>{confirmados}</strong><span>Confirmados</span></div>
           <div className="card stat"><strong style={{ color: 'var(--accent)' }}>{enHold}</strong><span>En hold</span></div>
           <div className="card stat"><strong style={{ color: 'var(--primary)' }}>{telemedicina}</strong><span>Telemedicina</span></div>
@@ -221,32 +235,34 @@ export default function AgendaPage() {
           </ul>
         )}
 
-        <form className="card stack" onSubmit={abrirHorario} style={{ gap: 16, padding: 22 }} noValidate>
-          <h2 className="h2" style={{ fontSize: 18 }}>Abrir un horario el {titulo(dia).toLowerCase()}</h2>
-          <div className="row" style={{ gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div className="field">
-              <label htmlFor="hora-nueva">HORA</label>
-              <input className="input" id="hora-nueva" type="time" required value={horaNueva} onChange={(e) => setHoraNueva(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="modalidad-nueva">MODALIDAD</label>
-              <select className="input" id="modalidad-nueva" value={modalidad} onChange={(e) => setModalidad(e.target.value as ModalidadTurno)}>
-                <option value="PRESENCIAL">Presencial</option>
-                <option value="TELEMEDICINA">Telemedicina</option>
-              </select>
-            </div>
-            {modalidad === 'PRESENCIAL' && (
+        {!diaPasado && (
+          <form className="card stack" onSubmit={abrirHorario} style={{ gap: 16, padding: 22 }} noValidate>
+            <h2 className="h2" style={{ fontSize: 18 }}>Abrir un horario el {titulo(dia).toLowerCase()}</h2>
+            <div className="row" style={{ gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <div className="field">
-                <label htmlFor="consultorio-nuevo">CONSULTORIO (OPCIONAL)</label>
-                <input className="input" id="consultorio-nuevo" maxLength={60} value={consultorio} onChange={(e) => setConsultorio(e.target.value)} />
+                <label htmlFor="hora-nueva">HORA</label>
+                <input className="input" id="hora-nueva" type="time" required value={horaNueva} onChange={(e) => setHoraNueva(e.target.value)} />
               </div>
-            )}
-            <button className="btn btn-primary" type="submit" disabled={abriendo || !horaNueva}>
-              {abriendo ? 'Abriendo...' : 'Abrir horario'}
-            </button>
-          </div>
-          {errorAlta && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{errorAlta}</p>}
-        </form>
+              <div className="field">
+                <label htmlFor="modalidad-nueva">MODALIDAD</label>
+                <select className="input" id="modalidad-nueva" value={modalidad} onChange={(e) => setModalidad(e.target.value as ModalidadTurno)}>
+                  <option value="PRESENCIAL">Presencial</option>
+                  <option value="TELEMEDICINA">Telemedicina</option>
+                </select>
+              </div>
+              {modalidad === 'PRESENCIAL' && (
+                <div className="field">
+                  <label htmlFor="consultorio-nuevo">CONSULTORIO (OPCIONAL)</label>
+                  <input className="input" id="consultorio-nuevo" maxLength={60} value={consultorio} onChange={(e) => setConsultorio(e.target.value)} />
+                </div>
+              )}
+              <button className="btn btn-primary" type="submit" disabled={abriendo || !horaNueva}>
+                {abriendo ? 'Abriendo...' : 'Abrir horario'}
+              </button>
+            </div>
+            {errorAlta && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{errorAlta}</p>}
+          </form>
+        )}
       </main>
     </>
   )

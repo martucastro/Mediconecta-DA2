@@ -26,6 +26,11 @@ const MEDIOS_DE_PAGO = [
 
 type Estado = 'reservado' | 'enviando' | 'confirmado' | 'vencido'
 
+// Un 403 al confirmar o liberar es que el hold es de otra cuenta (por ejemplo,
+// se inicio sesion con otro paciente en la misma pestana): reintentar no sirve,
+// asi que se trata como un hold vencido.
+const RESERVA_AJENA = 'Esta reserva no es de tu cuenta. Elegí otro horario para reservar.'
+
 function dosDigitos(n: number): string {
   return String(n).padStart(2, '0')
 }
@@ -110,6 +115,12 @@ export default function HoldPage() {
       limpiarTurnoEnHold()
       setEstado('confirmado')
     } catch (err) {
+      if (err instanceof ApiError && err.estado === 403) {
+        limpiarTurnoEnHold()
+        setEstado('vencido')
+        setError(RESERVA_AJENA)
+        return
+      }
       // Un 409 con el hold todavia corriendo es un copago rechazado: la
       // confirmacion se revirtio, el turno sigue reservado y se puede reintentar
       // con otro medio de pago (igual que tras un 502 o un 400).
@@ -138,6 +149,13 @@ export default function HoldPage() {
     try {
       await api<TurnoDTO>(`/turnos/${turno.id}/cancelar`, { method: 'PUT' })
     } catch (err) {
+      if (err instanceof ApiError && err.estado === 403) {
+        limpiarTurnoEnHold()
+        setEstado('vencido')
+        setError(RESERVA_AJENA)
+        enviando.current = false
+        return
+      }
       // Un 409 es que el hold ya habia vencido: el turno igual quedo libre.
       // Cualquier otro error (por ejemplo, sin conexion) deja el turno
       // retenido, asi que se informa en vez de salir como si se hubiera liberado.
@@ -164,7 +182,7 @@ export default function HoldPage() {
           MediConecta
         </Link>
         <Link className="m" to="/disponibilidad" style={{ fontWeight: 500 }}>← Turno</Link>
-        <img className="avatar d" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar d" src={ASSETS.avatar} alt="" />
         <img className="m" src={ASSETS.logo} alt="MediConecta" style={{ width: 18, height: 18 }} />
       </header>
 
@@ -174,7 +192,7 @@ export default function HoldPage() {
             {confirmado ? (
               <>
                 <span className="label-caps">TURNO CONFIRMADO</span>
-                <p>Te vamos a avisar por notificación. Podés verlo en tu inicio.</p>
+                <p>Podés verlo en tu inicio.</p>
               </>
             ) : vencido ? (
               <>

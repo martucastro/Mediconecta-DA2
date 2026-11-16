@@ -114,10 +114,10 @@ export default function HomePage() {
         </Link>
         <nav className="nav">
           <Link to="/home" aria-current="page">Mis turnos</Link>
-          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="" />
           <BotonCerrarSesion />
         </nav>
-        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="" />
       </header>
 
       <main className="content home">

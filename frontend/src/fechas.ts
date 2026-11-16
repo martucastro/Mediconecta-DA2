@@ -76,6 +76,30 @@ function dosDigitos(n: number): string {
   return String(n).padStart(2, '0')
 }
 
+/** AAAA-MM-DD en hora local (no toISOString: eso pasa a UTC y puede correr el dia). */
+export function claveDelDia(fecha: Date): string {
+  return `${fecha.getFullYear()}-${dosDigitos(fecha.getMonth() + 1)}-${dosDigitos(fecha.getDate())}`
+}
+
+/**
+ * Los turnos que todavia no empezaron. El backend lista tambien franjas
+ * DISPONIBLE ya pasadas, y reservarlas da 409. Una fecha ilegible se descarta.
+ */
+export function soloFuturos<T extends { fechaHora: string }>(turnos: T[], ahora: number): T[] {
+  return turnos.filter((t) => {
+    const cuando = instante(t.fechaHora)
+    return cuando !== null && cuando > ahora
+  })
+}
+
+/** Hora que propone "Abrir horario": la proxima hora en punto si el dia es hoy, 09:00 si no. */
+export function horaSugerida(dia: string, ahora: Date): string {
+  if (dia !== claveDelDia(ahora)) return '09:00'
+  // ponytail: despues de las 23 propone 23:00 (ya pasada) y el backend avisa
+  // que no se puede abrir una franja en el pasado.
+  return `${dosDigitos(Math.min(ahora.getHours() + 1, 23))}:00`
+}
+
 /** "14:30" */
 export function formatearHora(f: FechaHoraLocal): string {
   return `${dosDigitos(f.hora)}:${dosDigitos(f.minuto)}`

@@ -24,6 +24,8 @@ public class ErrorInesperadoMapper implements ExceptionMapper<Throwable> {
 
     private static final Logger LOGGER = Logger.getLogger(ErrorInesperadoMapper.class.getName());
 
+    private static final int MAX_CAUSAS = 10;
+
     @Override
     public Response toResponse(Throwable excepcion) {
         // Las excepciones propias de JAX-RS (404, 415, etc.) ya traen su
@@ -55,7 +57,12 @@ public class ErrorInesperadoMapper implements ExceptionMapper<Throwable> {
     }
 
     private static boolean esErrorDeJsonb(Throwable excepcion) {
-        for (Throwable t = excepcion; t != null; t = t.getCause()) {
+        // Tope de saltos: una cadena de causas puede formar un ciclo (A -> B -> A)
+        // y recorrerla sin limite colgaria el hilo del pedido.
+        // ponytail: con RESTEasy la JsonbException esta a 1 o 2 saltos; si
+        // apareciera mas abajo de MAX_CAUSAS, el pedido sale como 500.
+        int saltos = 0;
+        for (Throwable t = excepcion; t != null && saltos++ < MAX_CAUSAS; t = t.getCause()) {
             if (t instanceof JsonbException) {
                 return true;
             }

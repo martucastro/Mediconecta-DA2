@@ -1,8 +1,10 @@
 package ar.edu.uade.da2.mediconecta;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.net.ConnectException;
+import java.time.Duration;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -43,6 +45,19 @@ class ErrorInesperadoMapperTest {
         Response respuesta = mapper.toResponse(new ProcessingException(
                 "RESTEASY004655: Unable to invoke request",
                 new ConnectException("Connection refused")));
+
+        assertEquals(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), respuesta.getStatus());
+    }
+
+    @Test
+    void unaCadenaDeCausasCiclicaTerminaEn500() {
+        // getCause() puede formar un ciclo (A -> B -> A): recorrerlo sin tope
+        // colgaria el hilo del pedido para siempre.
+        RuntimeException a = new RuntimeException("a");
+        RuntimeException b = new RuntimeException("b", a);
+        a.initCause(b);
+
+        Response respuesta = assertTimeoutPreemptively(Duration.ofSeconds(2), () -> mapper.toResponse(a));
 
         assertEquals(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), respuesta.getStatus());
     }

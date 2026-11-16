@@ -59,7 +59,7 @@ export default function LoginPage() {
           MediConecta
         </div>
         <div>
-          <h1 className="brand-pitch">Turnos, telemedicina e historia clínica en un solo lugar.</h1>
+          <h1 className="brand-pitch">Turnos y telemedicina en un solo lugar.</h1>
           <p className="brand-sub">Reservá con tu obra social validada en el momento. Sin llamados, sin esperas.</p>
         </div>
         <p className="brand-foot">Universidad Argentina de la Empresa<br />Desarrollo de Aplicaciones II</p>
