@@ -2,6 +2,7 @@ package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
@@ -183,10 +184,12 @@ public class ServicioDeTurnos {
         // duplicados y hbm2ddl update fallaria al agregarla.
         // ponytail: dos pedidos simultaneos aun pueden colarse; restriccion
         // unica parcial si alguna vez hace falta.
+        // Se compara al minuto: 10:00:00 y 10:00:30 son la misma franja.
+        LocalDateTime minuto = fechaHora.truncatedTo(ChronoUnit.MINUTES);
         boolean ocupada = turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate())
                 .stream()
                 .anyMatch(t -> t.getEstado() != EstadoTurno.CANCELADO
-                        && t.getFechaHora().equals(fechaHora));
+                        && t.getFechaHora().truncatedTo(ChronoUnit.MINUTES).equals(minuto));
         if (ocupada) {
             throw new ConflictoDeNegocioException("El profesional ya tiene una franja abierta el " + fechaHora);
         }

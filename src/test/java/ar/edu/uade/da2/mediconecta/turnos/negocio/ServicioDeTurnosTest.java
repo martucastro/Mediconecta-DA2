@@ -143,6 +143,19 @@ class ServicioDeTurnosTest {
     }
 
     @Test
+    void laMismaFranjaConOtrosSegundosTambienEstaOcupada() {
+        autenticadoComo(profesional);
+        LocalDateTime minuto = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        LocalDateTime pedida = minuto.plusSeconds(42);
+        when(turnoDAO.listarPorProfesional(profesional.getId(), pedida.toLocalDate()))
+                .thenReturn(List.of(new Turno(profesional, minuto.plusSeconds(15).plusNanos(9))));
+
+        assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.abrirDisponibilidad(pedida, null, null));
+        verify(turnoDAO, never()).guardar(any());
+    }
+
+    @Test
     void unaFranjaCanceladaNoImpideVolverAAbrirEseHorario() {
         autenticadoComo(profesional);
         LocalDateTime fechaHora = LocalDateTime.now().plusDays(1).withNano(0);
