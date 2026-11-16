@@ -317,7 +317,7 @@ sequenceDiagram
 
 **Verificación.** Pruebas de unidad con JUnit y Mockito (`mvn test`, 199 en verde en la rama de integración de esta entrega), sin contenedor ni red, para las fachadas, los Adapter (incluidos los SOAP Fault simulados), los observadores y los simuladores. La integración real se verifica contra el servidor desplegado con `deploy/smoke-test.sh` y las colecciones de Postman de `postman/` y `deploy/`, que recorren seguridad, turnos, SOAP, telemedicina y el cobro al confirmar; el smoke test comprueba además que un pago rechazado responde 409 y deja el turno `EN_HOLD`.
 
-**Pendiente para la entrega final.** La compensación del cobro huérfano, la idempotencia del cobro y los timeouts del cliente de la pasarela (§6); la baja de la autorización remota cuando un hold vence o se cancela; las pantallas `HomePage` e `HistoriaPage` de la SPA, que todavía muestran datos de prototipo; un canal real de notificación en lugar del log; y la documentación final consolidada.
+**Pendiente para la entrega final.** La compensación del cobro huérfano, la idempotencia del cobro y los timeouts del cliente de la pasarela (§6); la baja de la autorización remota cuando un hold vence o se cancela; la pantalla `HistoriaPage` de la SPA, que todavía muestra datos de prototipo (la home del paciente ya muestra su próximo turno real); un canal real de notificación en lugar del log; y la documentación final consolidada.
 
 ## 9. Uso de inteligencia artificial generativa
 
