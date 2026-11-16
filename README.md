@@ -213,10 +213,22 @@ WFLYSRV0010: Deployed "mediconecta.war"
 bash deploy/smoke-test.sh
 ```
 
-Recorre el flujo completo y comprueba la seguridad. El último caso espera cinco
-minutos a propósito, porque verifica que el contenedor libere el hold vencido.
-Para saltearlo: `bash deploy/smoke-test.sh --rapido`. Toma las contraseñas de
-las mismas variables `MEDICONECTA_*_PASSWORD` (por defecto `cambiar123`).
+Recorre el flujo completo y comprueba la seguridad, el copago y su registro de
+pagos, la sala de video, las notificaciones y los reclamos (que los consumen los
+MDB después del commit, por eso el script reintenta unos segundos antes de dar
+algo por perdido) y la falla de la pasarela de pago (502, 400 y recuperación).
+El último caso espera cinco minutos a propósito, porque verifica que el
+contenedor libere el hold vencido. Toma las contraseñas de las mismas variables
+`MEDICONECTA_*_PASSWORD` (por defecto `cambiar123`).
+
+| Opción | Qué hace |
+|---|---|
+| `--rapido` | Saltea la espera de cinco minutos del hold. |
+| `--resiliencia` | Agrega la demo de fallas del legado de la obra social (reserva 503 y reintentos del reclamo) y del proveedor de video (503). Las provoca con system properties de WildFly, así que necesita `JBOSS_CLI` con la ruta a `jboss-cli.sh` o `jboss-cli.bat`; las quita siempre al terminar, incluso si el script se interrumpe. |
+
+```bash
+JBOSS_CLI=$WILDFLY_HOME/bin/jboss-cli.sh bash deploy/smoke-test.sh --rapido --resiliencia
+```
 
 Abre franjas en horarios fijos, así que **una segunda corrida contra la misma
 base falla** con `409` al abrir disponibilidad (el profesional ya tiene esa
