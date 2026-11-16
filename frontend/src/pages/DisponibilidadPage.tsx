@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { soloFuturos } from '../fechas'
 import { guardarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
@@ -65,9 +65,14 @@ function agruparPorDia(turnos: TurnoDTO[]): Map<string, TurnoDTO[]> {
 export default function DisponibilidadPage() {
   useTitulo('Disponibilidad')
   const navigate = useNavigate()
+  // Al liberar un hold, HoldPage vuelve aca con el profesional que se estaba
+  // mirando, para no tener que elegirlo de nuevo.
+  const { state } = useLocation()
 
   const [profesionales, setProfesionales] = useState<ProfesionalDTO[] | null>(null)
-  const [profesionalId, setProfesionalId] = useState<number | null>(null)
+  const [profesionalId, setProfesionalId] = useState<number | null>(
+    () => (state as { profesionalId?: number } | null)?.profesionalId ?? null,
+  )
   const [turnos, setTurnos] = useState<TurnoDTO[] | null>(null)
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
   const [turnoSeleccionado, setTurnoSeleccionado] = useState<TurnoDTO | null>(null)
@@ -262,6 +267,9 @@ export default function DisponibilidadPage() {
                     onClick={() => setTurnoSeleccionado(turno)}
                   >
                     {formatearHora(turno.fechaHora)}
+                    <small className="slot-modalidad">
+                      {turno.modalidad === 'TELEMEDICINA' ? 'Telemedicina' : 'Presencial'}
+                    </small>
                   </button>
                 ))}
               </div>
