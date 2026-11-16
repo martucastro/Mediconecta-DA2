@@ -196,6 +196,8 @@ export default function AgendaPage() {
             <button type="button" className="btn card" aria-label="Día anterior" onClick={() => cambiarDia(moverDias(dia, -1))} style={{ padding: '11px 16px', borderRadius: 8 }}>←</button>
             <button type="button" className="btn card" onClick={() => cambiarDia(claveDelDia(new Date()))} style={{ padding: '11px 16px', borderRadius: 8 }}>Hoy</button>
             <button type="button" className="btn card" aria-label="Día siguiente" onClick={() => cambiarDia(moverDias(dia, 1))} style={{ padding: '11px 16px', borderRadius: 8 }}>→</button>
+            {/* ponytail: native date picker, the browser already handles months and years */}
+            <input className="input" type="date" aria-label="Ir a una fecha" value={dia} onChange={(e) => e.target.value && cambiarDia(e.target.value)} style={{ width: 'auto' }} />
           </div>
         </div>
 
