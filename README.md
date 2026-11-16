@@ -9,12 +9,12 @@ Trabajo Práctico Integrador de Desarrollo de Aplicaciones II, comisión Lunes T
 
 ## Qué hay implementado
 
-Siete componentes de negocio, cada uno con su arquitectura en capas:
+Ocho componentes de negocio, cada uno con su arquitectura en capas:
 
 | Componente | Tipo | Responsabilidad |
 |---|---|---|
 | `ServicioDeUsuarios` | `@Stateless` | Registro, autenticación, perfiles y credenciales |
-| `ServicioDeTurnos` | `@Stateful` | Disponibilidad, reserva, hold de 5 minutos, confirmación |
+| `ServicioDeTurnos` | `@Stateful` | Disponibilidad, reserva, hold de 5 minutos, confirmación y cancelación |
 | `ServicioDeHistoriaClinica` | `@Stateless` | Antecedentes, diagnósticos y recetas |
 | `ServicioDeNotificaciones` | `@Stateless` (con `NotificacionMDB` como `@MessageDriven` colaborador) | Recordatorio de turno confirmado, consumido del tópico JMS |
 | `ServicioDeObrasSociales` | `@Stateless`, Adapter SOAP | Cobertura y autorización contra el legado de la obra social |
@@ -92,6 +92,28 @@ $WILDFLY_HOME/bin/add-user.sh -u admin -p 'Admin123!' -s     # Linux y macOS
 %WILDFLY_HOME%\bin\add-user.bat -u admin -p Admin123! -s     # Windows
 ```
 
+Antes de arrancarlo, definí las contraseñas de los usuarios de prueba en la
+consola desde la que lo vas a arrancar: el seed (`SeedDeUsuariosIniciales`) las
+lee del entorno del proceso de WildFly, y **solo cuando la tabla de usuarios
+está vacía**, es decir al desplegar por primera vez contra una base nueva
+(paso 4). Sin las variables genera contraseñas al azar (ver
+[Usuarios de prueba](#usuarios-de-prueba)). El smoke test y las colecciones de
+Postman esperan `cambiar123`:
+
+```bash
+# Linux y macOS
+export MEDICONECTA_ADMIN_PASSWORD=cambiar123
+export MEDICONECTA_PROFESIONAL_PASSWORD=cambiar123
+export MEDICONECTA_PACIENTE_PASSWORD=cambiar123
+```
+
+```bat
+:: Windows (cmd)
+set MEDICONECTA_ADMIN_PASSWORD=cambiar123
+set MEDICONECTA_PROFESIONAL_PASSWORD=cambiar123
+set MEDICONECTA_PACIENTE_PASSWORD=cambiar123
+```
+
 Arrancá el servidor **con el perfil full (`standalone-full.xml`), es un
 requisito**: es el que incluye el subsistema de mensajería (`messaging-activemq`)
 donde el script de configuración crea el tópico y la cola JMS. Con
@@ -124,7 +146,13 @@ la integración de Jakarta Security y crea los destinos JMS:
 | `ReclamosFacturacionQueue` | Cola | `java:/jms/queue/ReclamosFacturacion` | Reclamos de facturación a la obra social |
 | `ReclamosFacturacionDLQ` | Cola | `java:/jms/queue/ReclamosFacturacionDLQ` | Reclamos que fallaron en todos los reintentos |
 
-Es idempotente: se puede correr de nuevo sin romper nada.
+Es idempotente: se puede correr de nuevo sin romper nada. Pero si el
+datasource ya existe, volver a correrlo **no** actualiza su usuario ni su
+clave: para cambiarlos, borralo primero y después corré el script de nuevo.
+
+```bash
+$WILDFLY_HOME/bin/jboss-cli.sh --connect --commands="/subsystem=datasources/data-source=MediConectaDS:remove,reload"
+```
 
 **Por qué uno es un tópico y el otro una cola.** El turno confirmado es un
 evento: le puede interesar a más de un componente a la vez (notificaciones hoy,
@@ -134,10 +162,12 @@ sola vez; si dos lo tomaran, la obra social recibiría el reclamo duplicado. Eso
 es una cola punto a punto.
 
 **Reintentos de la cola de reclamos.** Si el consumidor falla, Artemis
-reintenta la entrega hasta 5 veces, esperando 2 s, 4 s, 8 s… (máximo 30 s)
+entrega el mensaje hasta 5 veces, esperando 2 s, 4 s, 8 s… (máximo 30 s)
 entre intentos, para dar tiempo a que la obra social vuelva si estaba caída.
-Después del quinto fallo el reclamo pasa a `ReclamosFacturacionDLQ`, donde
-queda para revisarlo o reenviarlo a mano en vez de reintentarse para siempre.
+Si la obra social sigue sin responder en el quinto intento, el reclamo pasa a
+`EN_REVISION_MANUAL` y el mensaje se confirma. A `ReclamosFacturacionDLQ`
+llegan solo los mensajes cuyas cinco entregas fallan por un error no previsto
+(por ejemplo, la base caída), para revisarlos o reenviarlos a mano.
 
 #### Verificar los destinos JMS
 
@@ -185,12 +215,28 @@ bash deploy/smoke-test.sh
 
 Recorre el flujo completo y comprueba la seguridad. El último caso espera cinco
 minutos a propósito, porque verifica que el contenedor libere el hold vencido.
-Para saltearlo: `bash deploy/smoke-test.sh --rapido`.
+Para saltearlo: `bash deploy/smoke-test.sh --rapido`. Toma las contraseñas de
+las mismas variables `MEDICONECTA_*_PASSWORD` (por defecto `cambiar123`).
 
-Las pruebas de unidad de la capa de negocio corren sin servidor:
+Abre franjas en horarios fijos, así que **una segunda corrida contra la misma
+base falla** con `409` al abrir disponibilidad (el profesional ya tiene esa
+franja). Para repetirlo, recreá la base (paso 1) y redesplegá. Lo mismo pasa
+con la colección de Postman.
+
+**Postman.** Importá la colección `postman/MediConecta-Demo.postman_collection.json`
+**y** el entorno `postman/MediConecta-Demo.postman_environment.json`, y
+**seleccioná ese entorno** antes de correr nada: de ahí salen las credenciales
+y ahí se guardan los ids que la colección va creando.
+`deploy/MediConecta.postman_collection.json` es una colección anterior con ids
+fijos (`turnoId` = 6) que solo coinciden con una base en un estado puntual:
+preferí la de `postman/`.
+
+Las pruebas de unidad corren sin servidor: 245 del backend (JUnit y Mockito) y
+28 del frontend (Vitest):
 
 ```bash
 mvn test
+cd frontend && npm test
 ```
 
 ### 6. Frontend (React + Vite)
@@ -273,14 +319,9 @@ sola vez en el log del servidor, con un `WARNING` que las lista. Anotalas ahí: 
 que queda en la base es el hash y de ahí no se vuelve.
 
 Para que las colecciones de Postman y el smoke test funcionen tal cual están,
-levantá el servidor con las tres definidas:
-
-```bash
-export MEDICONECTA_ADMIN_PASSWORD=cambiar123
-export MEDICONECTA_PROFESIONAL_PASSWORD=cambiar123
-export MEDICONECTA_PACIENTE_PASSWORD=cambiar123
-$WILDFLY_HOME/bin/standalone.sh -c standalone-full.xml -b 0.0.0.0
-```
+las tres tienen que valer `cambiar123` en el primer despliegue (ver el paso 3).
+El seed solo corre con la tabla de usuarios vacía: si la base ya tenía
+usuarios, cambiar las variables no hace nada; hay que recrear la base.
 
 El correo del administrador también se puede cambiar, con
 `MEDICONECTA_ADMIN_EMAIL`.
@@ -302,7 +343,7 @@ HTTP Basic.
 | `POST` | `/turnos/disponibilidad` | PROFESIONAL | Abre una franja en su agenda |
 | `POST` | `/turnos` | PACIENTE | Reserva y retiene por 5 minutos |
 | `PUT` | `/turnos/{id}/confirmar` | PACIENTE | Confirma su propio hold |
-| `PUT` | `/turnos/{id}/cancelar` | PACIENTE | Libera su propio hold |
+| `PUT` | `/turnos/{id}/cancelar` | PACIENTE | Cancela su propio turno: un hold vuelve a `DISPONIBLE`; uno confirmado queda `CANCELADO`, con reembolso del copago y anulación del reclamo |
 | `GET` | `/turnos/mios?fecha=YYYY-MM-DD` | PACIENTE, PROFESIONAL | Turnos del usuario autenticado: el paciente ve sus `EN_HOLD` y `CONFIRMADO`; el profesional, toda su agenda (`fecha` opcional filtra un día) |
 
 `POST /turnos/disponibilidad` acepta `modalidad` (`PRESENCIAL` o
@@ -311,14 +352,27 @@ HTTP Basic.
 migración: la columna se agrega con `DEFAULT 'PRESENCIAL'`.
 
 `TurnoDTO` también expone los campos de cobertura (`coberturaAutorizada`,
-`coberturaPorcentaje`, `copago`, `numeroAutorizacion`). Hoy vuelven en `null`:
-los completa la validación de cobertura (SCRUM-91).
+`coberturaPorcentaje`, `copago`, `numeroAutorizacion`), que completa la
+validación de cobertura al reservar (SCRUM-91).
+
+### Pagos
+
+No hay endpoint de cobro: el copago se cobra solo al confirmar el turno
+(`CobroAlConfirmar`) y se devuelve solo al cancelar uno confirmado
+(`ReembolsoAlCancelar`). Lo que queda en `/pagos`:
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| `GET` | `/pagos/{id}` | paciente o profesional del turno, ADMINISTRADOR | Un pago; `404` si no existe |
+| `GET` | `/pagos?turnoId=` | paciente o profesional del turno, ADMINISTRADOR | Los pagos de un turno |
+| `PUT` | `/pagos/{id}/reembolso` | ADMINISTRADOR | Reembolsa por la pasarela un pago `APROBADO`; `409` si está en otro estado |
 
 ### Puntos de extensión del flujo de turnos
 
 Obras sociales, pagos, telemedicina y el reclamo **no** se llaman desde
-`ServicioDeTurnos`: se enganchan observando dos eventos CDI sincrónicos que
-dispara el servicio, `TurnoEnReserva` y `TurnoEnConfirmacion`. El orden lo fija
+`ServicioDeTurnos`: se enganchan observando eventos CDI sincrónicos que
+dispara el servicio, `TurnoEnReserva`, `TurnoEnConfirmacion` y, al cancelar un
+turno confirmado, `TurnoEnCancelacion`. El orden lo fija
 `turnos/negocio/PuntosDeExtension`:
 
 | Evento | Prioridad | Qué | Card |
@@ -326,12 +380,14 @@ dispara el servicio, `TurnoEnReserva` y `TurnoEnConfirmacion`. El orden lo fija
 | `TurnoEnReserva` | `COBERTURA` (100) | Validar cobertura, completar copago | SCRUM-91 |
 | `TurnoEnConfirmacion` | `COBRO_COPAGO` (100) | Cobrar el copago | SCRUM-93 |
 | `TurnoEnConfirmacion` | `SALA_DE_VIDEO` (200) | Crear la sala si es telemedicina (`SalaAlConfirmar`) | SCRUM-95 |
-| `TurnoEnConfirmacion` | `RECLAMO` (300) | Encolar el reclamo a la obra social | pendiente |
+| `TurnoEnConfirmacion` | `RECLAMO` (300) | Reservada: el reclamo lo encola un MDB suscripto al tópico (ver Facturación) | sin uso (MDB) |
+| `TurnoEnCancelacion` | `ANULACION_RECLAMO` (100) | Anular el reclamo (`ReclamoAlCancelar`) | SCRUM-124 |
+| `TurnoEnCancelacion` | `REEMBOLSO_COPAGO` (200) | Reembolsar el copago (`ReembolsoAlCancelar`); va último porque el rollback no lo deshace | SCRUM-124 |
 
 Para sumar un paso:
 
 ```java
-@TransactionAttribute(TransactionAttributeType.MANDATORY)
+@Transactional(TxType.MANDATORY) // un observador CDI no es EJB: @TransactionAttribute no rige
 public void alConfirmar(
         @Observes @Priority(PuntosDeExtension.COBRO_COPAGO) TurnoEnConfirmacion evento) {
     // ... si lanza una excepcion con rollback, la confirmacion entera se revierte
@@ -370,15 +426,15 @@ respuesta es `401`, como en el resto de la API.
 
 #### Política de redelivery
 
-No hay configuración propia de redelivery en `mediconecta-setup.cli`: se usa
-la que trae WildFly por defecto en `standalone-full.xml` para el
-address-setting comodín (`#`), que aplica a este tópico igual que a cualquier
-otro:
+`mediconecta-setup.cli` le da al tópico su propio address-setting
+(`jms.topic.TurnoConfirmadoTopic`) en vez de dejarle el comodín (`#`) de
+`standalone-full.xml`, que reentrega 10 veces sin demora y se agota con una
+caída de la base de un segundo:
 
-- **Hasta 10 reintentos** (`max-delivery-attempts`), sin demora entre uno y
-  el siguiente (`redelivery-delay=0`).
-- Agotados los reintentos, el mensaje se mueve a la **cola de mensajes
-  muertos** (`jms.queue.DLQ`), en vez de perderse.
+- **Hasta 10 entregas** (`max-delivery-attempts`), esperando 1 s, 2 s, 4 s…
+  entre una y otra (`redelivery-delay=1000`, multiplicador 2, máximo 30 s).
+- Agotados los intentos, el mensaje se mueve a la **cola de mensajes
+  muertos** general (`jms.queue.DLQ`), en vez de perderse.
 
 Si `NotificacionMDB.onMessage` lanza una excepción sin capturarla (por
 ejemplo, porque la base no responde), el contenedor no confirma el mensaje:
@@ -454,14 +510,18 @@ en `ReclamosFacturacionQueue`. `ReclamoMDB` consume esa cola y llama al puerto
 | `CanalDeReclamosNoDisponibleException` (transitorio), intento < 5 | `PENDIENTE`, con el intento y el error registrados | Sí: se relanza y Artemis reentrega |
 | `CanalDeReclamosNoDisponibleException`, intento = 5 (ver tabla de reintentos más arriba) | `EN_REVISION_MANUAL` | No |
 | `ReclamoRechazadoException` (rechazo definitivo de la obra social) | `EN_REVISION_MANUAL`, de inmediato | No: reintentar un rechazo determinístico no tiene sentido |
-| Reclamo ya `ENVIADO` o `EN_REVISION_MANUAL` | sin cambios | No: reentrega idempotente |
+| Reclamo ya `ENVIADO`, `EN_REVISION_MANUAL` o `ANULADO` | sin cambios | No: reentrega idempotente o turno cancelado |
+
+Si el paciente cancela un turno confirmado, `ReclamoAlCancelar` pasa su
+reclamo `PENDIENTE` a `ANULADO` y uno ya `ENVIADO` a `EN_REVISION_MANUAL`,
+porque el legado no tiene una operación para anularlo.
 
 **`@RunAs`.** `obtenerTurno` exige uno de los roles PACIENTE/PROFESIONAL/
 ADMINISTRADOR y un MDB no tiene caller autenticado, así que
 `TurnoConfirmadoFacturacionMDB` lleva `@RunAs(ServicioDeUsuarios.ROL_ADMINISTRADOR)`
 para que el contenedor le propague esa identidad a la llamada. Funcionó sin
-configuración adicional de Elytron contra este WildFly 41 (ver evidencia de la
-verificación funcional en `odd/tasks/scrum-97-facturacion.md`, sección T3).
+configuración adicional de Elytron contra este WildFly 41 (verificado en
+ejecución).
 
 **El envío real.** `CanalDeReclamos` tiene una única implementación,
 `CanalDeReclamosSoap`, que presenta el reclamo a través de
@@ -495,8 +555,11 @@ curl -u paciente@mediconecta.com:cambiar123 \
      -d '{"turnoId":1}' \
      $BASE/turnos
 
-# Y la confirma antes de que venza
-curl -u paciente@mediconecta.com:cambiar123 -X PUT $BASE/turnos/1/confirmar
+# Y la confirma antes de que venza; si tiene copago, con una tarjeta de prueba
+curl -u paciente@mediconecta.com:cambiar123 -X PUT \
+     -H "Content-Type: application/json" \
+     -d '{"tokenMedioDePago":"tok_visa_demo"}' \
+     $BASE/turnos/1/confirmar
 ```
 
 Si pasan los cinco minutos sin confirmar, el turno vuelve solo a `DISPONIBLE`.
@@ -587,14 +650,16 @@ volvé a correrlo.
 
 Están acá a propósito: son decisiones de alcance de esta entrega, no descuidos.
 
-- **Frontend con datos de prototipo.** El login ya está conectado a la API, pero
-  el resto de las pantallas todavía muestran datos fijos: conectarlas es
-  SCRUM-83 a 87.
+- **Historia clínica sin pantalla.** El resto de las pantallas usa la API real,
+  pero `HistoriaPage` todavía no está conectada: la ruta `/historia` queda
+  deshabilitada hasta SCRUM-87.
 - **Notificaciones sin canal real.** El envío de recordatorios es simulado (log);
   no hay proveedor de email/SMS integrado.
-- **Pruebas de unidad solo en el flujo de turnos.** El resto se verifica por
-  integración, con `deploy/smoke-test.sh` contra el sistema desplegado.
-- **Un solo módulo Maven.** Los siete componentes conviven en un WAR. Separarlos en
+- **Pruebas de unidad sin contenedor.** Cubren las fachadas, los Adapter, los
+  observadores y los simuladores con dobles; el cableado real (CDI, JMS, CXF,
+  seguridad) se verifica por integración, con `deploy/smoke-test.sh` contra el
+  sistema desplegado.
+- **Un solo módulo Maven.** Los ocho componentes conviven en un WAR. Separarlos en
   módulos es lo que corresponde cuando se despliegan por separado, y todavía no es
   el caso.
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
