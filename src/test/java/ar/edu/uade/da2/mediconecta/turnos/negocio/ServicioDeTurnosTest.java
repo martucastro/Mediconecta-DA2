@@ -133,6 +133,20 @@ class ServicioDeTurnosTest {
     }
 
     @Test
+    void noSePuedeAbrirUnaFranjaAMasDeDosAnios() {
+        // Sin tope, "+999999-12-31T23:59:59" llegaba a PostgreSQL y salia 500
+        // (timestamp out of range).
+        for (LocalDateTime fechaHora : new LocalDateTime[] {
+                LocalDateTime.now().plusYears(2).plusDays(1),
+                LocalDateTime.of(999_999, 12, 31, 23, 59, 59) }) {
+            assertThrows(DatosInvalidosException.class,
+                    () -> servicio.abrirDisponibilidad(fechaHora, null, null));
+        }
+        verify(turnoDAO, never()).listarPorProfesional(anyLong(), any());
+        verify(turnoDAO, never()).guardar(any());
+    }
+
+    @Test
     void noSePuedeAbrirDosVecesLaMismaFranja() {
         autenticadoComo(profesional);
         LocalDateTime fechaHora = LocalDateTime.now().plusDays(1).withNano(0);

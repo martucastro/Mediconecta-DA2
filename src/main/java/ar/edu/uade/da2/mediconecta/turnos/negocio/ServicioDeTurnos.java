@@ -169,6 +169,12 @@ public class ServicioDeTurnos {
         if (fechaHora.isBefore(LocalDateTime.now())) {
             throw new DatosInvalidosException("No se puede abrir una franja en el pasado");
         }
+        // Tope razonable de agenda. Sin el, una fecha absurda
+        // (+999999-12-31) llegaba a PostgreSQL y salia 500 (timestamp out of range).
+        if (fechaHora.isAfter(LocalDateTime.now().plusYears(2))) {
+            throw new DatosInvalidosException(
+                    "No se puede abrir una franja a mas de dos anios de hoy");
+        }
         ModalidadTurno modalidadEfectiva = modalidad != null ? modalidad : ModalidadTurno.PRESENCIAL;
         String consultorioEfectivo = consultorio != null && !consultorio.isBlank()
                 ? consultorio.trim() : null;
