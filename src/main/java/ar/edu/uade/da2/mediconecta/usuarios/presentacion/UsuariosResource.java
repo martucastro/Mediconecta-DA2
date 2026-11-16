@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.usuarios.presentacion;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
@@ -62,6 +63,9 @@ public class UsuariosResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response registrar(RegistroUsuarioDTO datos) {
+        if (datos == null) {
+            throw new DatosInvalidosException("Faltan los datos del usuario");
+        }
         Usuario nuevoUsuario = servicio.registrarUsuario(
                 datos.getNombre(), datos.getEmail(), datos.getRol(), datos.getContrasena());
         return Response.status(Response.Status.CREATED)
@@ -74,6 +78,9 @@ public class UsuariosResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response login(LoginDTO credenciales) {
+        if (credenciales == null) {
+            throw new DatosInvalidosException("Faltan el email y la contraseña");
+        }
         Usuario usuario = servicio.autenticar(credenciales.getEmail(), credenciales.getContrasena());
         if (usuario == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
