@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import BotonCerrarSesion from './BotonCerrarSesion'
+import UnirseAConsulta from './UnirseAConsulta'
 import { api, obtenerSesion } from '../api'
 import { formatearDiaLargo, formatearHora, parsearFechaHora, partesDeCaja } from '../fechas'
 import { holdVigente, proximoConfirmado, vencimientoDelHold } from '../proximoTurno'
@@ -143,7 +144,11 @@ export default function HomePage() {
             </TarjetaDeTurno>
           )}
 
-          {proximo && <TarjetaDeTurno turno={proximo} etiqueta={textoCobertura(proximo)} />}
+          {proximo && (
+            <TarjetaDeTurno turno={proximo} etiqueta={textoCobertura(proximo)}>
+              {proximo.modalidad === 'TELEMEDICINA' && <UnirseAConsulta turnoId={proximo.id} />}
+            </TarjetaDeTurno>
+          )}
 
           {carga.estado === 'listo' && !hold && !proximo && (
             <article className="card stack" style={{ gap: 12, padding: 28 }}>
