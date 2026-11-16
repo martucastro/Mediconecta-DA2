@@ -103,7 +103,6 @@ export default function LoginPage() {
           <button className="btn btn-primary btn-lg btn-block" type="submit" disabled={enviando}>
             {enviando ? 'Ingresando...' : 'Ingresar'}
           </button>
-          <a className="link" href="#">¿Olvidaste tu contraseña?</a>
         </form>
       </section>
     </main>

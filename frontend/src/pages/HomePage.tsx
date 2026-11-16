@@ -114,8 +114,6 @@ export default function HomePage() {
         </Link>
         <nav className="nav">
           <Link to="/home" aria-current="page">Mis turnos</Link>
-          <a href="#">Mi historia clínica</a>
-          <a href="#">Cobertura</a>
           <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
           <BotonCerrarSesion />
         </nav>
