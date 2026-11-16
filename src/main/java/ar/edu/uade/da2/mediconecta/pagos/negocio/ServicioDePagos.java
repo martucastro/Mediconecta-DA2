@@ -44,6 +44,10 @@ public class ServicioDePagos implements ServicioDePagosLocal {
 
     private static final int MAX_MONEDA = 3;
 
+    // Un token real de la pasarela mide decenas de caracteres. Sin tope, uno de
+    // 200 KB se aceptaba y se mandaba a cobrar.
+    private static final int MAX_TOKEN = 255;
+
     @Inject
     private PagoDAO pagoDAO;
 
@@ -204,6 +208,10 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         }
         if (datos.getTokenMedioDePago() == null || datos.getTokenMedioDePago().isBlank()) {
             throw new DatosInvalidosException("El token del medio de pago es obligatorio.");
+        }
+        if (datos.getTokenMedioDePago().length() > MAX_TOKEN) {
+            throw new DatosInvalidosException(
+                    "El token del medio de pago admite hasta " + MAX_TOKEN + " caracteres.");
         }
     }
 

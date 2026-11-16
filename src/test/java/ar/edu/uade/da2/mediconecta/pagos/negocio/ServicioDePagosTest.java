@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.Pago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.PagoDAO;
@@ -96,6 +97,18 @@ class ServicioDePagosTest {
         verify(pagoDAO).guardarEnNuevaTransaccion(any());
         verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
         verify(pagoDAO, never()).actualizar(any());
+    }
+
+    @Test
+    void unTokenDeMasDe255CaracteresEsDatoInvalido() {
+        // Sin tope, un token de 200 KB se aceptaba y se cobraba.
+        DatosInvalidosException e = assertThrows(DatosInvalidosException.class,
+                () -> servicio.cobrar(cobro("t".repeat(256))));
+
+        assertTrue(e.getMessage().contains("255"), e.getMessage());
+
+        verify(pagoDAO, never()).guardarEnNuevaTransaccion(any());
+        verify(pasarela, never()).cobrar(any(), any(), any());
     }
 
     // ---- Reembolso al cancelar ----------------------------------------------
