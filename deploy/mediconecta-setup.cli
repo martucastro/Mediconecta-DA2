@@ -84,6 +84,20 @@ if (outcome != success) of /subsystem=messaging-activemq/server=default/jms-topi
         entries=["java:/jms/topic/TurnoConfirmado"])
 end-if
 
+# Reintentos de los suscriptores del topico (facturacion y notificaciones).
+# Sin esto heredan el address-setting "#": 10 reentregas inmediatas, y una
+# caida de la base de un segundo las agota y se pierde el reclamo o la
+# notificacion. Espera 1 s, 2 s, 4 s... hasta 30 s; tras 10 intentos el
+# mensaje va a la DLQ general (jms.queue.DLQ) para revisarlo a mano.
+if (outcome != success) of /subsystem=messaging-activemq/server=default/address-setting=jms.topic.TurnoConfirmadoTopic:read-resource
+    /subsystem=messaging-activemq/server=default/address-setting=jms.topic.TurnoConfirmadoTopic:add( \
+        dead-letter-address=jms.queue.DLQ, \
+        max-delivery-attempts=10, \
+        redelivery-delay=1000, \
+        redelivery-multiplier=2.0, \
+        max-redelivery-delay=30000)
+end-if
+
 # ---------------------------------------------------------------------------
 # 5. Cola JMS ReclamosFacturacionQueue
 #

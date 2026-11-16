@@ -10,6 +10,8 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
+import jakarta.ejb.Lock;
+import jakarta.ejb.LockType;
 import jakarta.ejb.Schedule;
 import jakarta.ejb.Singleton;
 import jakarta.ejb.Timeout;
@@ -42,8 +44,17 @@ import jakarta.inject.Inject;
  *    sobrevive pero la tarea programada no.
  *
  * Sin el barrido, un reinicio dejaba turnos EN_HOLD para siempre.
+ *
+ * Lleva @Lock(READ) porque, sin eso, un @Singleton toma el lock de ESCRITURA
+ * en cada metodo, incluidos @Timeout y @Schedule. Si el temporizador vencia mientras
+ * confirmarTurno tenia la fila del turno bloqueada, el timer se quedaba
+ * esperando ese FOR UPDATE con el singleton tomado, y la confirmacion se
+ * quedaba esperando el singleton en expirador.cancelar: deadlock hasta el
+ * timeout del lock y 500. No hace falta serializar nada aca: TimerService es
+ * thread-safe y el lock de la fila en liberar() ya ordena a quien toca el turno.
  */
 @Singleton
+@Lock(LockType.READ)
 @PermitAll
 public class ExpiradorDeHolds {
 

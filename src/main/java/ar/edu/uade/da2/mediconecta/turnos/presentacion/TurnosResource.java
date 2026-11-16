@@ -76,6 +76,9 @@ public class TurnosResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response abrirDisponibilidad(NuevaDisponibilidadRequest solicitud) {
+        if (solicitud == null) {
+            throw new DatosInvalidosException("Faltan los datos de la franja");
+        }
         Turno turno = servicio.abrirDisponibilidad(solicitud.getFechaHora(),
                 leerModalidad(solicitud.getModalidad()), solicitud.getConsultorio());
         return Response.status(Response.Status.CREATED).entity(new TurnoDTO(turno)).build();
@@ -102,6 +105,9 @@ public class TurnosResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response reservar(ReservaTurnoRequest reserva) {
+        if (reserva == null) {
+            throw new DatosInvalidosException("El id del turno es obligatorio");
+        }
         return Response.ok(new TurnoDTO(servicio.reservarTurno(reserva.getTurnoId()))).build();
     }
 

@@ -41,6 +41,10 @@ public class ServicioDeUsuarios {
 
     private static final int MINIMO_CONTRASENA = 8;
 
+    // Largo de las columnas nombre y email (varchar(255) en Usuario). Sin este
+    // chequeo un texto mas largo fallaba recien en el INSERT, como 500.
+    private static final int MAXIMO_TEXTO = 255;
+
     @Inject
     private UsuarioDAO usuarioDAO;
 
@@ -66,6 +70,11 @@ public class ServicioDeUsuarios {
                 || rol == null || rol.isBlank()
                 || contrasenaPlana == null || contrasenaPlana.isBlank()) {
             throw new DatosInvalidosException("Todos los datos son obligatorios.");
+        }
+
+        if (nombre.length() > MAXIMO_TEXTO || email.length() > MAXIMO_TEXTO) {
+            throw new DatosInvalidosException(
+                    "El nombre y el email admiten hasta " + MAXIMO_TEXTO + " caracteres.");
         }
 
         if (!FORMA_DE_EMAIL.matcher(email).matches()) {

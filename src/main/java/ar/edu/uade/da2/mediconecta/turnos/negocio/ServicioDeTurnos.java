@@ -2,6 +2,7 @@ package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
@@ -183,10 +184,12 @@ public class ServicioDeTurnos {
         // duplicados y hbm2ddl update fallaria al agregarla.
         // ponytail: dos pedidos simultaneos aun pueden colarse; restriccion
         // unica parcial si alguna vez hace falta.
+        // Se compara al minuto: 10:00:00 y 10:00:30 son la misma franja.
+        LocalDateTime minuto = fechaHora.truncatedTo(ChronoUnit.MINUTES);
         boolean ocupada = turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate())
                 .stream()
                 .anyMatch(t -> t.getEstado() != EstadoTurno.CANCELADO
-                        && t.getFechaHora().equals(fechaHora));
+                        && t.getFechaHora().truncatedTo(ChronoUnit.MINUTES).equals(minuto));
         if (ocupada) {
             throw new ConflictoDeNegocioException("El profesional ya tiene una franja abierta el " + fechaHora);
         }
@@ -217,6 +220,10 @@ public class ServicioDeTurnos {
         if (turno.getEstado() != EstadoTurno.DISPONIBLE) {
             throw new ConflictoDeNegocioException(
                     "El turno ya no esta disponible: esta " + turno.getEstado());
+        }
+        // La agenda todavia lista franjas DISPONIBLE ya pasadas; reservarlas no.
+        if (turno.getFechaHora().isBefore(LocalDateTime.now())) {
+            throw new ConflictoDeNegocioException("El turno ya paso: no se puede reservar");
         }
 
         turno.setPaciente(paciente);
@@ -263,11 +270,19 @@ public class ServicioDeTurnos {
         if (turno == null) {
             throw new DatosInvalidosException("No existe el turno " + turnoId);
         }
+        verificarQueElHoldEsDelCaller(turno);
         if (turno.getEstado() != EstadoTurno.EN_HOLD) {
             throw new ConflictoDeNegocioException(
                     "El turno no tiene un hold activo: esta " + turno.getEstado());
         }
-        verificarQueElHoldEsDelCaller(turno);
+        // El temporizador de ExpiradorDeHolds no es persistente: tras un
+        // reinicio un hold vencido sigue EN_HOLD hasta el proximo barrido
+        // (hasta 60 s). Sin este chequeo se podia confirmar en ese hueco.
+        if (turno.getInicioHold() != null && turno.getInicioHold()
+                .plus(ExpiradorDeHolds.DURACION_HOLD_MS, ChronoUnit.MILLIS)
+                .isBefore(LocalDateTime.now())) {
+            throw new ConflictoDeNegocioException("El turno no tiene un hold activo: el hold vencio");
+        }
 
         // PUNTO DE EXTENSION (confirmacion). Observadores, en este orden:
         //   1. COBRO_COPAGO (SCRUM-93): cobra el copago si el turno lo tiene
@@ -301,11 +316,12 @@ public class ServicioDeTurnos {
         if (turno == null) {
             throw new DatosInvalidosException("No existe el turno " + turnoId);
         }
-        if (turno.getEstado() == EstadoTurno.DISPONIBLE) {
+        verificarQueElHoldEsDelCaller(turno);
+        if (turno.getEstado() == EstadoTurno.DISPONIBLE
+                || turno.getEstado() == EstadoTurno.CANCELADO) {
             throw new ConflictoDeNegocioException(
                     "El turno no esta reservado, no hay nada que cancelar");
         }
-        verificarQueElHoldEsDelCaller(turno);
 
         if (turno.getEstado() == EstadoTurno.CONFIRMADO) {
             // Deshace lo que dejo la confirmacion: reembolso del copago y
@@ -378,13 +394,20 @@ public class ServicioDeTurnos {
      * No se puede expresar con @RolesAllowed porque esa anotacion no ve los
      * argumentos del metodo: sabe que el caller es PACIENTE, no que este turno
      * sea suyo. Mismo criterio que usa ServicioDeHistoriaClinica.
+     *
+     * Va antes de mirar el estado: si no, un 409 "esta CONFIRMADO" le contaba
+     * a otro paciente en que estado esta un turno ajeno. Un turno sin paciente
+     * (libre, o un hold que ya vencio) no es de nadie: pasa, y el chequeo de
+     * estado que sigue responde 409, que es lo que HoldPage muestra como
+     * "reserva vencida".
      */
     private void verificarQueElHoldEsDelCaller(Turno turno) {
-        if (contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)) {
+        if (turno.getPaciente() == null
+                || contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)) {
             return;
         }
         Usuario caller = usuarioAutenticado();
-        if (turno.getPaciente() == null || !caller.getId().equals(turno.getPaciente().getId())) {
+        if (!caller.getId().equals(turno.getPaciente().getId())) {
             throw new EJBAccessException("El turno fue reservado por otro paciente.");
         }
     }
