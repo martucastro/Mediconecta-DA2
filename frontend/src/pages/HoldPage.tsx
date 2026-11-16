@@ -167,7 +167,7 @@ export default function HoldPage() {
       }
     }
     limpiarTurnoEnHold()
-    navigate('/disponibilidad', { replace: true })
+    navigate('/disponibilidad', { replace: true, state: { profesionalId: turno.profesionalId } })
   }
 
   const porcentaje = Math.round((restante * 1000 * 100) / DURACION_HOLD_MS)
