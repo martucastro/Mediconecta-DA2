@@ -34,4 +34,6 @@ public interface ServicioDePagosLocal {
      * pago no está en estado APROBADO.
      */
     Pago reembolsar(Long pagoId);
+
+    void reembolsarCopagoDelTurno(Long turnoId);
 }

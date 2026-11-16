@@ -7,6 +7,7 @@ import ar.edu.uade.da2.mediconecta.usuarios.datos.UsuarioDAO;
 
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
@@ -34,6 +35,12 @@ public class ServicioDeUsuarios {
     private static final Set<String> ROLES_VALIDOS =
             Set.of(ROL_PACIENTE, ROL_PROFESIONAL, ROL_ADMINISTRADOR);
 
+    // Forma basica de un email: algo@algo.tld, sin espacios (SCRUM-126). Que
+    // exista de verdad solo se sabria mandandole un mail.
+    private static final Pattern FORMA_DE_EMAIL = Pattern.compile("[^\\s@]+@[^\\s@]+\\.[^\\s@]+");
+
+    private static final int MINIMO_CONTRASENA = 8;
+
     @Inject
     private UsuarioDAO usuarioDAO;
 
@@ -59,6 +66,16 @@ public class ServicioDeUsuarios {
                 || rol == null || rol.isBlank()
                 || contrasenaPlana == null || contrasenaPlana.isBlank()) {
             throw new DatosInvalidosException("Todos los datos son obligatorios.");
+        }
+
+        if (!FORMA_DE_EMAIL.matcher(email).matches()) {
+            throw new DatosInvalidosException(
+                    "El email no tiene un formato válido (por ejemplo, nombre@dominio.com).");
+        }
+
+        if (contrasenaPlana.length() < MINIMO_CONTRASENA) {
+            throw new DatosInvalidosException(
+                    "La contraseña debe tener al menos " + MINIMO_CONTRASENA + " caracteres.");
         }
 
         if (!ROLES_VALIDOS.contains(rol)) {

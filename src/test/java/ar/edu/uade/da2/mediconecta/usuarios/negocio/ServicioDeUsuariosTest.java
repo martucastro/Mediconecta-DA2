@@ -6,11 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.UsuarioDAO;
 
@@ -144,5 +146,40 @@ class ServicioDeUsuariosTest {
         Method metodo = ServicioDeUsuarios.class.getMethod("obtenerUsuario", Long.class);
 
         assertNull(metodo.getAnnotation(RolesAllowed.class));
+    }
+
+    // ---- Registro: validacion de datos (SCRUM-126) ----------------------------
+
+    @Test
+    void elRegistroRechazaUnEmailSinFormaValida() {
+        for (String email : new String[] { "bad", "a@b", "@mediconecta.com", "a b@test.com" }) {
+            DatosInvalidosException e = assertThrows(DatosInvalidosException.class,
+                    () -> servicio.registrarUsuario("Ana Perez", email, "PACIENTE", "cambiar123"));
+            assertTrue(e.getMessage().contains("email"), e.getMessage());
+        }
+        verify(usuarioDAO, never()).guardar(any());
+    }
+
+    @Test
+    void elRegistroExigeUnaContrasenaDeAlMenos8Caracteres() {
+        DatosInvalidosException e = assertThrows(DatosInvalidosException.class,
+                () -> servicio.registrarUsuario("Ana Perez", "ana@test.com", "PACIENTE", "x"));
+        assertTrue(e.getMessage().contains("8 caracteres"), e.getMessage());
+        verify(usuarioDAO, never()).guardar(any());
+    }
+
+    @Test
+    void elRegistroExigeNombre() {
+        assertThrows(DatosInvalidosException.class,
+                () -> servicio.registrarUsuario("   ", "ana@test.com", "PACIENTE", "cambiar123"));
+        verify(usuarioDAO, never()).guardar(any());
+    }
+
+    @Test
+    void unRegistroValidoGuardaAlPaciente() {
+        Usuario nuevo = servicio.registrarUsuario("Ana Perez", "ana@test.com", "PACIENTE", "cambiar123");
+
+        assertEquals("ana@test.com", nuevo.getEmail());
+        verify(usuarioDAO).guardar(nuevo);
     }
 }

@@ -66,6 +66,9 @@ public class ServicioDeTurnos {
     @Inject
     private Event<TurnoEnConfirmacion> eventoConfirmacion;
 
+    @Inject
+    private Event<TurnoEnCancelacion> eventoCancelacion;
+
     // JMSContext inyectado por el contenedor: participa de la misma transaccion
     // JTA que confirmarTurno (ver publicarTurnoConfirmado). No conoce el nombre
     // de ningun consumidor: publica en un topico y listo.
@@ -175,6 +178,18 @@ public class ServicioDeTurnos {
             throw new DatosInvalidosException("El consultorio admite hasta 60 caracteres");
         }
         Usuario profesional = usuarioAutenticado();
+        // Una franja por horario (SCRUM-125). Se valida aca y no con una
+        // restriccion unica en la base: las bases ya creadas pueden tener
+        // duplicados y hbm2ddl update fallaria al agregarla.
+        // ponytail: dos pedidos simultaneos aun pueden colarse; restriccion
+        // unica parcial si alguna vez hace falta.
+        boolean ocupada = turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate())
+                .stream()
+                .anyMatch(t -> t.getEstado() != EstadoTurno.CANCELADO
+                        && t.getFechaHora().equals(fechaHora));
+        if (ocupada) {
+            throw new ConflictoDeNegocioException("El profesional ya tiene una franja abierta el " + fechaHora);
+        }
         Turno turno = new Turno(profesional, fechaHora, modalidadEfectiva, consultorioEfectivo);
         turnoDAO.guardar(turno);
         return turno;
@@ -292,7 +307,19 @@ public class ServicioDeTurnos {
         }
         verificarQueElHoldEsDelCaller(turno);
 
-        turno.setEstado(EstadoTurno.CANCELADO);
+        if (turno.getEstado() == EstadoTurno.CONFIRMADO) {
+            // Deshace lo que dejo la confirmacion: reembolso del copago y
+            // anulacion del reclamo (SCRUM-124). Antes de soltar al paciente,
+            // que los observadores todavia necesitan; si alguno falla, la
+            // cancelacion entera se revierte y el turno sigue CONFIRMADO.
+            eventoCancelacion.fire(new TurnoEnCancelacion(turno));
+        }
+
+        // Liberar un hold devuelve el turno a la agenda, igual que cuando vence
+        // (ExpiradorDeHolds); solo un turno confirmado queda CANCELADO.
+        turno.setEstado(turno.getEstado() == EstadoTurno.EN_HOLD
+                ? EstadoTurno.DISPONIBLE
+                : EstadoTurno.CANCELADO);
         turno.liberar();
         expirador.cancelar(turnoId);
         return turnoDAO.actualizar(turno);
