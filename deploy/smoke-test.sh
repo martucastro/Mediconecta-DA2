@@ -11,9 +11,10 @@
 
 set -u
 BASE="${BASE:-http://127.0.0.1:8080/mediconecta/api}"
-ADMIN="admin@mediconecta.com:cambiar123"
-PROF="profesional@mediconecta.com:cambiar123"
-PACI="paciente@mediconecta.com:cambiar123"
+# Mismas variables que lee el seed de usuarios en el primer arranque (README, paso 3).
+ADMIN="admin@mediconecta.com:${MEDICONECTA_ADMIN_PASSWORD:-cambiar123}"
+PROF="profesional@mediconecta.com:${MEDICONECTA_PROFESIONAL_PASSWORD:-cambiar123}"
+PACI="paciente@mediconecta.com:${MEDICONECTA_PACIENTE_PASSWORD:-cambiar123}"
 # Confirmar cobra el copago (SCRUM-93) y el cuerpo es JSON. La pasarela simulada
 # aprueba cualquier token salvo los que empiezan con "rechazar" o "caer".
 PAGO=(-H "Content-Type: application/json" -d '{"tokenMedioDePago":"tok_visa_demo"}')

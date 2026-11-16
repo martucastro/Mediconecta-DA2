@@ -44,7 +44,7 @@ El stack elegido es:
 
 ### 2.1 El criterio de desempate: el componente stateful
 
-La consigna exige evidencia concreta de que el contenedor gestiona el ciclo de vida de al menos un componente con estado conversacional (`ServicioDeTurnos`, que sostiene el hold de un turno reservado). Ese requisito, y no SOAP, decidió el stack.
+La consigna exige evidencia concreta de que el contenedor gestiona el ciclo de vida de al menos un componente stateful (`ServicioDeTurnos`, el componente cuyo proceso es una conversación: reservar y después confirmar o cancelar). Ese requisito, y no SOAP, decidió el stack. La sección 9 precisa qué estado guarda el bean y qué estado vive en la base.
 
 Ninguna otra alternativa permitida tiene un equivalente nativo al `@Stateful` de Enterprise JavaBeans: en Spring Boot, .NET, Quarkus, Micronaut o Node/NestJS, el estado por conversación se programa a mano (un scheduler propio, una entrada en Redis con TTL, un `HostedService` con timers). Jakarta EE lo ofrece como parte de la especificación del contenedor, que instancia, destruye y expira estas instancias sin infraestructura adicional. La sección 6.1 muestra que aprovecharlo también exige entender sus límites.
 
@@ -71,7 +71,7 @@ A diferencia de una entrega anterior, esta separación ya no depende del sufijo 
 
 La regla de dependencia queda así verificable con sólo mirar los imports: una clase de `datos` que importara algo de `presentacion` sería visible de inmediato como una violación de la arquitectura, cosa que la convención de nombres anterior no permitía detectar.
 
-En el paquete raíz quedan las clases fuera de esa estructura: `ApiActivator` (`Application` de JAX-RS) y los `ExceptionMapper` transversales `AccesoDenegadoMapper`, `ErrorInesperadoMapper`, `DatosInvalidosMapper` y `ConflictoDeNegocioMapper` (estos dos últimos traducen las excepciones de `comun.negocio` a `400` y `409`). Es deliberado: son infraestructura JAX-RS que atraviesa los componentes de negocio por igual, y ubicarlos dentro de un componente sugeriría una pertenencia que no existe. `PasarelaNoDisponibleMapper`, en cambio, vive junto a la excepción que traduce, en `pagos.negocio`, porque es específica de ese componente.
+En el paquete raíz quedan las clases fuera de esa estructura: `ApiActivator` (`Application` de JAX-RS) y todos los `ExceptionMapper`. Los transversales son `AccesoDenegadoMapper`, `ErrorInesperadoMapper`, `DatosInvalidosMapper` y `ConflictoDeNegocioMapper` (estos dos últimos traducen las excepciones de `comun.negocio` a `400` y `409`); junto a ellos están los que traducen la indisponibilidad de cada tercero: `ObraSocialNoDisponibleMapper` (`503`), `PasarelaNoDisponibleMapper` (`502`) y `ProveedorDeVideoNoDisponibleMapper` (`503` con `Retry-After`). Es deliberado: son infraestructura JAX-RS, es decir presentación, y ubicarlos en el paquete `negocio` de un componente mezclaría capas; las excepciones que traducen sí viven en el `negocio` de su componente.
 
 ### 3.1 Un matiz sobre la regla de capas adyacentes: los DTO conocen la entidad
 
@@ -141,13 +141,13 @@ Esta sección documenta lo que existe en el código; la sección 3 ya muestra d�
 
 ### 6.1 ServicioDeTurnos y la expiración del hold
 
-`ServicioDeTurnos` sigue siendo `@Stateful` y sostiene el hold del turno, pero ya **no** aloja el `TimerService` que lo expira: inyecta un colaborador, `ExpiradorDeHolds`, y le delega tanto la programación del temporizador al reservar como su cancelación al confirmar o cancelar.
+`ServicioDeTurnos` sigue siendo `@Stateful` y orquesta el hold del turno (cuyo estado vive en la fila, sección 9), pero ya **no** aloja el `TimerService` que lo expira: inyecta un colaborador, `ExpiradorDeHolds`, y le delega tanto la programación del temporizador al reservar como su cancelación al confirmar o cancelar.
 
 No es una opinión del equipo: el javadoc de `jakarta.ejb.TimerService` (API `jakarta.jakartaee-api` 11.0.0) enumera qué tipos de bean pueden registrar timers:
 
 > "The enterprise bean Timer Service allows stateless session beans, singleton session beans, message-driven beans, and enterprise bean 2.x entity beans to be registered for timer callback events."
 
-Los *stateful* session beans no figuran en esa lista. En una iteración anterior, con el timer dentro de `ServicioDeTurnos`, WildFly inyectaba un `TimerService` no funcional y `POST /api/turnos` devolvía `500` en la primera reserva. La solución fue separar dos responsabilidades en dos tipos de bean. `ServicioDeTurnos` conserva el estado conversacional, que es lo que justifica que sea stateful. `ExpiradorDeHolds`, un `@Singleton`, concentra el `TimerService` y el método anotado `@Timeout` que el contenedor invoca al vencer cada plazo. La división no es un rodeo para esquivar una limitación: expresa que la expiración programada no pertenece a la conversación con un cliente sino al contenedor, y que por eso debe vivir en un bean cuyo ciclo de vida no dependa de esa conversación.
+Los *stateful* session beans no figuran en esa lista. En una iteración anterior, con el timer dentro de `ServicioDeTurnos`, WildFly inyectaba un `TimerService` no funcional y `POST /api/turnos` devolvía `500` en la primera reserva. La solución fue separar dos responsabilidades en dos tipos de bean. `ServicioDeTurnos` conserva las operaciones de la conversación con el paciente (reservar, confirmar, cancelar), que es lo que justifica declararlo stateful. `ExpiradorDeHolds`, un `@Singleton`, concentra el `TimerService` y el método anotado `@Timeout` que el contenedor invoca al vencer cada plazo. La división no es un rodeo para esquivar una limitación: expresa que la expiración programada no pertenece a la conversación con un cliente sino al contenedor, y que por eso debe vivir en un bean cuyo ciclo de vida no dependa de esa conversación.
 
 Corregir esto dejó a la vista un segundo problema. La versión anterior cancelaba recorriendo todos los temporizadores devueltos por `getTimers()` y cancelándolos sin discriminar. El javadoc de ese método es explícito: devuelve "all active timers associated with this bean", es decir todos los del bean, no los de un paciente en particular. Esa implementación cancelaba también los holds de los demás pacientes, que quedaban retenidos para siempre. La versión actual identifica cada temporizador por el dato con el que fue creado, el identificador del turno, y cancela únicamente el que corresponde.
 
@@ -192,7 +192,7 @@ Es el caso de libro del patrón Adapter. Hacia adentro, el sistema pregunta en s
 | Negocio | `Cobertura`, `Prestacion`, `ResultadoPresentacion` | Objetos de dominio devueltos y enum de prestaciones |
 | Negocio | `SistemaDeObraSocial` | El port del Adapter: interfaz propia, sin ningún tipo SOAP, que devuelve `Cobertura` o `ResultadoPresentacion` |
 | Negocio | `negocio.soap.SistemaDeObraSocialSoap` (con `ObraSocialLegadoPort` y `RespuestaCoberturaXml`) | Única implementación: el cliente JAX-WS |
-| Negocio | `ObraSocialNoDisponibleException` y `ObraSocialNoDisponibleMapper` | El legado no responde; se traduce a `503` |
+| Negocio | `ObraSocialNoDisponibleException` | El legado no responde; `ObraSocialNoDisponibleMapper`, en el paquete raíz, la traduce a `503` |
 | Negocio | `SeedDeAfiliaciones` | Afilia al paciente de prueba (OS-2002) en el arranque |
 | Datos | `AfiliacionDePaciente`, `AutorizacionDePrestacion` y sus DAO | Tablas `afiliaciones_obra_social` y `autorizaciones_prestacion` |
 
@@ -202,7 +202,7 @@ Los pedidos inválidos usan `comun.negocio.DatosInvalidosException`, la misma qu
 
 **Por qué `Service.create` sin descargar el WSDL.** El cliente se construye con el nombre del servicio y las anotaciones del SEI, sin pedirle el WSDL al legado. Si lo pidiera, crear el cliente ya dependería de que el legado esté vivo, y esa descarga ocurriría fuera de los timeouts configurados.
 
-**Timeouts explícitos.** Conexión 2 s y respuesta 5 s, puestos en el request context de cada llamada. Sin ellos, un legado que acepta la conexión y no contesta retiene indefinidamente el hilo del pedido, y con él la transacción y al usuario. URL y timeouts son propiedades de sistema (`mediconecta.obrasocial.url`, `mediconecta.obrasocial.timeoutConexionMs`, `mediconecta.obrasocial.timeoutRespuestaMs`) que se leen en cada llamada, así que se pueden cambiar con `jboss-cli` sin redesplegar.
+**Timeouts explícitos.** Conexión 2 s y respuesta 5 s, puestos en el request context de cada llamada. Sin ellos, un legado que acepta la conexión y no contesta retiene el hilo del pedido hasta el timeout por defecto de CXF, y con él la transacción y al usuario. URL y timeouts son propiedades de sistema (`mediconecta.obrasocial.url`, `mediconecta.obrasocial.timeoutConexionMs`, `mediconecta.obrasocial.timeoutRespuestaMs`) que se leen en cada llamada, así que se pueden cambiar con `jboss-cli` sin redesplegar.
 
 **Tres desenlaces.** El adaptador clasifica lo que vuelve del legado:
 
@@ -284,11 +284,11 @@ La llamada HTTP real y el cableado de seguridad se verifican con `deploy/smoke-t
 
 ## 7. Autenticación y autorización
 
-La autenticación, pendiente antes, ya está implementada y verificada en ejecución (sección 10). Toda la configuración se declara en una única clase, `ConfiguracionDeSeguridad`, mediante dos anotaciones de Jakarta Security: `AutenticacionBasica`, un mecanismo HTTP Basic propio (SCRUM-103) que omite `WWW-Authenticate` en los pedidos AJAX de la SPA, y `@DatabaseIdentityStoreDefinition`, que apunta el almacén de identidades al mismo datasource de la aplicación. Esa segunda anotación define dos consultas: una recupera el hash de la contraseña a partir del correo, y otra recupera el rol del usuario, que el contenedor publica como grupo.
+La autenticación, pendiente antes, ya está implementada y verificada en ejecución (sección 10). La configuración se apoya en Jakarta Security y tiene dos piezas. `ConfiguracionDeSeguridad` declara `@DatabaseIdentityStoreDefinition`, que apunta el almacén de identidades al mismo datasource de la aplicación con dos consultas: una recupera el hash de la contraseña a partir del correo, y otra recupera el rol del usuario, que el contenedor publica como grupo. `AutenticacionBasica` es un mecanismo HTTP Basic propio (un `HttpAuthenticationMechanism`, SCRUM-103) que reemplaza al estándar solo para omitir `WWW-Authenticate` en los pedidos AJAX de la SPA.
 
-El valor de resolverlo así es que **no hay código de autenticación escrito por el equipo**. No se validan credenciales a mano ni se gestionan sesiones: el contenedor resuelve la identidad antes de que la petición llegue al componente de negocio, y recién entonces las anotaciones de autorización tienen contra qué decidir. La única pieza propia es un verificador de contraseñas que implementa la interfaz `PasswordHash` de la especificación, necesario porque los hashes usan PBKDF2 con un formato propio (sección 11).
+El valor de resolverlo así es que **el equipo escribió muy poco código de autenticación, y ninguno valida credenciales**. `AutenticacionBasica` solo lee el encabezado `Authorization`, delega la validación en el almacén de identidades del contenedor y decide si responde `401` con o sin `WWW-Authenticate`; no se gestionan sesiones. El contenedor resuelve la identidad antes de que la petición llegue al componente de negocio, y recién entonces las anotaciones de autorización tienen contra qué decidir. La otra pieza propia es un verificador de contraseñas que implementa la interfaz `PasswordHash` de la especificación, necesario porque los hashes usan PBKDF2 con un formato propio (sección 11).
 
-Cuando el contenedor rechaza una llamada por rol, la `EJBAccessException` se traduce a `403` mediante `AccesoDenegadoMapper`. `ErrorInesperadoMapper` cumple un rol complementario: intercepta cualquier otra excepción, la registra y devuelve `500` genérico, salvo que ya sea una `WebApplicationException`.
+Cuando el contenedor rechaza una llamada por rol, la `EJBAccessException` se traduce a `403` mediante `AccesoDenegadoMapper`. `ErrorInesperadoMapper` cumple un rol complementario: intercepta cualquier otra excepción, la registra y devuelve `500` genérico, salvo que ya sea una `WebApplicationException` o que el cuerpo del pedido sea un JSON que JSON-B no puede leer, que responde `400`.
 
 `web.xml` protege los tres componentes a nivel grueso; encima, cada operación de negocio tiene su restricción `@RolesAllowed`, más fina:
 
@@ -309,7 +309,7 @@ El mismo patrón se repite en `ServicioDeTurnos.verificarQueElHoldEsDelCaller`, 
 
 ### 8.1 DAO (Data Access Object)
 
-**Dónde:** `UsuarioDAO`, `TurnoDAO`, `HistoriaClinicaDAO`, `EntradaClinicaDAO`.
+**Dónde:** los diez DAO del sistema, uno o dos por componente: `UsuarioDAO`, `TurnoDAO`, `HistoriaClinicaDAO`, `EntradaClinicaDAO`, `AfiliacionDAO`, `AutorizacionDAO`, `PagoDAO`, `SesionVideoDAO`, `NotificacionDAO` y `ReclamoDAO`.
 
 **Problema que resuelve:** separar el acceso a datos (`EntityManager`, queries) de la lógica de negocio; sin esto, cada `Servicio*` mezclaría reglas de negocio con persistencia.
 
@@ -325,7 +325,7 @@ Cada DAO sigue el mismo patrón: `@Stateless`, `@PersistenceContext` inyectado, 
 
 > "Interfaz de negocio del componente ServicioDeHistoriaClinica. Es el único contrato que los consumidores conocen: la implementación, los DAO y el factory quedan ocultos detrás de estas cinco operaciones."
 
-Cualquier otro componente que necesite datos de la historia clínica (por ejemplo, `ServicioDeTelemedicina`) depende únicamente de esa interfaz, no de sus colaboradores internos.
+Hoy su único consumidor es `HistoriaClinicaResource`, que depende únicamente de esa interfaz y no de sus colaboradores internos; ningún otro componente lee la historia clínica todavía, pero el día que lo haga (por ejemplo, telemedicina) usará el mismo contrato.
 
 **Alternativa descartada:** exponer directamente los DAO (o la clase sin interfaz). Se descartó porque rompería el encapsulamiento (otro componente podría saltarse validaciones como `validarPaciente`), y porque el flujo transaccional de `registrarConsulta` (`@TransactionAttribute(TransactionAttributeType.REQUIRED)` explícito, que persiste un diagnóstico y varias recetas atómicamente) dejaría de estar garantizado si un consumidor externo invocara los DAO por separado. Si el factory rechaza una receta inválida, el rollback deshace también lo ya persistido en esa llamada.
 
@@ -344,7 +344,7 @@ El javadoc de la clase documenta que concentra dos responsabilidades: decidir qu
 | Integración | Puerto (interfaz) | Implementación | Qué traduce |
 |---|---|---|---|
 | Obras sociales | `SistemaDeObraSocial` | `obrassociales.negocio.soap.SistemaDeObraSocialSoap` | DNI, número de afiliado, código de prestación y sobres SOAP del legado (sección 6.2) a `Cobertura`/`ResultadoPresentacion` del dominio, y viceversa (sección 6.3) |
-| Pagos | `PasarelaDePagoAdapter` | `PasarelaDePagoRestClient` | El JSON y los códigos de estado en inglés (`APPROVED`, `REJECTED`, `REFUNDED`) de la pasarela externa a `ResultadoPasarela`/`EstadoPago` del dominio |
+| Pagos | `PasarelaDePagoAdapter` | `PasarelaDePagoRestClient` | El JSON y los códigos de estado en inglés, en minúsculas (`approved`, `rejected`, `refunded`), de la pasarela externa a `ResultadoPasarela`/`EstadoPago` del dominio |
 | Telemedicina | `ProveedorDeVideoAdapter` | `ProveedorDeVideoRestClient` | El JSON del proveedor de video (`roomId`, `hostUrl`, `guestUrl`) a `SalaDeVideo`, asignando anfitrión al profesional e invitado al paciente |
 
 **Problema que resuelve:** en los tres casos, la fachada de negocio (`ServicioDeObrasSociales`, `ServicioDePagos`, `ServicioDeTelemedicina`) necesita hablar con un sistema externo que no comparte su vocabulario ni su protocolo (SOAP con sobres y faults en un caso, REST con un JSON y un vocabulario propio en los otros dos). El Adapter aísla esa traducción en una sola clase por integración: el resto del componente, y cualquier otro componente que dependa de la fachada, sólo conoce tipos de dominio (`Cobertura`, `ResultadoPasarela`, `SalaDeVideo`), nunca un tipo SOAP ni un DTO del tercero.
@@ -359,7 +359,7 @@ El javadoc de la clase documenta que concentra dos responsabilidades: decidir qu
 
 **Alternativa descartada:** que `ServicioDeTurnos` inyectara e invocara directamente la fachada de cada componente interesado (obras sociales, pagos, telemedicina, facturación). Se descartó porque cuatro componentes editando el mismo método en paralelo generaba conflictos de merge constantes, y porque invertía la dirección de dependencias que el sistema ya usaba con el tópico `TurnoConfirmado`: el componente de turnos anuncia, los demás reaccionan (sección 9.2).
 
-**Estado real:** `TurnoEnReserva` tiene un observador (`CoberturaEnLaReserva`, prioridad `COBERTURA`) y `TurnoEnConfirmacion` tiene dos: `CobroAlConfirmar` (`COBRO_COPAGO`, SCRUM-93) y `SalaAlConfirmar` (`SALA_DE_VIDEO`, SCRUM-95). `RECLAMO` quedó reservada pero sin usar a propósito: facturación se conectó como suscriptor del tópico JMS en vez de como observador (sección 9.3, y 8.6 más abajo).
+**Estado real:** `TurnoEnReserva` tiene un observador (`CoberturaEnLaReserva`, prioridad `COBERTURA`) y `TurnoEnConfirmacion` tiene dos: `CobroAlConfirmar` (`COBRO_COPAGO`, SCRUM-93) y `SalaAlConfirmar` (`SALA_DE_VIDEO`, SCRUM-95). `RECLAMO` quedó reservada pero sin usar a propósito: facturación se conectó como suscriptor del tópico JMS en vez de como observador (sección 9.3, y 8.6 más abajo). Un tercer evento, `TurnoEnCancelacion` (SCRUM-124), se dispara dentro de `cancelarTurno` solo para un turno `CONFIRMADO`, antes de marcarlo `CANCELADO`: lo observan `ReclamoAlCancelar` (`ANULACION_RECLAMO`, 100), que pasa el reclamo `PENDIENTE` a `ANULADO` o el `ENVIADO` a `EN_REVISION_MANUAL`, y `ReembolsoAlCancelar` (`REEMBOLSO_COPAGO`, 200, último porque es lo único que el rollback no deshace), que reembolsa el copago por la pasarela. Si alguno falla, la cancelación entera se revierte y el turno sigue `CONFIRMADO`. Liberar un hold no lo dispara.
 
 ### 8.6 Publish/Subscribe y Point-to-Point (JMS)
 
@@ -380,14 +380,14 @@ El javadoc de la clase documenta que concentra dos responsabilidades: decidir qu
 
 El estado del hold **no** se guarda únicamente en memoria del bean stateful `ServicioDeTurnos`: se guarda en la entidad `Turno`, en los campos `estado` (`EN_HOLD`) e `inicioHold`.
 
-El bean mantiene un campo en memoria, `turnoEnCursoId`, pero es solo una referencia de conveniencia, no la fuente de verdad: `confirmarTurno` y `cancelarTurno` vuelven a buscar el `Turno` en la base de datos por el id recibido, sin leer `turnoEnCursoId`.
+El bean mantiene un campo en memoria, `turnoEnCursoId`, pero no es la fuente de verdad ni la lee nadie: se escribe al reservar, y `confirmarTurno` y `cancelarTurno` vuelven a buscar el `Turno` en la base de datos por el id recibido. Además, los recursos JAX-RS `@RequestScoped` inyectan el bean con `@Inject`, así que el contenedor crea una instancia por petición y la destruye al terminarla (`@PostConstruct` y `@PreDestroy` lo registran en el log): la instancia que reservó no es la que confirma.
 
 Esto es deliberado, por dos razones:
 
 1. **El hold debe sobrevivir a un reinicio del contenedor.** Si `EN_HOLD` viviera solo en memoria del bean, un reinicio de WildFly perdería silenciosamente todos los holds activos, dejando turnos reservados pero sin temporizador corriendo para liberarlos.
 2. **El paciente puede confirmar desde otra solicitud HTTP.** Un bean `@Stateful` está atado a una instancia concreta del contenedor; si la confirmación llega en una solicitud distinta de la que generó el hold, como ocurre cuando el contenedor inyecta una nueva instancia por request, ningún estado en memoria del bean anterior estaría disponible.
 
-El `@Stateful` se limita a sostener la referencia conversacional y delegar en el `@Singleton` que expira el hold (sección 6.1); lo que debe sobrevivir entre llamadas está en la base de datos, no en memoria. Esto también explica por qué el timer, aunque hoy vive en `ExpiradorDeHolds`, sigue sin resolver un reinicio del contenedor (sección 11).
+El `@Stateful` aporta el ciclo de vida gestionado por el contenedor que pide la consigna y agrupa las operaciones de la conversación; no guarda estado que importe entre llamadas, y delega la expiración en el `@Singleton` (sección 6.1). Lo que debe sobrevivir entre llamadas está en la base de datos, no en memoria. Esto también explica por qué el timer, aunque hoy vive en `ExpiradorDeHolds`, sigue sin resolver un reinicio del contenedor (sección 11).
 
 ### 9.1 Publicación de `TurnoConfirmado`
 
@@ -629,7 +629,7 @@ sequenceDiagram
     deactivate ServicioDeTurnos
 
     par suscriptor 1 - notificaciones
-        Topico->>NotiMDB: onMessage(MapMessage) - no durable, hasta 10 reintentos sin backoff, luego DLQ de Artemis
+        Topico->>NotiMDB: onMessage(MapMessage) - no durable, hasta 10 entregas con backoff de 1 s a 30 s, luego jms.queue.DLQ
         NotiMDB->>ServicioDeNotificaciones: notificarTurnoConfirmado(turnoId, pacienteId, fechaHora)
     and suscriptor 2 - facturacion
         Topico->>FactMDB: onMessage(MapMessage) - RunAs ADMINISTRADOR, PermitAll
@@ -717,7 +717,7 @@ sequenceDiagram
     activate Adapter
     Adapter->>Simulador: POST /api/externo/pagos { amount, currency, cardToken }
     alt HTTP 200 OK
-        Simulador-->>Adapter: { status: APPROVED|REJECTED|REFUNDED, transactionId }
+        Simulador-->>Adapter: { status: approved|rejected|refunded, transactionId }
         Adapter-->>ServicioDePagos: ResultadoPasarela
         ServicioDePagos->>PagoDAO: actualizar(Pago con estado e idTransaccionExterna)
         ServicioDePagos-->>Cobro: Pago
