@@ -37,6 +37,10 @@ ar.edu.uade.da2.mediconecta
   externos/video                       el proveedor de video REST simulado, otro tercero
 ```
 
+La documentación técnica está en [`docs/`](docs/). Las decisiones de
+arquitectura, con sus alternativas descartadas, están en
+[`docs/adr/`](docs/adr/README.md).
+
 ---
 
 ## Requisitos
