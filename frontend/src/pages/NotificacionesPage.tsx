@@ -23,23 +23,27 @@ function formatearFecha(fechaEnvio: string): string {
   return fecha ? `${formatearDiaLargo(fecha)}, ${formatearHora(fecha)} hs` : ''
 }
 
+// Un error no es una lista vacia: si no se pudo cargar, no se sabe si hay
+// notificaciones, asi que no se muestra "No tenés notificaciones".
+type Carga =
+  | { estado: 'cargando' }
+  | { estado: 'error'; mensaje: string }
+  | { estado: 'lista'; notificaciones: Notificacion[] }
+
 export default function NotificacionesPage() {
   useTitulo('Notificaciones')
 
-  const [notificaciones, setNotificaciones] = useState<Notificacion[] | null>(null)
-  const [error, setError] = useState('')
+  const [carga, setCarga] = useState<Carga>({ estado: 'cargando' })
 
   useEffect(() => {
     let cancelado = false
     api<Notificacion[]>('/notificaciones/mias')
-      .then((lista) => {
-        if (cancelado) return
-        setNotificaciones(lista)
+      .then((notificaciones) => {
+        if (!cancelado) setCarga({ estado: 'lista', notificaciones })
       })
       .catch((err: unknown) => {
         if (cancelado) return
-        setNotificaciones([])
-        setError(err instanceof Error ? err.message : 'No se pudieron cargar las notificaciones')
+        setCarga({ estado: 'error', mensaje: err instanceof Error ? err.message : 'No se pudieron cargar las notificaciones' })
       })
     return () => {
       cancelado = true
@@ -55,6 +59,7 @@ export default function NotificacionesPage() {
         </Link>
         <nav className="nav">
           <Link to="/home">Mis turnos</Link>
+          <Link to="/historia">Mi historia clínica</Link>
           <Link to="/notificaciones" aria-current="page">Notificaciones</Link>
           <img className="avatar" src={ASSETS.avatar} alt="" />
           <BotonCerrarSesion />
@@ -65,16 +70,16 @@ export default function NotificacionesPage() {
       <main className="content stack" style={{ gap: 26 }}>
         <h1 className="h1" style={{ fontSize: 30 }}>Notificaciones</h1>
 
-        {error && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{error}</p>}
-
-        {notificaciones === null ? (
+        {carga.estado === 'cargando' ? (
           <p className="muted">Cargando notificaciones...</p>
-        ) : notificaciones.length === 0 ? (
-          !error && <p className="muted">No tenés notificaciones</p>
+        ) : carga.estado === 'error' ? (
+          <p role="alert" style={{ color: 'var(--accent)' }}>No se pudieron cargar tus notificaciones: {carga.mensaje}</p>
+        ) : carga.notificaciones.length === 0 ? (
+          <p className="muted">No tenés notificaciones</p>
         ) : (
           // El backend ya ordena de la mas reciente a la mas antigua: se muestra tal cual llega.
           <ul className="appts" style={{ listStyle: 'none', padding: 0 }}>
-            {notificaciones.map((notificacion) => (
+            {carga.notificaciones.map((notificacion) => (
               <li key={notificacion.id} className="card appt">
                 <div className="grow">
                   <p className="appt-name">{notificacion.mensaje}</p>
