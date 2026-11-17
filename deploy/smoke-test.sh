@@ -40,6 +40,16 @@ comprobar "admin lista usuarios"              200 "$(codigo -u "$ADMIN" "$BASE/u
 comprobar "paciente NO lista usuarios"        403 "$(codigo -u "$PACI" "$BASE/usuarios")"
 comprobar "profesional NO lista usuarios"     403 "$(codigo -u "$PROF" "$BASE/usuarios")"
 
+echo
+echo "Rutas del frontend (SCRUM-134)"
+# Las pantallas se sirven con index.html y 200 (filtro RutasDelFrontend); la
+# API y los archivos que no existen siguen respondiendo 404.
+APP="${BASE%/api}"
+comprobar "recargar una pantalla da 200"      200 "$(codigo "$APP/home")"
+comprobar "el panel del administrador da 200" 200 "$(codigo "$APP/admin")"
+comprobar "un archivo inexistente sigue en 404" 404 "$(codigo "$APP/assets/no-existe.js")"
+comprobar "una ruta de la API inexistente, 404" 404 "$(codigo "$BASE/no-existe")"
+
 
 echo
 echo "Consulta de usuario por id (SCRUM-102)"
