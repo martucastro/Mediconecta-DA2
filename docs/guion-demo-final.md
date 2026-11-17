@@ -54,10 +54,22 @@ Postman, carpeta `08`, en orden; los comandos de `jboss-cli` están en la descri
 | Legado caído en la reserva | `08b`: `:add` de `mediconecta.obrasocial.url` | 503 y la franja sigue `DISPONIBLE` |
 | Legado caído al reclamar | `08c`: romper, confirmar (200), restaurar antes de los ~30 s | El reclamo suma `intentos` y después queda `ENVIADO`: la cola reintenta sola |
 | Cobro huérfano | `08d`: `:add` de `mediconecta.video.simular-caida` y confirmar telemedicina | 503: la sala falló después del cobro. El turno sigue `EN_HOLD` y el pago queda `REEMBOLSADO` (`CompensacionDeCobro`). Al restaurar, se confirma con un solo `APROBADO` |
-| Circuit breaker de los adaptadores | — | Pendiente: PR #37 sin integrar a la fecha de este guion |
+| Circuit breaker | Ver abajo | Tras 3 fallas seguidas el adaptador deja de llamar al sistema externo y falla al instante; pasados 10 s, una llamada de prueba lo cierra |
 | Hold vencido | Una reserva sin confirmar (de Paciente B, para no bloquear al paciente semilla) | A los 5 minutos vuelve a `DISPONIBLE`: `Hold vencido (temporizador)…` (`ExpiradorDeHolds`) |
 
 Antes de seguir: en `jboss-cli`, `:read-children-names(child-type=system-property)` no debe listar ninguna de las dos propiedades.
+
+**Circuit breaker (unos 2 minutos).** Los tres adaptadores externos (`obra-social`, `pasarela-de-pago` y `proveedor-de-video`) usan `CircuitBreaker`: umbral de 3 fallas y 10 s abierto (`mediconecta.<sistema>.cb.umbral` y `cb.abiertoMs`). Correr, con la consola de WildFly a la vista:
+
+```
+JBOSS_CLI=…/bin/jboss-cli.sh SERVER_LOG=…/standalone/log/server.log bash deploy/demo-circuit-breaker.sh
+```
+
+1. Tira el proveedor de video y confirma 6 veces una teleconsulta. Todas responden 503 con `Retry-After`, y en el log aparece una sola vez `Circuit breaker 'proveedor-de-video': ABIERTO…`.
+2. Con el circuito abierto, otro paciente reserva y confirma un turno presencial con su copago, y el resto de la API responde 200.
+3. Restaura el proveedor y, pasados 11 s, la misma teleconsulta se confirma (`…: CERRADO, el sistema externo volvio.`). El paciente paga una sola vez: cada intento fallido se reembolsó.
+
+Con la pasarela el contrato no cambia: con el circuito abierto, `--resiliencia` del smoke muestra que un token que aprueba también da 502, sin llamar a la pasarela.
 
 ## 5. Cierre
 
