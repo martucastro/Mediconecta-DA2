@@ -116,6 +116,12 @@ curl -s -o /dev/null -H "Content-Type: application/json" \
 comprobar "otro paciente NO ve ese turno"     "si" "$(curl -s -u "$OTRO_PACI" "$BASE/turnos/mios" | grep -q "\"id\":$ID[,}]" && echo no || echo si)"
 
 echo
+echo "Pagos (SCRUM-127: el mismo 403 para un id inexistente que para uno ajeno)"
+comprobar "paciente con un pago inexistente da 403"  403 "$(codigo -u "$PACI" "$BASE/pagos/999999999")"
+comprobar "paciente con un turno inexistente da 403" 403 "$(codigo -u "$PACI" "$BASE/pagos?turnoId=999999999")"
+comprobar "admin con un pago inexistente da 404"     404 "$(codigo -u "$ADMIN" "$BASE/pagos/999999999")"
+
+echo
 echo "Telemedicina (proveedor de video simulado y componente)"
 SALA=$(curl -s -H "Content-Type: application/json" -d '{"reference":"smoke"}' "$BASE/externo/salas")
 comprobar "el proveedor simulado crea una sala" "si" "$(printf '%s' "$SALA" | grep -q '"guestUrl":"http' && printf '%s' "$SALA" | grep -q '"hostUrl":"http' && echo si || echo no)"

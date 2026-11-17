@@ -208,11 +208,17 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
         return historia;
     }
 
+    /**
+     * Mismo mensaje si el id no existe o si no es de un paciente (SCRUM-127):
+     * distinguirlos dejaba enumerar que ids estan ocupados y con que rol.
+     */
     private void validarPaciente(Long pacienteId) {
-        Usuario paciente = validarUsuario(pacienteId, "paciente");
-        if (!ROL_PACIENTE.equals(paciente.getRol())) {
-            throw new DatosInvalidosException(
-                    "El usuario " + pacienteId + " no tiene rol " + ROL_PACIENTE + ".");
+        if (pacienteId == null) {
+            throw new DatosInvalidosException("El id del paciente es obligatorio.");
+        }
+        Usuario paciente = servicioDeUsuarios.obtenerUsuario(pacienteId);
+        if (paciente == null || !ROL_PACIENTE.equals(paciente.getRol())) {
+            throw new DatosInvalidosException("El paciente indicado no es válido.");
         }
     }
 
@@ -230,16 +236,5 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
             throw new EJBAccessException("No se pudo resolver el usuario autenticado: " + email);
         }
         return profesional.getId();
-    }
-
-    private Usuario validarUsuario(Long id, String descripcion) {
-        if (id == null) {
-            throw new DatosInvalidosException("El id del " + descripcion + " es obligatorio.");
-        }
-        Usuario usuario = servicioDeUsuarios.obtenerUsuario(id);
-        if (usuario == null) {
-            throw new DatosInvalidosException("No existe un usuario con id " + id + ".");
-        }
-        return usuario;
     }
 }

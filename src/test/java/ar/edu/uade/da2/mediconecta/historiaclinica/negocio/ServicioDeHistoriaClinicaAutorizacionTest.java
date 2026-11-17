@@ -1,6 +1,7 @@
 package ar.edu.uade.da2.mediconecta.historiaclinica.negocio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -151,6 +152,24 @@ class ServicioDeHistoriaClinicaAutorizacionTest {
 
         assertThrows(DatosInvalidosException.class, () -> servicio.registrarConsulta(PACIENTE_ID, datos));
         verify(entradaDAO, never()).guardar(any());
+    }
+
+    @Test
+    void elErrorNoRevelaSiElIdExisteNiQueRolTiene() {
+        // SCRUM-127: antes "No existe un usuario con id 99" y "El usuario 2 no
+        // tiene rol PACIENTE" dejaban enumerar ids y roles.
+        when(servicioDeUsuarios.obtenerUsuario(99L)).thenReturn(null);
+        when(servicioDeUsuarios.obtenerUsuario(2L)).thenReturn(
+                usuario(2L, "profesional@mediconecta.com", ServicioDeUsuarios.ROL_PROFESIONAL));
+
+        String inexistente = assertThrows(DatosInvalidosException.class,
+                () -> servicio.crearHistoria(99L)).getMessage();
+        String noPaciente = assertThrows(DatosInvalidosException.class,
+                () -> servicio.crearHistoria(2L)).getMessage();
+
+        assertEquals(inexistente, noPaciente);
+        assertFalse(inexistente.contains("99"), inexistente);
+        assertFalse(noPaciente.contains(ServicioDeUsuarios.ROL_PROFESIONAL), noPaciente);
     }
 
     private Set<String> roles(String metodo, Class<?>... parametros) throws Exception {

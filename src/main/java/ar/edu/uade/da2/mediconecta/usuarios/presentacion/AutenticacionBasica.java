@@ -84,7 +84,8 @@ public class AutenticacionBasica implements HttpAuthenticationMechanism {
      */
     private UsernamePasswordCredential credencialDe(HttpServletRequest request) {
         String encabezado = request.getHeader(ENCABEZADO_AUTORIZACION);
-        if (encabezado == null || !encabezado.startsWith(PREFIJO_BASIC)) {
+        // El nombre del esquema no distingue mayusculas (RFC 7235, SCRUM-127).
+        if (encabezado == null || !encabezado.regionMatches(true, 0, PREFIJO_BASIC, 0, PREFIJO_BASIC.length())) {
             return null;
         }
 

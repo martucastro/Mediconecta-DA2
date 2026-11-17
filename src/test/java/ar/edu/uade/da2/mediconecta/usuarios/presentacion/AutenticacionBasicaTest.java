@@ -252,4 +252,21 @@ class AutenticacionBasicaTest {
         assertEquals(AuthenticationStatus.SUCCESS, resultado);
         verify(contexto, never()).isProtected();
     }
+
+    @Test
+    void elEsquemaBasicNoDistingueMayusculas() throws Exception {
+        // RFC 7235: el nombre del esquema es case-insensitive (SCRUM-127).
+        String base64 = Base64.getEncoder()
+                .encodeToString("admin@mediconecta.com:cambiar123".getBytes(StandardCharsets.UTF_8));
+        CredentialValidationResult valido = new CredentialValidationResult("admin@mediconecta.com");
+        when(manejadorDeIdentidades.validate(any(Credential.class))).thenReturn(valido);
+        when(contexto.notifyContainerAboutLogin(valido)).thenReturn(AuthenticationStatus.SUCCESS);
+
+        for (String esquema : new String[] { "basic ", "BASIC ", "bAsIc " }) {
+            when(request.getHeader("Authorization")).thenReturn(esquema + base64);
+
+            assertEquals(AuthenticationStatus.SUCCESS, mecanismo.validateRequest(request, response, contexto),
+                    esquema);
+        }
+    }
 }

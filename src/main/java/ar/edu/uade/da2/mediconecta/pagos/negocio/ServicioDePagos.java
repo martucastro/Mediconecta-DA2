@@ -118,11 +118,17 @@ public class ServicioDePagos implements ServicioDePagosLocal {
             throw new DatosInvalidosException("El id del pago es obligatorio.");
         }
         Pago pago = pagoDAO.buscarPorId(pagoId);
-        // Un paciente solo puede ver el pago de un turno suyo. Se verifica solo si
-        // el pago existe: si no, el resource ya responde 404 sin filtrar nada.
-        if (pago != null) {
-            verificarQueElTurnoEsDelCaller(pago.getTurnoId());
+        if (pago == null) {
+            // Un no-administrador recibe el mismo 403 que con un pago ajeno
+            // (SCRUM-127): un 404 aca le dejaba enumerar los ids ocupados. El
+            // administrador ve todos los pagos, asi que recibe null (404).
+            if (!contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)) {
+                throw new EJBAccessException("No tiene acceso a ese pago.");
+            }
+            return null;
         }
+        // Un paciente solo puede ver el pago de un turno suyo.
+        verificarQueElTurnoEsDelCaller(pago.getTurnoId());
         return pago;
     }
 
@@ -242,7 +248,9 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         }
         Turno turno = servicioDeTurnos.obtenerTurno(turnoId);
         if (turno == null) {
-            throw new DatosInvalidosException("No existe el turno " + turnoId + ".");
+            // Mismo rechazo que un turno ajeno (SCRUM-127): un 400 distinto
+            // dejaba saber que turnos existen.
+            throw new EJBAccessException("No tiene acceso a ese turno.");
         }
         Usuario caller = usuarioAutenticado();
         boolean esElPaciente = turno.getPaciente() != null
