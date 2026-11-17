@@ -1,5 +1,7 @@
 package ar.edu.uade.da2.mediconecta.obrassociales.negocio.soap;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.logging.Level;
@@ -75,53 +77,58 @@ public class SistemaDeObraSocialSoap implements SistemaDeObraSocial {
 
     @Override
     public Cobertura consultar(String dni, String numeroAfiliado, Prestacion prestacion) {
-        return invocar("validarCobertura",
-                puerto -> puerto.validarCobertura(dni, numeroAfiliado, prestacion.name()));
+        return traducir(invocar("validarCobertura", "el pedido",
+                puerto -> puerto.validarCobertura(dni, numeroAfiliado, prestacion.name())));
     }
 
     @Override
     public Cobertura autorizar(String dni, String numeroAfiliado, Prestacion prestacion) {
-        return invocar("autorizarPrestacion",
-                puerto -> puerto.autorizarPrestacion(dni, numeroAfiliado, prestacion.name()));
+        return traducir(invocar("autorizarPrestacion", "el pedido",
+                puerto -> puerto.autorizarPrestacion(dni, numeroAfiliado, prestacion.name())));
+    }
+
+    /** Presenta una autorizacion emitida antes (autorizarPrestacion). */
+    @Override
+    public ResultadoPresentacion presentar(String dni, String numeroAfiliado, String numeroAutorizacion) {
+        return traducirPresentacion(invocar("presentarReclamo", "el reclamo",
+                puerto -> puerto.presentarReclamo(dni, numeroAfiliado, numeroAutorizacion)));
     }
 
     /**
-     * Presenta una autorizacion emitida antes (autorizarPrestacion). No usa
-     * invocar() porque esa funcion traduce siempre a Cobertura; la traduccion
-     * de ida y vuelta es la misma lógica con otro tipo de respuesta, asi que
-     * se repite acá en vez de generalizar invocar() con un tipo genérico.
+     * Hace la llamada SOAP y traduce sus errores; la respuesta la traduce quien
+     * llama, porque cada operación devuelve otro tipo. El proxy se cierra
+     * siempre (SCRUM-129): es uno por llamada y, sin cerrarlo, cada pedido
+     * dejaba su cliente CXF vivo hasta que lo juntara el recolector.
      */
-    @Override
-    public ResultadoPresentacion presentar(String dni, String numeroAfiliado, String numeroAutorizacion) {
+    private <T> T invocar(String operacion, String queSeRechaza, Function<ObraSocialLegadoPort, T> llamada) {
         String url = System.getProperty(PROPIEDAD_URL, URL_POR_DEFECTO);
+        ObraSocialLegadoPort puerto = null;
         try {
-            return traducirPresentacion(nuevoPuerto(url).presentarReclamo(dni, numeroAfiliado, numeroAutorizacion));
-        } catch (SOAPFaultException e) {
-            if (esFaultDelCliente(e)) {
-                throw new DatosInvalidosException(
-                        "La obra social rechazó el reclamo: " + e.getFault().getFaultString());
-            }
-            throw noDisponible("presentarReclamo", url, e);
-        } catch (WebServiceException e) {
-            throw noDisponible("presentarReclamo", url, e);
-        }
-    }
-
-    private Cobertura invocar(String operacion,
-            Function<ObraSocialLegadoPort, RespuestaCoberturaXml> llamada) {
-        String url = System.getProperty(PROPIEDAD_URL, URL_POR_DEFECTO);
-        try {
-            return traducir(llamada.apply(nuevoPuerto(url)));
+            puerto = nuevoPuerto(url);
+            return llamada.apply(puerto);
         } catch (SOAPFaultException e) {
             if (esFaultDelCliente(e)) {
                 // El legado respondió y dice que el pedido no es válido.
                 throw new DatosInvalidosException(
-                        "La obra social rechazó el pedido: " + e.getFault().getFaultString());
+                        "La obra social rechazó " + queSeRechaza + ": " + e.getFault().getFaultString());
             }
             throw noDisponible(operacion, url, e);
         } catch (WebServiceException e) {
             // No hubo respuesta utilizable: conexión rechazada, timeout, etc.
             throw noDisponible(operacion, url, e);
+        } finally {
+            cerrar(puerto);
+        }
+    }
+
+    /** Los proxies de CXF implementan Closeable; un doble de test puede no hacerlo. */
+    private static void cerrar(ObraSocialLegadoPort puerto) {
+        if (puerto instanceof Closeable cerrable) {
+            try {
+                cerrable.close();
+            } catch (IOException e) {
+                LOGGER.log(Level.FINE, "No se pudo cerrar el cliente SOAP del legado", e);
+            }
         }
     }
 

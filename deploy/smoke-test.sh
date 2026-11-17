@@ -231,6 +231,17 @@ comprobar "admin con un pago inexistente da 404"     404 "$(codigo -u "$ADMIN" "
 comprobar "admin reembolsa un pago inexistente: 404" 404 "$(codigo -u "$ADMIN" -X PUT "$BASE/pagos/999999999/reembolso")"
 
 echo
+echo "Afiliaciones a la obra social (ServicioDeObrasSociales)"
+# Se registran los mismos datos del seed (plan medio): el copago del 70% que
+# verifica el bloque de turnos no cambia.
+AFILIACION=(-H "Content-Type: application/json" -d "{\"pacienteId\":$ID_PACI,\"dni\":\"30333444\",\"numeroAfiliado\":\"OS-2002\"}")
+comprobar "admin registra una afiliacion"     200 "$(codigo -u "$ADMIN" "${AFILIACION[@]}" "$BASE/afiliaciones")"
+comprobar "paciente NO registra afiliaciones" 403 "$(codigo -u "$PACI" "${AFILIACION[@]}" "$BASE/afiliaciones")"
+comprobar "anonimo NO ve una afiliacion"      401 "$(codigo "$BASE/afiliaciones/mia")"
+comprobar "el paciente ve su afiliacion"      "si" "$(curl -s -u "$PACI" "$BASE/afiliaciones/mia" | grep -q '"numeroAfiliado":"OS-2002"' && echo si || echo no)"
+comprobar "un paciente sin obra social da 404" 404 "$(codigo -u "$OTRO_PACI" "$BASE/afiliaciones/mia")"
+
+echo
 echo "Telemedicina (proveedor de video simulado y componente)"
 SALA=$(curl -s -H "Content-Type: application/json" -d '{"reference":"smoke"}' "$BASE/externo/salas")
 comprobar "el proveedor simulado crea una sala" "si" "$(printf '%s' "$SALA" | grep -q '"guestUrl":"http' && printf '%s' "$SALA" | grep -q '"hostUrl":"http' && echo si || echo no)"
@@ -334,6 +345,11 @@ comprobar "afiliado inexistente da SOAP Fault" "si" \
 # del legado (faultcode Server) por este codigo.
 comprobar "ese Fault tiene codigo Client" "si" \
   "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -Eq '<faultcode[^>]*>[^<]*Client</faultcode>' && echo si || echo no)"
+# SCRUM-129: el fault esta declarado en el contrato y viaja con su detalle.
+comprobar "el WSDL declara el fault PedidoInvalido" "si" \
+  "$(curl -s "$SOAP?wsdl" | grep -q '<wsdl:fault message="tns:PedidoInvalidoException"' && echo si || echo no)"
+comprobar "el Fault trae el detalle PedidoInvalido" "si" \
+  "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -q 'PedidoInvalido' && echo si || echo no)"
 # presentarReclamo (SCRUM-97 T4): presenta una autorizacion ya emitida, no
 # evalua cobertura de nuevo.
 R=$(soapReclamo 30333444 OS-2002 AUT-OS-2002-CONSULTA)

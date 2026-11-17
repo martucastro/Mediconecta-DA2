@@ -2,7 +2,7 @@ package ar.edu.uade.da2.mediconecta.usuarios.presentacion;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
-import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 
 import java.util.List;
 import java.util.Map;
@@ -25,7 +25,7 @@ import jakarta.ws.rs.core.Response;
 public class UsuariosResource {
 
     @Inject
-    private ServicioDeUsuarios servicio;
+    private ServicioDeUsuariosLocal servicio;
 
     @RolesAllowed("ADMINISTRADOR")
     @GET

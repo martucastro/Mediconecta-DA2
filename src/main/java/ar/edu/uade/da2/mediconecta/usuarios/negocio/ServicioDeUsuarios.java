@@ -28,7 +28,7 @@ import jakarta.inject.Inject;
 // restriccion la declaran individualmente y sobreescriben este permiso.
 @PermitAll
 @Stateless
-public class ServicioDeUsuarios {
+public class ServicioDeUsuarios implements ServicioDeUsuariosLocal {
 
     public static final String ROL_PACIENTE = "PACIENTE";
     public static final String ROL_PROFESIONAL = "PROFESIONAL";

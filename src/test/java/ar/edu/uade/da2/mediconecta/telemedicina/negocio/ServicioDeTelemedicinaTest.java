@@ -31,9 +31,10 @@ import ar.edu.uade.da2.mediconecta.telemedicina.datos.SesionVideoDAO;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
-import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.EJBAccessException;
 import jakarta.ejb.SessionContext;
@@ -49,9 +50,9 @@ class ServicioDeTelemedicinaTest {
     @Mock
     private ProveedorDeVideoAdapter proveedor;
     @Mock
-    private ServicioDeTurnos servicioDeTurnos;
+    private ServicioDeTurnosLocal servicioDeTurnos;
     @Mock
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
     @Mock
     private SessionContext contexto;
 

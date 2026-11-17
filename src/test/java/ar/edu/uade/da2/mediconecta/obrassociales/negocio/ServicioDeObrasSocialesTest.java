@@ -2,6 +2,7 @@ package ar.edu.uade.da2.mediconecta.obrassociales.negocio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.security.Principal;
 import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.Test;
@@ -31,6 +33,9 @@ import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDAO;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDePrestacion;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
+import jakarta.ejb.EJBAccessException;
+import jakarta.ejb.SessionContext;
 
 /**
  * La fachada del Adapter, sin contenedor ni legado: el port SistemaDeObraSocial
@@ -51,7 +56,9 @@ class ServicioDeObrasSocialesTest {
     @Mock
     private AutorizacionDAO autorizacionDAO;
     @Mock
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
+    @Mock
+    private SessionContext contexto;
 
     @InjectMocks
     private ServicioDeObrasSociales servicio;
@@ -233,6 +240,33 @@ class ServicioDeObrasSocialesTest {
                 () -> servicio.presentarReclamo(PACIENTE_ID, "AUT-FALSO")));
     }
 
+    // ---- obtenerMiAfiliacion --------------------------------------------------
+
+    @Test
+    void obtenerMiAfiliacionDevuelveLaDelPacienteAutenticado() {
+        callerEs("paciente@test.com", usuario(PACIENTE_ID, ServicioDeUsuarios.ROL_PACIENTE));
+        AfiliacionDePaciente suya = new AfiliacionDePaciente(PACIENTE_ID, DNI, AFILIADO);
+        when(afiliacionDAO.buscarPorPaciente(PACIENTE_ID)).thenReturn(suya);
+
+        assertSame(suya, servicio.obtenerMiAfiliacion());
+    }
+
+    @Test
+    void obtenerMiAfiliacionDeUnPacienteSinObraSocialDevuelveNull() {
+        callerEs("paciente@test.com", usuario(PACIENTE_ID, ServicioDeUsuarios.ROL_PACIENTE));
+        when(afiliacionDAO.buscarPorPaciente(PACIENTE_ID)).thenReturn(null);
+
+        assertNull(servicio.obtenerMiAfiliacion());
+    }
+
+    @Test
+    void obtenerMiAfiliacionConUnCallerQueNoExisteEsAccesoDenegado() {
+        callerEs("fantasma@test.com", null);
+
+        assertThrows(EJBAccessException.class, () -> servicio.obtenerMiAfiliacion());
+        verifyNoInteractions(afiliacionDAO);
+    }
+
     // ---- registrarAfiliacion --------------------------------------------------
 
     @Test
@@ -361,6 +395,12 @@ class ServicioDeObrasSocialesTest {
                 .thenReturn(usuario(PACIENTE_ID, ServicioDeUsuarios.ROL_PACIENTE));
         when(afiliacionDAO.buscarPorPaciente(PACIENTE_ID))
                 .thenReturn(new AfiliacionDePaciente(PACIENTE_ID, DNI, AFILIADO));
+    }
+
+    private void callerEs(String email, Usuario usuario) {
+        Principal principal = () -> email;
+        when(contexto.getCallerPrincipal()).thenReturn(principal);
+        when(servicioDeUsuarios.obtenerPorEmail(email)).thenReturn(usuario);
     }
 
     private static Usuario usuario(Long id, String rol) {

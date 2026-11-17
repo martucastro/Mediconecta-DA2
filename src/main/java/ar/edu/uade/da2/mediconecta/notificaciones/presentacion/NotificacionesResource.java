@@ -1,6 +1,6 @@
 package ar.edu.uade.da2.mediconecta.notificaciones.presentacion;
 
-import ar.edu.uade.da2.mediconecta.notificaciones.negocio.ServicioDeNotificaciones;
+import ar.edu.uade.da2.mediconecta.notificaciones.negocio.ServicioDeNotificacionesLocal;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,7 +21,7 @@ import jakarta.ws.rs.core.MediaType;
 public class NotificacionesResource {
 
     @Inject
-    private ServicioDeNotificaciones servicio;
+    private ServicioDeNotificacionesLocal servicio;
 
     @GET
     @Path("/mias")

@@ -34,6 +34,7 @@ import ar.edu.uade.da2.mediconecta.historiaclinica.datos.HistoriaClinicaDAO;
 import ar.edu.uade.da2.mediconecta.historiaclinica.datos.TipoEntrada;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.ejb.EJBAccessException;
 import jakarta.ejb.SessionContext;
 
@@ -58,7 +59,7 @@ class ServicioDeHistoriaClinicaTest {
     @Spy
     private EntradaClinicaFactory factory = new EntradaClinicaFactory();
     @Mock
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
     @Mock
     private SessionContext contexto;
 
