@@ -66,6 +66,7 @@ export default function HistoriaPage() {
             <>
               <Link to="/home">Mis turnos</Link>
               <Link to="/historia" aria-current="page">Mi historia clínica</Link>
+              <Link to="/notificaciones">Notificaciones</Link>
             </>
           )}
           <img className="avatar" src={ASSETS.avatar} alt="" />
