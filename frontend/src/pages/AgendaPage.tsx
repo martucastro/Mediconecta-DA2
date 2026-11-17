@@ -2,17 +2,14 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import BotonCerrarSesion from './BotonCerrarSesion'
 import { api, obtenerSesion } from '../api'
-import { claveDelDia, horaSugerida } from '../fechas'
+import { claveDelDia, formatearHora, horaSugerida, inicioDelDia, parsearFechaHora } from '../fechas'
 import { paginar } from '../paginado'
+import { DURACION_HOLD_MS, vencimientoDelHold } from '../proximoTurno'
 import Paginador from './Paginador'
 import { type ModalidadTurno, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
 import UnirseAConsulta from './UnirseAConsulta'
-
-// Mismo valor que ExpiradorDeHolds.DURACION_HOLD_MS en el backend: solo sirve
-// para mostrar cuanto le queda a un hold, el backend es quien lo vence.
-const DURACION_HOLD_MS = 5 * 60 * 1000
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 const MESES = [
@@ -25,24 +22,22 @@ function dosDigitos(n: number): string {
 }
 
 function moverDias(clave: string, dias: number): string {
-  const fecha = new Date(`${clave}T00:00:00`)
+  const fecha = inicioDelDia(clave)
   fecha.setDate(fecha.getDate() + dias)
   return claveDelDia(fecha)
 }
 
 function titulo(clave: string): string {
-  const fecha = new Date(`${clave}T00:00:00`)
+  const fecha = inicioDelDia(clave)
   return `${DIAS[fecha.getDay()]} ${fecha.getDate()} de ${MESES[fecha.getMonth()]}`
 }
 
 function hora(fechaHora: string): string {
-  const fecha = new Date(fechaHora)
-  return `${dosDigitos(fecha.getHours())}:${dosDigitos(fecha.getMinutes())}`
+  const f = parsearFechaHora(fechaHora)
+  return f ? formatearHora(f) : '--:--'
 }
 
-// inicioHold llega con hasta nanosegundos: se recorta a milisegundos.
-function restanteDelHold(inicioHold: string, ahora: number): string {
-  const vence = new Date(inicioHold.replace(/(\.\d{3})\d+/, '$1')).getTime() + DURACION_HOLD_MS
+function restanteDelHold(vence: number, ahora: number): string {
   // El tope cubre un reloj del navegador algo atrasado respecto del servidor.
   const segundos = Math.min(DURACION_HOLD_MS / 1000, Math.max(0, Math.ceil((vence - ahora) / 1000)))
   return `${dosDigitos(Math.floor(segundos / 60))}:${dosDigitos(segundos % 60)}`
@@ -61,11 +56,13 @@ function etiquetaEstado(turno: TurnoDTO, ahora: number): { texto: string; color:
   switch (turno.estado) {
     case 'CONFIRMADO':
       return { texto: 'CONFIRMADO', color: 'var(--success)' }
-    case 'EN_HOLD':
+    case 'EN_HOLD': {
+      const vence = vencimientoDelHold(turno)
       return {
-        texto: turno.inicioHold ? `EN HOLD · ${restanteDelHold(turno.inicioHold, ahora)}` : 'EN HOLD',
+        texto: vence === null ? 'EN HOLD' : `EN HOLD · ${restanteDelHold(vence, ahora)}`,
         color: 'var(--accent)',
       }
+    }
     case 'CANCELADO':
       return { texto: 'CANCELADO', color: 'var(--muted)' }
     default:
@@ -273,6 +270,11 @@ export default function AgendaPage() {
                       <p className="appt-name">Sin paciente</p>
                     )}
                     <p className="appt-sub">{detalle(turno)}</p>
+                    {turno.pacienteId != null && (
+                      <Link to={`/historia?pacienteId=${turno.pacienteId}`} state={{ nombre: turno.pacienteNombre }} style={{ display: 'inline-block', marginTop: 6, fontSize: 14, fontWeight: 500, color: 'var(--primary)' }}>
+                        Historia clínica
+                      </Link>
+                    )}
                     {turno.modalidad === 'TELEMEDICINA' && turno.estado === 'CONFIRMADO' && (
                       <div style={{ marginTop: 10 }}>
                         <UnirseAConsulta turnoId={turno.id} style={{ padding: '9px 14px', fontSize: 13 }} />

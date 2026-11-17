@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aDate, claveDelDia, formatearDiaLargo, formatearHora, horaSugerida, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
+import { aDate, claveDelDia, formatearDiaLargo, formatearFechaCorta, formatearFechaHora, formatearHora, horaSugerida, inicioDelDia, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
 
 describe('parsearFechaHora', () => {
   it('lee un LocalDateTime con segundos como hora local', () => {
@@ -71,6 +71,10 @@ describe('formatos', () => {
     expect(formatearDiaLargo(jueves)).toBe('jueves 19 de noviembre')
   })
 
+  it('arma fecha y hora numericas', () => {
+    expect(formatearFechaHora(jueves)).toBe('19/11/2026 08:05')
+  })
+
   it('arma la caja de fecha de la tarjeta', () => {
     expect(partesDeCaja(jueves)).toEqual({ diaSemana: 'JUE', dia: '19', mes: 'NOV' })
   })
@@ -113,5 +117,21 @@ describe('horaSugerida', () => {
 
   it('no pasa de las 23:00 aunque ya sea de noche', () => {
     expect(horaSugerida('2026-11-18', new Date(2026, 10, 18, 23, 10))).toBe('23:00')
+  })
+})
+
+describe('inicioDelDia', () => {
+  it('es la medianoche local del dia, la inversa de claveDelDia', () => {
+    const fecha = inicioDelDia('2026-03-01')
+
+    expect(claveDelDia(fecha)).toBe('2026-03-01')
+    expect([fecha.getHours(), fecha.getMinutes()]).toEqual([0, 0])
+    expect(fecha.getDay()).toBe(0) // domingo
+  })
+})
+
+describe('formatearFechaCorta', () => {
+  it('muestra dia, mes y anio con dos digitos', () => {
+    expect(formatearFechaCorta(parsearFechaHora('2026-03-05T09:00:00')!)).toBe('05/03/2026')
   })
 })

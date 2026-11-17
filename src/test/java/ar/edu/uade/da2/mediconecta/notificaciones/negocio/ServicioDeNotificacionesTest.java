@@ -11,7 +11,7 @@ import static org.mockito.Mockito.when;
 import ar.edu.uade.da2.mediconecta.notificaciones.datos.Notificacion;
 import ar.edu.uade.da2.mediconecta.notificaciones.datos.NotificacionDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
-import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 
 import java.security.Principal;
 import java.util.List;
@@ -40,7 +40,7 @@ class ServicioDeNotificacionesTest {
     private SessionContext contexto;
 
     @Mock
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     @InjectMocks
     private ServicioDeNotificaciones servicio;

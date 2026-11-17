@@ -10,9 +10,13 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.math.BigDecimal;
 
 import javax.xml.namespace.QName;
@@ -211,6 +215,25 @@ class SistemaDeObraSocialSoapTest {
                 () -> sistema.presentar(DNI, AFILIADO, "AUT-OS-2002-CONSULTA"));
 
         assertSame(timeout, e.getCause());
+    }
+
+    // ---- cierre del proxy (SCRUM-129) -------------------------------------------
+
+    @Test
+    void cierraElProxyDespuesDeCadaLlamadaTambienSiFalla() throws IOException {
+        ObraSocialLegadoPort cerrable = mock(ObraSocialLegadoPort.class,
+                withSettings().extraInterfaces(Closeable.class));
+        doReturn(cerrable).when(sistema).nuevoPuerto(anyString());
+        when(cerrable.validarCobertura(DNI, AFILIADO, "CONSULTA"))
+                .thenReturn(respuesta(true, 70, "6000.00", null, "Cubierta al 70%"));
+        when(cerrable.presentarReclamo(DNI, AFILIADO, "AUT-OS-2002-CONSULTA"))
+                .thenThrow(new WebServiceException("Could not receive Message."));
+
+        sistema.consultar(DNI, AFILIADO, Prestacion.CONSULTA);
+        assertThrows(ObraSocialNoDisponibleException.class,
+                () -> sistema.presentar(DNI, AFILIADO, "AUT-OS-2002-CONSULTA"));
+
+        verify((Closeable) cerrable, times(2)).close();
     }
 
     // ---- ayudas ---------------------------------------------------------------

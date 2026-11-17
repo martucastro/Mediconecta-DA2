@@ -1,6 +1,8 @@
 package ar.edu.uade.da2.mediconecta.pagos.negocio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,16 +27,22 @@ import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.Pago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.PagoDAO;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
-import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.ejb.ApplicationException;
+import jakarta.ejb.EJBAccessException;
 import jakarta.ejb.SessionContext;
 
 /**
  * Reembolso del copago al cancelar un turno confirmado (SCRUM-124). El rollback
  * lo hace el contenedor; aca se verifica que la falla de la pasarela sale como
  * una excepcion con rollback=true y que antes no se toco el pago.
+ *
+ * Tambien cubre los casos que sumo SCRUM-87 (commit 5bf956a): BOLA (cobrar o
+ * consultar el pago de un turno ajeno), validacion del cobro y la transicion
+ * de estado invalida del reembolso manual (solo un pago APROBADO -> 409).
  */
 @ExtendWith(MockitoExtension.class)
 class ServicioDePagosTest {
@@ -48,9 +56,9 @@ class ServicioDePagosTest {
     @Mock
     private SessionContext contexto;
     @Mock
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
     @Mock
-    private ServicioDeTurnos servicioDeTurnos;
+    private ServicioDeTurnosLocal servicioDeTurnos;
 
     @InjectMocks
     private ServicioDePagos servicio;
@@ -167,6 +175,131 @@ class ServicioDePagosTest {
         servicio.reembolsarCopagoDelTurno(TURNO);
 
         verify(pasarela, never()).reembolsar(any());
+    }
+
+    // ---- Validacion y BOLA del cobro ------------------------------------------
+
+    @Test
+    void cobrarUnTurnoAjenoEstaProhibido() {
+        // BOLA: el paciente 99 intenta cobrar el turno del paciente 1.
+        comoOtroPaciente();
+
+        assertThrows(EJBAccessException.class, () -> servicio.cobrar(cobro("tok_visa_demo")));
+        verify(pasarela, never()).cobrar(any(), any(), any());
+    }
+
+    @Test
+    void cobrarConDatosNulosEsDatoInvalido() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.cobrar(null));
+    }
+
+    @Test
+    void cobrarConMontoNoPositivoEsDatoInvalido() {
+        CobroDTO datos = cobro("tok_visa_demo");
+        datos.setMonto(BigDecimal.ZERO);
+
+        assertThrows(DatosInvalidosException.class, () -> servicio.cobrar(datos));
+    }
+
+    @Test
+    void cobrarConMonedaInvalidaEsDatoInvalido() {
+        CobroDTO datos = cobro("tok_visa_demo");
+        datos.setMoneda("AR");
+
+        assertThrows(DatosInvalidosException.class, () -> servicio.cobrar(datos));
+    }
+
+    @Test
+    void cobrarSinTokenDeMedioDePagoEsDatoInvalido() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.cobrar(cobro("  ")));
+    }
+
+    // ---- Consulta y listado --------------------------------------------------
+
+    @Test
+    void unAdministradorConsultaCualquierPago() {
+        Pago pago = pago(EstadoPago.APROBADO, "tx-4");
+        when(pagoDAO.buscarPorId(5L)).thenReturn(pago);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(true);
+
+        assertSame(pago, servicio.consultarPago(5L));
+    }
+
+    @Test
+    void consultarUnPagoInexistenteDevuelveNull() {
+        assertNull(servicio.consultarPago(5L));
+    }
+
+    @Test
+    void consultarConIdNuloEsDatoInvalido() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.consultarPago(null));
+    }
+
+    @Test
+    void consultarElPagoDeUnTurnoAjenoEstaProhibido() {
+        when(pagoDAO.buscarPorId(5L)).thenReturn(pago(EstadoPago.APROBADO, "tx-5"));
+        comoOtroPaciente();
+
+        assertThrows(EJBAccessException.class, () -> servicio.consultarPago(5L));
+    }
+
+    @Test
+    void unAdministradorListaLosPagosDeUnTurno() {
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(true);
+        List<Pago> pagos = List.of(pago(EstadoPago.APROBADO, "tx-6"));
+        when(pagoDAO.listarPorTurno(TURNO)).thenReturn(pagos);
+
+        assertSame(pagos, servicio.listarPorTurno(TURNO));
+    }
+
+    @Test
+    void listarConTurnoNuloEsDatoInvalido() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.listarPorTurno(null));
+    }
+
+    // ---- Reembolso manual (transicion de estado invalida -> 409) -------------
+
+    @Test
+    void reembolsarUnPagoAprobadoLoDejaReembolsado() {
+        when(pagoDAO.buscarPorId(5L)).thenReturn(pago(EstadoPago.APROBADO, "tx-7"));
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(true);
+        when(pasarela.reembolsar("tx-7"))
+                .thenReturn(new ResultadoPasarela(EstadoPago.REEMBOLSADO, "tx-7"));
+        when(pagoDAO.actualizar(any())).thenAnswer(i -> i.getArgument(0));
+
+        assertEquals(EstadoPago.REEMBOLSADO, servicio.reembolsar(5L).getEstado());
+    }
+
+    @Test
+    void reembolsarUnPagoQueNoEstaAprobadoEsConflicto() {
+        // Solo un pago APROBADO se puede reembolsar.
+        when(pagoDAO.buscarPorId(5L)).thenReturn(pago(EstadoPago.PENDIENTE, null));
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(true);
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.reembolsar(5L));
+        verify(pasarela, never()).reembolsar(any());
+    }
+
+    @Test
+    void reembolsarUnPagoInexistenteEsDatoInvalido() {
+        assertThrows(DatosInvalidosException.class, () -> servicio.reembolsar(5L));
+    }
+
+    /** El turno es del paciente 1, pero quien llama es el paciente 99. */
+    private void comoOtroPaciente() {
+        Usuario duenio = new Usuario("Paciente", "paciente@mediconecta.com",
+                ServicioDeUsuarios.ROL_PACIENTE, "hash");
+        duenio.setId(1L);
+        Usuario otro = new Usuario("Otro", "otro@mediconecta.com",
+                ServicioDeUsuarios.ROL_PACIENTE, "hash");
+        otro.setId(99L);
+        Turno turno = new Turno(null, LocalDateTime.now().plusDays(1));
+        turno.setId(TURNO);
+        turno.setPaciente(duenio);
+        Principal principal = otro::getEmail;
+        when(servicioDeTurnos.obtenerTurno(TURNO)).thenReturn(turno);
+        when(contexto.getCallerPrincipal()).thenReturn(principal);
+        when(servicioDeUsuarios.obtenerPorEmail(otro.getEmail())).thenReturn(otro);
     }
 
     private void comoElPacienteDelTurno() {

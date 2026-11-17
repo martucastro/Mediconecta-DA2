@@ -11,7 +11,7 @@ import ar.edu.uade.da2.mediconecta.historiaclinica.datos.TipoEntrada;
 import java.util.List;
 import java.util.logging.Logger;
 
-import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -54,7 +54,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
     // Dependencia hacia otro componente, siempre a través de su fachada:
     // nunca se consulta la tabla de usuarios directamente desde acá.
     @Inject
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     // Identifica al usuario autenticado. @RolesAllowed no alcanza para las
     // reglas que dependen de *cual* historia se esta pidiendo.

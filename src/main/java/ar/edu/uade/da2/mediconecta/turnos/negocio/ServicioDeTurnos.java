@@ -14,6 +14,7 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
@@ -43,7 +44,7 @@ import jakarta.jms.Topic;
 @Stateful
 @RolesAllowed({ ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL,
         ServicioDeUsuarios.ROL_ADMINISTRADOR })
-public class ServicioDeTurnos {
+public class ServicioDeTurnos implements ServicioDeTurnosLocal {
 
     @Resource
     private SessionContext contexto;
@@ -57,7 +58,7 @@ public class ServicioDeTurnos {
     // Facade hacia ServicioDeUsuarios: ServicioDeTurnos orquesta la validacion
     // del paciente antes de reservar.
     @Inject
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     // Puntos de extension: obras sociales, pagos, telemedicina y el reclamo se
     // enganchan observando estos eventos, no con una dependencia desde aca.
@@ -281,7 +282,7 @@ public class ServicioDeTurnos {
         verificarQueElHoldEsDelCaller(turno);
         if (turno.getEstado() != EstadoTurno.EN_HOLD) {
             throw new ConflictoDeNegocioException(
-                    "El turno no tiene un hold activo: está " + enPalabras(turno.getEstado()));
+                    "El turno no tiene una reserva vigente: está " + enPalabras(turno.getEstado()));
         }
         // El temporizador de ExpiradorDeHolds no es persistente: tras un
         // reinicio un hold vencido sigue EN_HOLD hasta el proximo barrido
@@ -289,7 +290,7 @@ public class ServicioDeTurnos {
         if (turno.getInicioHold() != null && turno.getInicioHold()
                 .plus(ExpiradorDeHolds.DURACION_HOLD_MS, ChronoUnit.MILLIS)
                 .isBefore(LocalDateTime.now())) {
-            throw new ConflictoDeNegocioException("El turno no tiene un hold activo: el hold venció");
+            throw new ConflictoDeNegocioException("La reserva del turno venció: ya no se puede confirmar");
         }
 
         // PUNTO DE EXTENSION (confirmacion). Observadores, en este orden:

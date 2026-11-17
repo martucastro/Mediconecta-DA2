@@ -32,18 +32,10 @@ export default function LoginPage() {
         body: JSON.stringify({ email, contrasena: password }),
       })
 
-      // El administrador no tiene pantallas: opera por la API. No se guarda
-      // sesion, para no dejarlo logueado en una interfaz que no es para el.
-      const destino = rutaInicial(usuario.rol)
-      if (!destino) {
-        setError('Esta interfaz es para pacientes y profesionales. Los administradores operan por la API.')
-        return
-      }
-
       // El backend no crea sesion: guardamos el usuario y el header Basic para
       // mandarlo en cada pedido protegido de ahora en mas.
       guardarSesion(usuario, encabezadoBasic(email, password))
-      navigate(destino)
+      navigate(rutaInicial(usuario.rol))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión')
     } finally {

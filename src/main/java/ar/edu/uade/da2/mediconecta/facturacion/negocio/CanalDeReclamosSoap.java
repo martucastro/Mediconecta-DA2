@@ -5,7 +5,7 @@ import java.math.BigDecimal;
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ResultadoPresentacion;
-import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSociales;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSocialesLocal;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -25,7 +25,7 @@ import jakarta.inject.Inject;
 public class CanalDeReclamosSoap implements CanalDeReclamos {
 
     @Inject
-    private ServicioDeObrasSociales servicioDeObrasSociales;
+    private ServicioDeObrasSocialesLocal servicioDeObrasSociales;
 
     @Override
     public ResultadoReclamo presentarReclamo(Long turnoId, Long pacienteId,
