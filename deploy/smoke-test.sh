@@ -98,6 +98,13 @@ comprobar "modalidad desconocida"             400 "$(codigo -u "$PROF" -H "Conte
                                                      "$BASE/turnos/disponibilidad")"
 comprobar "paciente NO abre disponibilidad"   403 "$(codigo -u "$PACI" -H "Content-Type: application/json" \
                                                      -d '{"fechaHora":"2027-01-15T11:00:00"}' "$BASE/turnos/disponibilidad")"
+# SCRUM-132: JSON-B ya no convierte tipos en silencio (1.5 era 1, 123 era "123").
+comprobar "turnoId con decimales"             400 "$(codigo -u "$PACI" -H "Content-Type: application/json" \
+                                                     -d '{"turnoId":1.5}' "$BASE/turnos")"
+comprobar "turnoId fuera de rango"            400 "$(codigo -u "$PACI" -H "Content-Type: application/json" \
+                                                     -d '{"turnoId":99999999999999999999}' "$BASE/turnos")"
+comprobar "token de pago numerico"            400 "$(codigo -u "$PACI" -X PUT -H "Content-Type: application/json" \
+                                                     -d '{"tokenMedioDePago":123}' "$BASE/turnos/999999999/confirmar")"
 
 RESERVA=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID}" "$BASE/turnos")
 comprobar "reservar deja el turno EN_HOLD"    "si" "$(printf '%s' "$RESERVA" | grep -q EN_HOLD && echo si || echo no)"
