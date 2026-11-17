@@ -2,12 +2,22 @@
 # Verificacion de humo de MediConecta.
 #
 # Recorre el flujo completo contra un servidor ya desplegado y comprueba que
-# la seguridad y el hold del turno se comporten como se espera.
+# la seguridad, el hold, el copago, la sala de video, las notificaciones y los
+# reclamos se comporten como se espera, incluida la falla de la pasarela de pago.
 #
-#   bash deploy/smoke-test.sh
+#   bash deploy/smoke-test.sh [--rapido] [--resiliencia]
 #
-# El ultimo caso espera 5 minutos a proposito: es la expiracion del hold, que
-# la gestiona el contenedor. Para saltearlo: bash deploy/smoke-test.sh --rapido
+# --rapido        Saltea la expiracion del hold, que espera 5 minutos a
+#                 proposito porque la gestiona el contenedor.
+# --resiliencia   Agrega la demo de fallas del legado de la obra social y del
+#                 proveedor de video. Las provoca con system properties de
+#                 WildFly, asi que necesita JBOSS_CLI con la ruta a
+#                 jboss-cli.sh (o .bat). Las quita siempre al terminar, incluso
+#                 si el script se interrumpe.
+#
+#   JBOSS_CLI=/ruta/a/wildfly/bin/jboss-cli.sh bash deploy/smoke-test.sh --rapido --resiliencia
+#
+# Corre una sola vez por base: usa franjas con fecha fija (enero de 2027).
 
 set -u
 BASE="${BASE:-http://127.0.0.1:8080/mediconecta/api}"
@@ -18,6 +28,20 @@ PACI="paciente@mediconecta.com:${MEDICONECTA_PACIENTE_PASSWORD:-cambiar123}"
 # Confirmar cobra el copago (SCRUM-93) y el cuerpo es JSON. La pasarela simulada
 # aprueba cualquier token salvo los que empiezan con "rechazar" o "caer".
 PAGO=(-H "Content-Type: application/json" -d '{"tokenMedioDePago":"tok_visa_demo"}')
+
+RAPIDO=no; RESILIENCIA=no
+for arg in "$@"; do
+  case "$arg" in
+    --rapido) RAPIDO=si ;;
+    --resiliencia) RESILIENCIA=si ;;
+    *) echo "Opcion desconocida: $arg (usar --rapido y/o --resiliencia)"; exit 2 ;;
+  esac
+done
+
+if [ "$RESILIENCIA" = "si" ] && { [ -z "${JBOSS_CLI:-}" ] || [ ! -f "$JBOSS_CLI" ]; }; then
+  echo "--resiliencia necesita JBOSS_CLI con la ruta a jboss-cli.sh o jboss-cli.bat"
+  exit 2
+fi
 
 ok=0; fallos=0
 
@@ -30,6 +54,23 @@ comprobar() { # descripcion, esperado, obtenido
 }
 
 codigo() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+
+# Los consumidores de JMS corren despues de la respuesta HTTP, en otros hilos:
+# lo que dejan (notificacion, reclamo) puede tardar unos milisegundos en verse.
+# sondear reintenta el GET hasta que algun objeto del listado cumpla el patron.
+sondear() { # usuario, ruta, patron (grep -E sobre cada objeto JSON), reintentos de 0,5 s (30 por defecto)
+  local i
+  for i in $(seq 1 "${4:-30}"); do
+    if curl -s -u "$1" "$BASE$2" | tr '{' '\n' | grep -Eq "$3"; then echo si; return; fi
+    sleep 0.5
+  done
+  echo no
+}
+
+# Confirma un turno ya reservado con el token de medio de pago indicado: devuelve el codigo HTTP.
+confirmar_con() { # usuario, turnoId, token
+  codigo -u "$1" -X PUT -H "Content-Type: application/json" -d "{\"tokenMedioDePago\":\"$3\"}" "$BASE/turnos/$2/confirmar"
+}
 
 echo "MediConecta, verificacion de humo contra $BASE"
 echo
@@ -112,6 +153,14 @@ comprobar "el rechazo deja el turno EN_HOLD"  "si" "$(curl -s -u "$PACI" "$BASE/
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "${PAGO[@]}" "$BASE/turnos/$ID/confirmar")"
 
 echo
+echo "Pagos (copago de la confirmacion)"
+PAGOS=$(curl -s -u "$PACI" "$BASE/pagos?turnoId=$ID")
+comprobar "el copago quedo APROBADO"          "si" "$(printf '%s' "$PAGOS" | grep -q '"estado":"APROBADO"' && echo si || echo no)"
+comprobar "el copago cobrado es de 6000"      "si" "$(printf '%s' "$PAGOS" | grep -q '"monto":6000.00' && echo si || echo no)"
+comprobar "el intento rechazado quedo registrado" "si" "$(printf '%s' "$PAGOS" | grep -q '"estado":"RECHAZADO"' && echo si || echo no)"
+comprobar "pagos sin credenciales"            401 "$(codigo "$BASE/pagos?turnoId=$ID")"
+
+echo
 echo "Mis turnos (resueltos desde el usuario autenticado)"
 FECHA_ID=$(printf '%s' "$NUEVO" | sed -n 's/.*"fechaHora":"\([0-9-]*\)T.*/\1/p')
 comprobar "mis turnos sin credenciales"       401 "$(codigo "$BASE/turnos/mios")"
@@ -166,6 +215,30 @@ comprobar "al confirmar el profesional tiene enlace" "si" "$(curl -s -u "$PROF" 
 comprobar "confirmar un presencial no crea sala" 404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$ID")"
 
 echo
+echo "Mensajeria asincronica (topico TurnoConfirmado: notificacion y reclamo)"
+# NotificacionMDB y el MDB de facturacion consumen el mensaje despues del commit.
+comprobar "el paciente recibe la notificacion"  "si" "$(sondear "$PACI" /notificaciones/mias "quedo confirmado.*\"turnoId\":$ID[,}]")"
+comprobar "la teleconsulta tambien notifica"    "si" "$(sondear "$PACI" /notificaciones/mias "quedo confirmado.*\"turnoId\":$IDC[,}]")"
+comprobar "notificaciones sin credenciales"     401 "$(codigo "$BASE/notificaciones/mias")"
+comprobar "el profesional NO ve notificaciones" 403 "$(codigo -u "$PROF" "$BASE/notificaciones/mias")"
+comprobar "el administrador NO ve notificaciones" 403 "$(codigo -u "$ADMIN" "$BASE/notificaciones/mias")"
+comprobar "el reclamo a la obra social se envia" "si" "$(sondear "$ADMIN" /reclamos "\"estado\":\"ENVIADO\".*\"turnoId\":$ID[,}]")"
+comprobar "el paciente NO lista reclamos"       403 "$(codigo -u "$PACI" "$BASE/reclamos")"
+comprobar "reclamos sin credenciales"           401 "$(codigo "$BASE/reclamos")"
+
+echo
+echo "Falla de la pasarela de pago (la confirmacion se revierte entera)"
+FALLA=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
+        -d '{"fechaHora":"2027-01-17T10:00:00"}' "$BASE/turnos/disponibilidad")
+IDF=$(printf '%s' "$FALLA" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+curl -s -o /dev/null -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$IDF}" "$BASE/turnos"
+comprobar "pasarela caida: 502"                 502 "$(confirmar_con "$PACI" "$IDF" caer_demo)"
+comprobar "la falla deja el turno EN_HOLD"      "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | tr '{' '\n' | grep "\"id\":$IDF[,}]" | grep -q EN_HOLD && echo si || echo no)"
+comprobar "no se cobro nada (pago PENDIENTE)"   "si" "$(curl -s -u "$PACI" "$BASE/pagos?turnoId=$IDF" | grep -q '"estado":"PENDIENTE"' && echo si || echo no)"
+comprobar "copago sin medio de pago: 400"       400 "$(codigo -u "$PACI" -X PUT -H "Content-Type: application/json" -d '{}' "$BASE/turnos/$IDF/confirmar")"
+comprobar "al volver la pasarela se confirma"   200 "$(confirmar_con "$PACI" "$IDF" tok_visa_demo)"
+
+echo
 echo "Sistema legado de la obra social (SOAP)"
 SOAP="${SOAP:-${BASE%/api}/legado/obrasocial}"
 
@@ -213,7 +286,7 @@ comprobar "presentarReclamo reconoce arancel x porcentaje del plan" "14000.00" \
 comprobar "autorizacion desconocida en presentarReclamo da SOAP Fault Client" "si" \
   "$(soapReclamo 30333444 OS-2002 AUT-FALSO | grep -Eq '<faultcode[^>]*>[^<]*Client</faultcode>' && echo si || echo no)"
 
-if [ "${1:-}" != "--rapido" ]; then
+if [ "$RAPIDO" != "si" ]; then
   echo
   echo "Expiracion del hold (el contenedor libera el turno a los 5 minutos)"
   OTRO=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
@@ -235,6 +308,58 @@ if [ "${1:-}" != "--rapido" ]; then
     fi
   done
   comprobar "el hold vencido libera el turno"  "si" "$liberado"
+fi
+
+if [ "$RESILIENCIA" = "si" ]; then
+  echo
+  echo "Resiliencia: legado de la obra social y proveedor de video caidos"
+  if [ -z "${JBOSS_CLI:-}" ] || [ ! -f "$JBOSS_CLI" ]; then
+    echo "  --resiliencia necesita JBOSS_CLI con la ruta a jboss-cli.sh o jboss-cli.bat"
+    exit 2
+  fi
+  PROP_LEGADO=mediconecta.obrasocial.url
+  PROP_VIDEO=mediconecta.video.simular-caida
+  cli() { "$JBOSS_CLI" --connect "$@" >/dev/null 2>&1; }
+  # Las fallas son system properties del servidor: si el script se corta, quedarian
+  # activas y ninguna reserva funcionaria. Se quitan siempre al salir.
+  restaurar() { cli "/system-property=$PROP_LEGADO:remove"; cli "/system-property=$PROP_VIDEO:remove"; }
+  trap restaurar EXIT
+  restaurar   # parte de un estado limpio, por si quedo algo de una corrida anterior
+
+  abrir() { # fechaHora, modalidad -> id de la franja
+    curl -s -u "$PROF" -H "Content-Type: application/json" \
+         -d "{\"fechaHora\":\"$1\",\"modalidad\":\"$2\"}" "$BASE/turnos/disponibilidad" | sed -n 's/.*"id":\([0-9]*\).*/\1/p'
+  }
+  reservar() { codigo -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$1}" "$BASE/turnos"; }
+
+  # 1. Legado caido: la reserva consulta la cobertura por SOAP y no puede seguir.
+  IDL=$(abrir 2027-01-18T10:00:00 PRESENCIAL)
+  cli "/system-property=$PROP_LEGADO:add(value=\"http://127.0.0.1:1/x\")"
+  comprobar "legado caido: la reserva da 503"          503 "$(reservar "$IDL")"
+  comprobar "la franja sigue DISPONIBLE"              "si" "$(curl -s -u "$PACI" "$BASE/turnos?profesionalId=2" | grep -q "\"id\":$IDL[,}]" && echo si || echo no)"
+  cli "/system-property=$PROP_LEGADO:remove"
+  comprobar "legado de vuelta: la reserva funciona"    200 "$(reservar "$IDL")"
+
+  # 2. Reintentos de la cola: se reserva con el legado arriba, se rompe y se confirma.
+  #    La confirmacion no depende del legado; el reclamo si, y se reintenta solo.
+  IDR=$(abrir 2027-01-18T11:00:00 PRESENCIAL)
+  reservar "$IDR" >/dev/null
+  cli "/system-property=$PROP_LEGADO:add(value=\"http://127.0.0.1:1/x\")"
+  comprobar "con el legado caido se confirma igual"    200 "$(confirmar_con "$PACI" "$IDR" tok_visa_demo)"
+  comprobar "el reclamo reintenta (intentos >= 1)"    "si" "$(sondear "$ADMIN" /reclamos "\"intentos\":[1-9].*\"turnoId\":$IDR[,}]" 40)"
+  comprobar "y todavia no se envio"                   "si" "$(curl -s -u "$ADMIN" "$BASE/reclamos" | tr '{' '\n' | grep "\"turnoId\":$IDR[,}]" | grep -q ENVIADO && echo no || echo si)"
+  cli "/system-property=$PROP_LEGADO:remove"
+  echo "  legado restaurado, esperando el siguiente reintento (hasta 40 s)..."
+  comprobar "al volver el legado el reclamo se envia" "si" "$(sondear "$ADMIN" /reclamos "\"estado\":\"ENVIADO\".*\"turnoId\":$IDR[,}]" 80)"
+
+  # 3. Proveedor de video caido: la sala se crea dentro de la confirmacion.
+  IDV=$(abrir 2027-01-18T12:00:00 TELEMEDICINA)
+  reservar "$IDV" >/dev/null
+  cli "/system-property=$PROP_VIDEO:add(value=true)"
+  comprobar "video caido: confirmar da 503"            503 "$(confirmar_con "$PACI" "$IDV" tok_visa_demo)"
+  comprobar "el turno sigue EN_HOLD"                  "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | tr '{' '\n' | grep "\"id\":$IDV[,}]" | grep -q EN_HOLD && echo si || echo no)"
+  cli "/system-property=$PROP_VIDEO:remove"
+  comprobar "video de vuelta: se confirma y hay sala" 200 "$(confirmar_con "$PACI" "$IDV" tok_visa_demo)"
 fi
 
 echo
