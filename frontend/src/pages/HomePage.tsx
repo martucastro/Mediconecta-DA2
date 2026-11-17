@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import BotonCerrarSesion from './BotonCerrarSesion'
+import Paginador from './Paginador'
 import UnirseAConsulta from './UnirseAConsulta'
 import { api, obtenerSesion } from '../api'
 import { formatearDiaLargo, formatearHora, parsearFechaHora, partesDeCaja } from '../fechas'
-import { holdVigente, proximoConfirmado, vencimientoDelHold } from '../proximoTurno'
+import { paginar } from '../paginado'
+import { confirmadosPorVenir, holdVigente, vencimientoDelHold } from '../proximoTurno'
 import { guardarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
@@ -38,7 +40,7 @@ function horaDeVencimiento(turno: TurnoDTO): string {
 }
 
 function TarjetaDeTurno({ turno, etiqueta, children }: { turno: TurnoDTO; etiqueta: string; children?: ReactNode }) {
-  // proximoConfirmado y holdVigente solo devuelven turnos con fecha legible.
+  // confirmadosPorVenir y holdVigente solo devuelven turnos con fecha legible.
   const fecha = parsearFechaHora(turno.fechaHora)!
   const caja = partesDeCaja(fecha)
   return (
@@ -66,6 +68,7 @@ export default function HomePage() {
 
   const [carga, setCarga] = useState<Carga>({ estado: 'cargando' })
   const [recarga, setRecarga] = useState(0)
+  const [pagina, setPagina] = useState(0)
 
   useEffect(() => {
     let cancelado = false
@@ -94,9 +97,11 @@ export default function HomePage() {
     navigate('/hold')
   }
 
-  const proximo = carga.estado === 'listo' ? proximoConfirmado(carga.turnos, carga.ahora) : null
+  // SCRUM-134: todos los confirmados por venir, no solo el proximo.
+  const confirmados = carga.estado === 'listo' ? confirmadosPorVenir(carga.turnos, carga.ahora) : []
+  const paginaActual = paginar(confirmados, pagina)
   const hold = carga.estado === 'listo' ? holdVigente(carga.turnos, carga.ahora) : null
-  const fechaProximo = proximo ? parsearFechaHora(proximo.fechaHora) : null
+  const fechaProximo = confirmados.length > 0 ? parsearFechaHora(confirmados[0].fechaHora) : null
 
   let resumen = ''
   if (carga.estado === 'listo') {
@@ -142,13 +147,19 @@ export default function HomePage() {
             </TarjetaDeTurno>
           )}
 
-          {proximo && (
-            <TarjetaDeTurno turno={proximo} etiqueta={textoCobertura(proximo)}>
-              {proximo.modalidad === 'TELEMEDICINA' && <UnirseAConsulta turnoId={proximo.id} />}
-            </TarjetaDeTurno>
+          {confirmados.length > 0 && (
+            <section className="stack" style={{ gap: 16 }}>
+              <h2 className="h2">Mis turnos</h2>
+              {paginaActual.items.map((turno) => (
+                <TarjetaDeTurno key={turno.id} turno={turno} etiqueta={textoCobertura(turno)}>
+                  {turno.modalidad === 'TELEMEDICINA' && <UnirseAConsulta turnoId={turno.id} />}
+                </TarjetaDeTurno>
+              ))}
+              <Paginador pagina={paginaActual.pagina} totalPaginas={paginaActual.totalPaginas} onCambiar={setPagina} />
+            </section>
           )}
 
-          {carga.estado === 'listo' && !hold && !proximo && (
+          {carga.estado === 'listo' && !hold && confirmados.length === 0 && (
             <article className="card stack" style={{ gap: 12, padding: 28 }}>
               <h2 style={{ fontSize: 20, fontWeight: 600 }}>Todavía no tenés turnos</h2>
               <p className="muted">Elegí un profesional y un horario para reservar tu próximo turno.</p>
