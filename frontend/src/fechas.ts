@@ -81,6 +81,12 @@ export function claveDelDia(fecha: Date): string {
   return `${fecha.getFullYear()}-${dosDigitos(fecha.getMonth() + 1)}-${dosDigitos(fecha.getDate())}`
 }
 
+/** Medianoche local del dia AAAA-MM-DD: la inversa de claveDelDia. */
+export function inicioDelDia(clave: string): Date {
+  const [anio, mes, dia] = clave.split('-').map(Number)
+  return new Date(anio, mes - 1, dia)
+}
+
 /**
  * Los turnos que todavia no empezaron. El backend lista tambien franjas
  * DISPONIBLE ya pasadas, y reservarlas da 409. Una fecha ilegible se descarta.
@@ -108,6 +114,11 @@ export function formatearHora(f: FechaHoraLocal): string {
 /** "18/09/2026" */
 export function formatearFechaCorta(f: FechaHoraLocal): string {
   return `${dosDigitos(f.dia)}/${dosDigitos(f.mes)}/${f.anio}`
+}
+
+/** "18/09/2026 14:30" */
+export function formatearFechaHora(f: FechaHoraLocal): string {
+  return `${formatearFechaCorta(f)} ${formatearHora(f)}`
 }
 
 /** "jueves 18 de septiembre" */

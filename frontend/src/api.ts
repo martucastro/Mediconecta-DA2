@@ -52,15 +52,15 @@ export function cerrarSesion() {
   limpiarTurnoEnHold()
 }
 
-/** Pantalla de inicio de cada rol, o null si ese rol no tiene pantallas. */
-export function rutaInicial(rol: Rol): string | null {
+/** Pantalla de inicio de cada rol. */
+export function rutaInicial(rol: Rol): string {
   switch (rol) {
     case 'PACIENTE':
       return '/home'
     case 'PROFESIONAL':
       return '/agenda'
-    default:
-      return null
+    case 'ADMINISTRADOR':
+      return '/admin'
   }
 }
 
@@ -71,7 +71,7 @@ export function rutaInicial(rol: Rol): string | null {
  */
 export function decidirAcceso(sesion: Sesion | null, roles?: Rol[]): string | null {
   if (!sesion) return '/'
-  if (roles && !roles.includes(sesion.rol)) return rutaInicial(sesion.rol) ?? '/'
+  if (roles && !roles.includes(sesion.rol)) return rutaInicial(sesion.rol)
   return null
 }
 

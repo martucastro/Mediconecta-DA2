@@ -6,25 +6,19 @@ import { type TurnoDTO } from './turnoEnHold'
 export const DURACION_HOLD_MS = 5 * 60 * 1000
 
 /**
- * El turno CONFIRMADO mas cercano que todavia no empezo, o null.
+ * Los turnos CONFIRMADO que todavia no empezaron, del mas cercano al mas lejano.
  *
  * GET /turnos/mios le devuelve al paciente sus turnos EN_HOLD y CONFIRMADO,
  * pasados incluidos, asi que se descartan los que ya pasaron. No se confia en
- * el orden de la respuesta: se elige el minimo.
+ * el orden de la respuesta: se ordena aca.
  */
-export function proximoConfirmado(turnos: TurnoDTO[], ahora: number): TurnoDTO | null {
-  let mejor: TurnoDTO | null = null
-  let mejorInstante = Infinity
-  for (const turno of turnos) {
-    if (turno.estado !== 'CONFIRMADO') continue
-    const cuando = instante(turno.fechaHora)
-    if (cuando === null || cuando < ahora) continue
-    if (cuando < mejorInstante) {
-      mejor = turno
-      mejorInstante = cuando
-    }
-  }
-  return mejor
+export function confirmadosPorVenir(turnos: TurnoDTO[], ahora: number): TurnoDTO[] {
+  return turnos
+    .filter((t) => t.estado === 'CONFIRMADO')
+    .map((turno) => ({ turno, cuando: instante(turno.fechaHora) }))
+    .filter((x): x is { turno: TurnoDTO; cuando: number } => x.cuando !== null && x.cuando >= ahora)
+    .sort((a, b) => a.cuando - b.cuando)
+    .map((x) => x.turno)
 }
 
 /** Cuando vence el hold del turno, o null si no tiene un inicioHold legible. */
