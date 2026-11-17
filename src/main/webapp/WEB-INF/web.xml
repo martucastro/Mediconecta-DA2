@@ -201,6 +201,25 @@
     </security-constraint>
 
     <!--
+      Operacion sensible 9: las afiliaciones a la obra social (DNI y numero de
+      afiliado). Ninguna operacion es anonima. Que registrar sea solo del
+      ADMINISTRADOR y que GET /mia sea solo del PACIENTE lo decide @RolesAllowed
+      sobre ServicioDeObrasSociales; aca solo se exige estar autenticado, asi un
+      rol equivocado recibe 403 desde el componente y un anonimo recibe 401.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Afiliaciones a la obra social</web-resource-name>
+            <url-pattern>/api/afiliaciones/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
       Fallback del frontend: cualquier URL que no corresponda a un archivo ni a
       la API devuelve index.html. El frontend es una SPA y sus rutas (por
       ejemplo /mediconecta/agenda) no existen como archivos en el servidor:

@@ -57,4 +57,15 @@ public interface ServicioDeObrasSocialesLocal {
      * número de afiliado, o si el usuario no existe o no tiene rol PACIENTE.
      */
     AfiliacionDePaciente registrarAfiliacion(Long pacienteId, String dni, String numeroAfiliado);
+
+    /**
+     * La afiliación del paciente autenticado (DNI y número de afiliado), o null
+     * si no tiene obra social registrada. El paciente sale del caller, nunca de
+     * un parámetro.
+     *
+     * Roles: PACIENTE. Transacción: SUPPORTS; es una lectura y no necesita una
+     * transacción propia. Falla con EJBAccessException si el caller no
+     * corresponde a un usuario registrado.
+     */
+    AfiliacionDePaciente obtenerMiAfiliacion();
 }

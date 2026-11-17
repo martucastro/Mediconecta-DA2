@@ -10,8 +10,11 @@ import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDAO;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDePrestacion;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
+import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.ejb.EJBAccessException;
+import jakarta.ejb.SessionContext;
 import jakarta.ejb.Stateless;
 import jakarta.ejb.TransactionAttribute;
 import jakarta.ejb.TransactionAttributeType;
@@ -50,6 +53,10 @@ public class ServicioDeObrasSociales implements ServicioDeObrasSocialesLocal {
     // Dependencia hacia otro componente, siempre a través de su fachada.
     @Inject
     private ServicioDeUsuariosLocal servicioDeUsuarios;
+
+    // Identifica al paciente autenticado en obtenerMiAfiliacion.
+    @Resource
+    private SessionContext contexto;
 
     /**
      * Consulta la cobertura sin comprometer nada: no pide autorización ni
@@ -165,6 +172,22 @@ public class ServicioDeObrasSociales implements ServicioDeObrasSocialesLocal {
             afiliacion.setNumeroAfiliado(numeroAfiliado.trim());
         }
         return afiliacion;
+    }
+
+    /**
+     * La afiliación del paciente autenticado, o null si no tiene obra social
+     * registrada. El paciente sale del caller, nunca de un parámetro: si
+     * viniera del pedido, cualquiera podría ver la afiliación de otro.
+     */
+    @RolesAllowed(ROL_PACIENTE)
+    @TransactionAttribute(TransactionAttributeType.SUPPORTS)
+    public AfiliacionDePaciente obtenerMiAfiliacion() {
+        String email = contexto.getCallerPrincipal().getName();
+        Usuario paciente = servicioDeUsuarios.obtenerPorEmail(email);
+        if (paciente == null) {
+            throw new EJBAccessException("No se pudo resolver el usuario autenticado.");
+        }
+        return afiliacionDAO.buscarPorPaciente(paciente.getId());
     }
 
     private AfiliacionDePaciente afiliacionDe(Long pacienteId, Prestacion prestacion) {

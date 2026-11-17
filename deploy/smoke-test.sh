@@ -116,6 +116,17 @@ curl -s -o /dev/null -H "Content-Type: application/json" \
 comprobar "otro paciente NO ve ese turno"     "si" "$(curl -s -u "$OTRO_PACI" "$BASE/turnos/mios" | grep -q "\"id\":$ID[,}]" && echo no || echo si)"
 
 echo
+echo "Afiliaciones a la obra social (ServicioDeObrasSociales)"
+# Se registran los mismos datos del seed (plan medio): el copago del 70% que
+# verifica el bloque de turnos no cambia.
+AFILIACION=(-H "Content-Type: application/json" -d "{\"pacienteId\":$ID_PACI,\"dni\":\"30333444\",\"numeroAfiliado\":\"OS-2002\"}")
+comprobar "admin registra una afiliacion"     200 "$(codigo -u "$ADMIN" "${AFILIACION[@]}" "$BASE/afiliaciones")"
+comprobar "paciente NO registra afiliaciones" 403 "$(codigo -u "$PACI" "${AFILIACION[@]}" "$BASE/afiliaciones")"
+comprobar "anonimo NO ve una afiliacion"      401 "$(codigo "$BASE/afiliaciones/mia")"
+comprobar "el paciente ve su afiliacion"      "si" "$(curl -s -u "$PACI" "$BASE/afiliaciones/mia" | grep -q '"numeroAfiliado":"OS-2002"' && echo si || echo no)"
+comprobar "un paciente sin obra social da 404" 404 "$(codigo -u "$OTRO_PACI" "$BASE/afiliaciones/mia")"
+
+echo
 echo "Telemedicina (proveedor de video simulado y componente)"
 SALA=$(curl -s -H "Content-Type: application/json" -d '{"reference":"smoke"}' "$BASE/externo/salas")
 comprobar "el proveedor simulado crea una sala" "si" "$(printf '%s' "$SALA" | grep -q '"guestUrl":"http' && printf '%s' "$SALA" | grep -q '"hostUrl":"http' && echo si || echo no)"
