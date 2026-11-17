@@ -1,6 +1,5 @@
 package ar.edu.uade.da2.mediconecta.facturacion.negocio;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -119,6 +118,13 @@ public class ServicioDeFacturacion {
      * rechazo definitivo de la obra social va directo a EN_REVISION_MANUAL,
      * tambien sin relanzar: reintentar un rechazo deterministico es inutil. Un
      * reclamo ya ENVIADO o EN_REVISION_MANUAL se ignora (reentrega idempotente).
+     *
+     * Carrera con la cancelacion (SCRUM-128): el reclamo se lee PENDIENTE,
+     * pero mientras el legado responde el paciente puede cancelar el turno y
+     * anularReclamo lo pasa a ANULADO. Por eso ENVIADO se escribe con un
+     * UPDATE condicional (ReclamoDAO.marcarEnviado). Si ya no estaba
+     * PENDIENTE, la obra social igual lo recibio: queda EN_REVISION_MANUAL con
+     * el numero de presentacion, para que un administrador lo anule con ella.
      */
     public void procesarReclamo(Long reclamoId, int intento) {
         Reclamo reclamo = reclamoDAO.buscar(reclamoId);
@@ -136,10 +142,15 @@ public class ServicioDeFacturacion {
             ResultadoReclamo resultado = canal.presentarReclamo(reclamo.getTurnoId(),
                     reclamo.getPacienteId(), reclamo.getNumeroAutorizacion(),
                     reclamo.getCoberturaPorcentaje());
-            reclamo.setEstado(EstadoReclamo.ENVIADO);
-            reclamo.setMonto(resultado.getMonto());
-            reclamo.setNumeroPresentacion(resultado.getNumeroPresentacion());
-            reclamo.setActualizadoEn(LocalDateTime.now());
+            if (!reclamoDAO.marcarEnviado(reclamoId, resultado.getMonto(),
+                    resultado.getNumeroPresentacion())) {
+                reclamoDAO.cambiarEstado(reclamoId, EstadoReclamo.ANULADO,
+                        EstadoReclamo.EN_REVISION_MANUAL, "Presentado a la obra social (presentacion "
+                                + resultado.getNumeroPresentacion() + ") mientras se cancelaba el turno: "
+                                + "anularlo con la obra social.");
+                LOGGER.log(Level.WARNING, "El turno del reclamo {0} se cancelo mientras se presentaba: "
+                        + "queda EN_REVISION_MANUAL.", reclamoId);
+            }
         } catch (ReclamoRechazadoException e) {
             reclamoDAO.registrarIntentoFallido(reclamoId, e.getMessage(), true);
         } catch (CanalDeReclamosNoDisponibleException e) {
@@ -157,25 +168,33 @@ public class ServicioDeFacturacion {
      * procesarReclamo lo saltea (solo procesa PENDIENTE). Uno ya ENVIADO no se
      * puede retirar por SOAP, porque el legado no tiene operacion de
      * anulacion: pasa a EN_REVISION_MANUAL para que un administrador lo
-     * resuelva con la obra social. Sin reclamo (sin cobertura) no hay nada que
-     * hacer, y registrarReclamo ya no lo crea despues: cancelar borra la
-     * cobertura del turno.
+     * resuelva con la obra social. Uno que ya estaba EN_REVISION_MANUAL queda
+     * marcado para que el administrador no lo presente (SCRUM-128). Sin
+     * reclamo (sin cobertura) no hay nada que hacer, y registrarReclamo ya no
+     * lo crea despues: cancelar borra la cobertura del turno.
+     *
+     * Cada paso es un UPDATE condicional y no se decide con el estado leido:
+     * un ReclamoMDB puede estar presentandolo en este momento. Si lo deja
+     * ENVIADO antes, el primer UPDATE no toca nada y aplica el segundo; si
+     * llega despues, encuentra ANULADO (ver procesarReclamo).
      */
     public void anularReclamo(Long turnoId) {
         Reclamo reclamo = reclamoDAO.buscarPorTurno(turnoId);
         if (reclamo == null) {
             return;
         }
-        if (reclamo.getEstado() == EstadoReclamo.PENDIENTE) {
-            reclamo.setEstado(EstadoReclamo.ANULADO);
-        } else if (reclamo.getEstado() == EstadoReclamo.ENVIADO) {
-            reclamo.setEstado(EstadoReclamo.EN_REVISION_MANUAL);
-            reclamo.setUltimoError("El turno se cancelo despues de presentar el reclamo: "
-                    + "anularlo con la obra social.");
-        } else {
+        Long id = reclamo.getId();
+        if (reclamoDAO.cambiarEstado(id, EstadoReclamo.PENDIENTE, EstadoReclamo.ANULADO,
+                "El turno se cancelo antes de presentar el reclamo.")) {
             return;
         }
-        reclamo.setActualizadoEn(LocalDateTime.now());
+        if (reclamoDAO.cambiarEstado(id, EstadoReclamo.ENVIADO, EstadoReclamo.EN_REVISION_MANUAL,
+                "El turno se cancelo despues de presentar el reclamo: anularlo con la obra social.")) {
+            return;
+        }
+        String anterior = reclamo.getUltimoError() != null ? " Motivo anterior: " + reclamo.getUltimoError() : "";
+        reclamoDAO.cambiarEstado(id, EstadoReclamo.EN_REVISION_MANUAL, EstadoReclamo.EN_REVISION_MANUAL,
+                "El turno se cancelo: no presentar este reclamo." + anterior);
     }
 
     /** Listado completo de reclamos, para el panel del administrador. */
