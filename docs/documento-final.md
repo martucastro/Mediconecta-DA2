@@ -15,7 +15,7 @@ Este documento consolida la arquitectura final de MediConecta: los componentes y
 
 **Dominio.** MediConecta conecta pacientes con profesionales de la salud para gestionar turnos presenciales y de telemedicina, con cobertura de obra social, cobro del copago y facturación a la obra social. Los actores son el **paciente** (busca, reserva, confirma y cancela turnos, ve su historia y sus notificaciones), el **profesional** (abre disponibilidad, atiende y registra consultas) y el **administrador** (afiliaciones, reembolsos y reclamos). Tres terceros, simulados en el paquete `externos` y alcanzados solo por la red: el **legado de la obra social** (SOAP), la **pasarela de pago** (REST) y el **proveedor de video** (REST).
 
-**Qué se entrega.** Ocho componentes de negocio en Jakarta EE más un noveno en Node.js; una SPA en React + TypeScript servida desde el mismo WAR (login, búsqueda, hold con copago, mis turnos, agenda del profesional, historia clínica, notificaciones y panel del administrador); el script de configuración del servidor (`deploy/mediconecta-setup.cli`), el smoke test (`deploy/smoke-test.sh`), la colección de Postman (`postman/`), la prueba de carga (`load-tests/`), cuatro ADR y este documento.
+**Qué se entrega.** Ocho componentes de negocio en Jakarta EE más un noveno en Node.js; una SPA en React + TypeScript servida desde el mismo WAR (login, búsqueda, hold con copago, mis turnos, agenda del profesional, historia clínica, notificaciones y panel del administrador); el script de configuración del servidor (`deploy/mediconecta-setup.cli`), el smoke test (`deploy/smoke-test.sh`), la demo del circuit breaker (`deploy/demo-circuit-breaker.sh`), la colección de Postman (`postman/`), la prueba de carga (`load-tests/`), el guion de la demo (`docs/guion-demo-final.md`), cuatro ADR y este documento.
 
 **Stack y por qué.** Jakarta EE 11 sobre WildFly 41 (perfil `standalone-full`), PostgreSQL, ActiveMQ Artemis embebido como broker JMS y Apache CXF para SOAP. El criterio fue cubrir de forma nativa lo que pide la cátedra: `@Stateful` y `@Stateless` gestionados por el contenedor, transacciones JTA declarativas, MDB, seguridad declarativa y JAX-WS sin infraestructura adicional. El desempate fue el componente stateful: ninguna otra opción permitida lo ofrece como parte de la especificación. SOAP es opcional en Jakarta EE desde la versión 9; es WildFly quien trae CXF listo. El componente `ServicioDeRecordatorios` está en Node.js + NestJS para el desafío de heterogeneidad (§9).
 
@@ -64,7 +64,7 @@ Línea continua: llamada síncrona. Línea punteada: mensajería asincrónica. L
 
 ### 2.2 Capas por componente
 
-Cada componente tiene tres subpaquetes: `presentacion` (recursos JAX-RS, MDB y DTO), `negocio` (EJB, reglas, transacciones, seguridad, observadores y adaptadores) y `datos` (entidades JPA y DAO). Los `ExceptionMapper` transversales viven en el paquete raíz.
+Cada componente tiene tres subpaquetes: `presentacion` (recursos JAX-RS, MDB y DTO), `negocio` (EJB, reglas, transacciones, seguridad, observadores y adaptadores) y `datos` (entidades JPA y DAO). Los `ExceptionMapper` transversales viven en el paquete raíz, y el circuit breaker, en `comun.resiliencia`.
 
 | Componente | Presentación | Negocio | Datos |
 |---|---|---|---|
@@ -113,7 +113,13 @@ Cada patrón resuelve un problema concreto del sistema. Ninguno está "porque s�
 
 **Publish/Subscribe y Point-to-Point (JMS).** *Dónde:* el tópico `TurnoConfirmado` y la cola `ReclamosFacturacion` (§5). *Problema:* son dos problemas distintos: varios interesados en un mismo hecho, y un trabajo que se hace exactamente una vez, con reintentos. Por eso hay dos canales y no uno reutilizado.
 
-<!-- PENDIENTE: circuit breaker (F7) -->
+**Circuit Breaker.** *Dónde:* `comun.resiliencia.CircuitBreaker`, con un circuito por sistema externo dentro de cada adaptador: `SistemaDeObraSocialSoap`, `PasarelaDePagoRestClient` y `ProveedorDeVideoRestClient`. Funciona así:
+
+- **Estados.** Pasa de CERRADO a ABIERTO tras 3 fallas consecutivas de tipo "no disponible", queda abierto 10 s y después pasa a SEMIABIERTO: deja pasar una sola llamada de prueba, que lo cierra o lo vuelve a abrir.
+- **Qué cuenta como falla.** Solo la falta de respuesta: timeout, conexión rechazada, 5xx o respuesta vacía. Un rechazo de negocio (un pago rechazado, un fault `Client`) no lo abre.
+- **Configuración.** El umbral y el tiempo son propiedades de sistema (`mediconecta.<obrasocial|pasarela|video>.cb.umbral` y `.cb.abiertoMs`) que se leen en cada llamada, así que se cambian en caliente con `jboss-cli`.
+
+*Problema:* con un tercero caído, cada pedido esperaba el timeout completo con un hilo, una transacción y la fila del turno retenidos. *Por qué:* con el circuito abierto, el adaptador falla al instante con la misma excepción "no disponible", así que los mappers y los contratos HTTP no cambian. El tiempo abierto (10 s) es menor que la ventana de reintentos de la cola de reclamos (unos 30 s): un reclamo no agota sus intentos solo porque el circuito estaba abierto. *Por qué una clase propia y no `@CircuitBreaker` de MicroProfile Fault Tolerance:* el servidor arranca con `standalone-full.xml`, que no trae ese subsistema. Habilitarlo obligaba a cambiar la configuración del servidor de cada integrante, y la clase propia se prueba sin contenedor (`CircuitBreakerTest`).
 
 ## 5. Estrategia de integración
 
@@ -131,13 +137,19 @@ El canal sale de cuatro preguntas: si quien llama necesita la respuesta para dec
 | SPA → API | REST + HTTP Basic | Síncrono | Cliente propio; JSON nativo |
 | Turnos → otros componentes | Evento CDI `@Observes` | Síncrono, misma transacción | Tienen que poder vetar el paso |
 
+Las tres integraciones síncronas con terceros comparten la misma defensa:
+
+- **timeouts explícitos;**
+- **clasificación de la falla:** un rechazo (400 o 409) no se reintenta, y una caída (502 o 503) sí;
+- **un circuit breaker por sistema (§4):** con el tercero caído, se deja de esperarlo.
+
 ### 5.2 SOAP: el legado de la obra social
 
-`externos.obrasocial.ObraSocialLegado` es un endpoint JAX-WS publicado por CXF en `/mediconecta/legado/obrasocial?wsdl`, con una copia en [`docs/obrasocial.wsdl`](obrasocial.wsdl). Tiene tres operaciones: `validarCobertura`, `autorizarPrestacion` y `presentarReclamo`. Un pedido inválido devuelve el fault declarado `PedidoInvalidoException` (`@WebFault`), con faultcode `Client`. El Adapter `SistemaDeObraSocialSoap` crea el cliente con `Service.create` sin descargar el WSDL, usa un puerto por llamada y lo cierra en un `finally`, y fija 2 s de conexión y 5 s de respuesta (propiedades de sistema que se leen en cada llamada). Clasifica lo que vuelve en tres casos:
+`externos.obrasocial.ObraSocialLegado` es un endpoint JAX-WS publicado por CXF en `/mediconecta/legado/obrasocial?wsdl`, con una copia en [`docs/obrasocial.wsdl`](obrasocial.wsdl). Tiene tres operaciones: `validarCobertura`, `autorizarPrestacion` y `presentarReclamo`. Un pedido inválido devuelve el fault declarado `PedidoInvalidoException` (`@WebFault`), con faultcode `Client` y el detalle `PedidoInvalido` en `<detail>`. El Adapter `SistemaDeObraSocialSoap` crea el cliente con `Service.create` sin descargar el WSDL, usa un puerto por llamada y lo cierra en un `finally`, y fija 2 s de conexión y 5 s de respuesta (propiedades de sistema que se leen en cada llamada). Clasifica lo que vuelve en tres casos:
 
 - Una respuesta, con o sin cobertura, se convierte en una `Cobertura`.
 - Un fault `Client` es `DatosInvalidosException`, que responde 400.
-- Cualquier otra falla (fault `Server`, conexión rechazada, timeout o respuesta vacía) es `ObraSocialNoDisponibleException`, que responde 503 y revierte la reserva.
+- Cualquier otra falla (fault `Server`, conexión rechazada, timeout, respuesta vacía o el circuito abierto) es `ObraSocialNoDisponibleException`, que responde 503 con `Retry-After: 30` y revierte la reserva.
 
 El afiliado de prueba OS-5005 tarda 30 s; la reserva responde 503 a los 5 s.
 
@@ -146,12 +158,13 @@ El afiliado de prueba OS-5005 tarda 30 s; la reserva responde 503 a los 5 s.
 Los dos clientes usan Jakarta REST, con timeouts y URL leídas en cada llamada (`mediconecta.pasarela.url`, `mediconecta.video.url`).
 
 - **Pasarela de pago.** `POST /api/externo/pagos` cobra y `POST /api/externo/pagos/{transactionId}/reembolsos` reembolsa. Los timeouts son 2 s de conexión y 5 s de respuesta.
-    - Un `rejected` o un 4xx son un rechazo: el `Pago` queda `RECHAZADO` y el paciente recibe 409.
-    - Un 5xx, un error de red o un timeout son `PasarelaNoDisponibleException`: 502.
+    - Un `rejected` o un 4xx son un rechazo: el `Pago` queda `RECHAZADO` y el paciente recibe 409. Las excepciones son 408 y 429, que cuentan como caída.
+    - Un 5xx, un 408 o 429, un error de red, un timeout o el circuito abierto son `PasarelaNoDisponibleException`: 502.
+    - **El cobro incierto.** Si el pedido de cobro salió pero no hubo respuesta (timeout de lectura o conexión cortada), no se sabe si se cobró. El `Pago` queda `INCIERTO` (en `REQUIRES_NEW`, con un `WARNING`) y el paciente recibe 502. No hay id de transacción para reembolsar, así que el administrador no puede reembolsarlo (409) y debe conciliarlo con la pasarela.
     - Un cobro aprobado sin id de transacción se rechaza como respuesta inválida, porque no se podría reembolsar.
 - **Proveedor de video.** `POST /api/externo/salas` crea la sala, con 3 s de conexión y 5 s de lectura, porque corre con la fila del turno bloqueada.
     - Un 4xx es `ConflictoDeNegocioException`: 409.
-    - Un 5xx o un timeout son `ProveedorDeVideoNoDisponibleException`: 503 con `Retry-After: 30`.
+    - Un 5xx, un timeout o el circuito abierto son `ProveedorDeVideoNoDisponibleException`: 503 con `Retry-After: 30`.
     - `crearSesion` es idempotente por turno.
 
 El diagrama muestra la confirmación de un turno de telemedicina con copago: las dos llamadas REST, la publicación en el tópico y la compensación si la transacción no llega a confirmarse.
@@ -174,7 +187,7 @@ sequenceDiagram
         GW-->>SP: rechazo
         SP--xP: Pago RECHAZADO (REQUIRES_NEW), rollback, 409
     else 5xx, red o timeout
-        SP--xP: rollback, 502, el Pago queda PENDIENTE
+        SP--xP: rollback, 502, el Pago queda PENDIENTE, o INCIERTO si el pedido salió
     else approved con transactionId
         GW-->>SP: approved
         Note over SP: fire CobroAprobado
@@ -276,10 +289,11 @@ El evento se dispara antes de cambiar el estado. Ante cualquier falla, el turno 
 
 | Punto de falla | Respuesta | Estado tras el rollback | Fuera de la transacción |
 |---|---|---|---|
-| Legado caído al reservar | 503 | Turno `DISPONIBLE` | Nada |
+| Legado caído (o su circuito abierto) al reservar | 503 con `Retry-After` | Turno `DISPONIBLE` | Nada |
 | Hold vencido | 409 | Turno liberado por `ExpiradorDeHolds` | La autorización del legado queda emitida |
 | Pago rechazado o 4xx de la pasarela | 409 | `EN_HOLD`; `Pago` `RECHAZADO` | Sin cobro |
-| Pasarela caída o timeout | 502 | `EN_HOLD`; `Pago` `PENDIENTE` | Sin cobro |
+| Pasarela caída, timeout de conexión o circuito abierto | 502 | `EN_HOLD`; `Pago` `PENDIENTE` | Sin cobro |
+| Cobro enviado y sin respuesta | 502 | `EN_HOLD`; `Pago` `INCIERTO` | **Desconocido:** conciliación manual con la pasarela |
 | Video caído, sala o commit fallan **después** del cobro | 503 o 500 | `EN_HOLD`, sin sala | **Compensado:** `Pago` `REEMBOLSADO`, o `COMPENSACION_PENDIENTE` |
 | Falla de un suscriptor después del commit | Reentrega | `CONFIRMADO`, intacto | Nada sobre la confirmación |
 | Cancelar un `CONFIRMADO` con la pasarela caída | 502 | Sigue `CONFIRMADO`, reclamo sin cambios | Sin reembolso |
@@ -303,7 +317,14 @@ La compensación termina antes de que el paciente reciba la respuesta. Si reinte
 
 **La cancelación, reordenada.** Para un `CONFIRMADO`, `cancelarTurno` primero marca el turno `CANCELADO` y después dispara `TurnoEnCancelacion`: se anula el reclamo, se cierra la sala y, último, se reembolsa el copago. `reembolsarCopagoDelTurno` hace `flush` antes de llamar a la pasarela, así una falla al escribir sale antes de devolver el dinero. El reembolso confirmado se guarda en `REQUIRES_NEW`. Queda un límite: si el commit falla después del reembolso, el turno vuelve a `CONFIRMADO` con el pago ya `REEMBOLSADO`, y un reintento no reembolsa dos veces.
 
-**Demo de resiliencia (PR #60).** `deploy/smoke-test.sh --resiliencia` y la carpeta `08` de Postman provocan cada falla con propiedades de sistema por `jboss-cli`, la muestran y la revierten. Las fallas son: pasarela caída (502, turno `EN_HOLD`), legado caído al reservar (503) y al reclamar (la confirmación da 200 y el reclamo reintenta hasta `ENVIADO`), y video caído (503, cobro compensado). En todos los casos, el resto de la plataforma sigue funcionando.
+**Demo de resiliencia (PR #60, #37 y #74).** `deploy/smoke-test.sh --resiliencia` y la carpeta `08` de Postman provocan cada falla con propiedades de sistema por `jboss-cli`, la muestran y la revierten:
+
+- pasarela caída: 502, con el turno `EN_HOLD`;
+- legado caído al reservar: 503;
+- legado caído al reclamar: la confirmación da 200 y el reclamo reintenta hasta `ENVIADO`;
+- video caído: 503, con el cobro compensado.
+
+El smoke termina con el circuito de la pasarela. Tras tres cobros con la pasarela caída, una confirmación con una tarjeta válida también da 502, sin llamar a la pasarela. A los 11 s, la llamada de prueba confirma el turno. `deploy/demo-circuit-breaker.sh` hace lo mismo con el proveedor de video: con el circuito abierto, las confirmaciones de telemedicina responden 503 al instante, mientras los turnos presenciales y el resto de la API siguen respondiendo 200. En todos los casos, el resto de la plataforma sigue funcionando.
 
 ## 7. Seguridad
 
@@ -337,25 +358,58 @@ Un rol no permitido produce `EJBAccessException`, que se traduce en 403; sin cre
 
 | Suite | Herramienta | Resultado observado |
 |---|---|---|
-| Backend: fachadas, adaptadores (con faults simulados), observadores, MDB, mappers y simuladores, sin contenedor ni red | JUnit 5 y Mockito (`mvn test`) | **426 pruebas, 0 fallas**, en 51 clases (`main` en el commit `5678504`, con #71 y #72 integrados) |
+| Backend: fachadas, adaptadores (con faults simulados), observadores, MDB, mappers y simuladores, sin contenedor ni red | JUnit 5 y Mockito (`mvn test`) | **450 pruebas, 0 fallas**, en 53 clases (`main` en el commit `fe06185`) |
 | SPA: API, fechas, paginado, historia y reclamos | Vitest | **58 pruebas** en 6 archivos |
 | `ServicioDeRecordatorios` | Jest | **27 pruebas** en 3 suites |
+
+**Verificación en ejecución** contra WildFly 41, con una base nueva y `main` en `fe1495e` (PR #74 y la verificación de integración):
+
+| Prueba | Resultado |
+|---|---|
+| `bash deploy/smoke-test.sh` | 120 correctas, 0 fallidas |
+| `deploy/smoke-test.sh --resiliencia` | 140 correctas, 0 fallidas |
+| `newman run` (carpetas 00–03, 05–07, 08a y 09) | 74 pedidos, 121 aserciones, 0 fallidas |
+| `deploy/demo-circuit-breaker.sh` | 17 correctas, 0 fallidas |
+| Recorridos de la SPA en un navegador headless | 8 de 8 |
 
 **Integración real.** `deploy/smoke-test.sh` recorre la API desplegada. Cubre seguridad y roles, turnos y holds, SOAP, telemedicina, cobro al confirmar, mensajería (sondea, porque los MDB consumen después del commit), afiliaciones, el formato JSON de los errores y, con `--resiliencia`, las fallas controladas. La colección `postman/MediConecta-Demo.postman_collection.json` tiene 11 carpetas y 102 pedidos, del `00 - Setup` al `09 - ServicioDeObrasSociales`, con su entorno.
 
 **Revisión.** Los PR de código del sprint final pasaron una revisión automática antes del merge (§13). Los hallazgos que no bloqueaban quedaron registrados como trabajo futuro (§11).
 
-**Carga.** `load-tests/reserva-turnos.js` (k6) mide disponibilidad, reserva y cancelación con una y con dos instancias de WildFly.
+**Carga (PR #76).** `load-tests/reserva-turnos.js` (k6) mide el flujo disponibilidad → reservar → cancelar. El detalle, con todas las corridas, está en `load-tests/README.md`.
 
-<!-- PENDIENTE: resultados k6 (F9) -->
+**Mediciones 1 y 2: sin mejora.** Se corrieron una y dos instancias en la misma máquina, sin repartir la CPU. La segunda instancia no sumó throughput: todas las corridas dieron entre 28 y 32 reservas/s. Cada pedido verifica PBKDF2, y Windows (EcoQoS) confinó las dos JVM a los 4 E-cores, así que se repartieron la misma CPU.
+
+**Medición 3: dos nodos iguales.** Se armó un modelo de escalado horizontal en un i7-12700K:
+
+- **Nodos:** cada WildFly fijado por afinidad a 4 P-cores propios.
+- **Carga:** k6 en los E-cores.
+- **Base:** un PostgreSQL compartido.
+- **Corridas:** dos por configuración, de 5000 reservas cada una; se informa el promedio.
+
+| VUs | Reservas/s (1 → 2 nodos) | Flujo p50 en ms (1 → 2) | Flujo p95 en ms (1 → 2) |
+|---|---|---|---|
+| 20 | 62,1 → 109,3 (+76 %) | 296 → 162 | 520 → 229 |
+| 50 | 58,4 → 112,6 (+93 %) | 830 → 381 | 1074 → 690 |
+| 100 | 56,3 → 105,7 (+88 %) | 1710 → 815 | 1985 → 1013 |
+
+El componente escala porque el hold vive en la fila del turno: no hubo ningún 409. El límite es la CPU de cada nodo, por PBKDF2 en cada pedido, y no la base: PostgreSQL pasó de 0,1 a 0,4 núcleos.
+
+El modelo tiene límites:
+
+- los nodos comparten caché, memoria y disco, y no hay red entre ellos;
+- hay una sola máquina para la base y k6;
+- las corridas usaron el build `fe1495e`, anterior a #77. Por eso los errores (0 a 0,21 % de los pedidos) son todos un 500 de la carrera de `ExpiradorDeHolds.cancelar` que la prueba encontró y #77 corrigió.
+
+En máquinas separadas, los números serían algo distintos.
 
 ## 9. Desafíos opcionales
 
 | Desafío (§7 de la consigna) | Qué se hizo | Evidencia |
 |---|---|---|
-| Resiliencia ante fallas | Timeouts en los tres clientes externos; clasificación entre rechazo y caída; reserva atómica con el legado caído; la confirmación no depende del legado (reclamo por cola); compensación del cobro huérfano | §6; `deploy/smoke-test.sh --resiliencia`; carpeta `08` de Postman |
+| Resiliencia ante fallas | Timeouts en los tres clientes externos; clasificación entre rechazo y caída; un circuit breaker por tercero (PR #37); reserva atómica con el legado caído; la confirmación no depende del legado (reclamo por cola); compensación del cobro huérfano | §6; `deploy/smoke-test.sh --resiliencia` (140/0); `deploy/demo-circuit-breaker.sh` (17/0); carpeta `08` de Postman |
 | Heterogeneidad tecnológica | `ServicioDeRecordatorios` en Node.js + NestJS, integrado con el tópico por AMQP 1.0. Se eligió AMQP porque por STOMP el `MapMessage` llega como bytes del formato interno de Artemis | `recordatorios/README.md`; `docs/arquitectura.md`; PR #69 y #70 (verificado contra un WildFly propio: durabilidad con Node caído, reconexión tras un `reload`, clave errónea rechazada) |
-| Escalabilidad horizontal | Como el hold vive en la base (ADR 0001), dos WildFly con el mismo WAR comparten PostgreSQL; el script k6 reparte los usuarios virtuales entre instancias | `load-tests/README.md` |
+| Escalabilidad horizontal | Como el hold vive en la base (ADR 0001), dos WildFly con el mismo WAR comparten PostgreSQL. Con dos nodos iguales, el throughput subió entre 76 y 93 % y la latencia bajó a la mitad | §8; `load-tests/README.md` (PR #76) |
 | ADR | Cuatro ADR con alternativas y consecuencias | `docs/adr/` (PR #66) |
 
 ## 10. Aprendizajes del equipo y qué cambiaríamos
@@ -399,12 +453,16 @@ Así el efecto externo irreversible ocurre solo después del commit, y la peor f
 
 Estos son los límites conocidos, todos documentados en el código, en los ADR o en los PR:
 
-- **Temporizadores por instancia.** El timer de un hold vive en la JVM que lo creó. Con dos instancias, un timer viejo puede liberar antes de tiempo un hold nuevo del mismo turno. Solución: guardar `inicioHold` en el `info` del timer y compararlo al vencer.
+- **Temporizadores por instancia (ADR 0001).** El timer de un hold vive en la JVM que lo creó. Con un balanceador round-robin, la cancelación puede caer en la otra instancia, y el timer viejo sigue vivo: puede liberar antes de tiempo un hold nuevo del mismo turno. Solución: guardar `inicioHold` en el `info` del timer y compararlo al vencer. El estado del circuit breaker también es por instancia.
+- **PBKDF2 en cada pedido.** No hay sesión ni token: cada pedido con Basic verifica la contraseña con PBKDF2 de 120.000 iteraciones. Es el límite de escala que midió k6. Pagarlo solo en el login, con una sesión o un token, bajaría el costo por pedido.
+- **Sin clave de idempotencia hacia la pasarela.** Un pago `INCIERTO` se concilia a mano, y un reintento del paciente hace un cobro nuevo aunque el anterior se haya hecho. Una clave por intento de cobro lo resolvería.
 - **Mensajería por instancia.** Artemis está embebido en cada WildFly, así que con dos instancias las colas y el tópico no se comparten. Haría falta un broker externo o un clúster.
 - **Suscripciones no durables.** Los dos MDB del tópico pierden lo publicado durante un redespliegue. Solución: declarar `subscriptionDurability`. Recordatorios ya es durable.
 - **Recordatorios de turnos cancelados.** No existe un evento `TurnoCancelado`, así que un recordatorio se envía aunque el turno se haya cancelado. Además, `registrar` devuelve la primera coincidencia, la API de Node no tiene autenticación (escucha solo en `127.0.0.1`) y los dos stacks dependen de la misma zona horaria.
 - **Limitador de login en memoria.** Es por instancia, se pierde al reiniciar y tiene un tope de 10.000 emails. Con varios nodos debería vivir en la base o en una caché compartida.
 - **Dos holds simultáneos.** El lock es del turno y no del paciente: dos reservas concurrentes del mismo paciente todavía pueden pasar las dos.
+- **Sin `UNIQUE` en `usuarios.email`.** La unicidad del email la verifica `registrarUsuario` antes de insertar, así que dos registros simultáneos con el mismo email podrían pasar los dos.
+- **Sala cancelada.** Después de cancelar un turno de telemedicina, `GET /api/telemedicina/turno/{turnoId}` responde 404, igual que un turno sin sala: no distingue la sala cancelada.
 - **Canal real de notificación.** Las notificaciones y los recordatorios se "envían" con un log. Falta un canal de email o SMS.
 - **Cancelación con el commit fallido.** Si el commit falla después del reembolso, el turno queda `CONFIRMADO` con el pago `REEMBOLSADO`.
 - **Efectos externos sin compensar.** Quedan la sala creada en el proveedor cuando falla un paso posterior y la autorización del legado cuando el hold vence. El legado no tiene operación de anulación.
@@ -412,17 +470,17 @@ Estos son los límites conocidos, todos documentados en el código, en los ADR o
 
 ## 12. Participación del equipo
 
-`git shortlog -sn --no-merges` sobre `main` cuenta 217 commits sin merges entre el 07/09 y el 17/11. Algunos integrantes aparecen con dos identidades de git, que se suman:
+`git shortlog -sn --no-merges` sobre `main` cuenta 232 commits sin merges entre el 07/09 y el 17/11. Algunos integrantes aparecen con dos identidades de git, que se suman:
 
 | Integrante | Identidades de git | Commits |
 |---|---|---|
-| Mantegazza, Juan Pablo | "Juan Pablo Mantegazza" (104) y "Juampiman" (41) | 145 |
+| Mantegazza, Juan Pablo | "Juan Pablo Mantegazza" (118) y "Juampiman" (41) | 159 |
 | Castro, Martina | "martucastro" | 28 |
-| López Scala, Manuel | "Manu" | 18 |
+| López Scala, Manuel | "Manu" | 19 |
 | Perez Ciccone, Luca | "Luca Perez Ciccone" | 16 |
 | Pereyra Metnik, Gonzalo | "Gonzalo Pereyra Metnik" | 10 |
 
-El conteo no mide toda la participación. Los PR de Martina (#38 y #40) y de Gonzalo (#34) se pusieron al día con `main` sin reescribir su historia, y el de Manuel (#60) se integró tal cual: todos conservan su autoría. Además, 94 de los commits de "Juan Pablo Mantegazza" son del 15 al 17/11: corresponden a la auditoría de la Entrega N.º 2 y al sprint final, hechos con Claude Code desde su sesión (§13).
+El conteo no mide toda la participación. Los PR de Martina (#38 y #40), de Gonzalo (#34) y el circuit breaker de Manuel (#37) se pusieron al día con `main` sin reescribir su historia, y el otro de Manuel (#60) se integró tal cual: todos conservan su autoría. Además, 108 de los commits de "Juan Pablo Mantegazza" son del 15 al 17/11: corresponden a la auditoría de la Entrega N.º 2 y al sprint final, hechos con Claude Code desde su sesión (§13).
 
 ## 13. Declaración de uso de inteligencia artificial generativa
 
@@ -431,8 +489,14 @@ Según lo pide la cátedra, declaramos el uso de **Claude Code** (Anthropic), un
 - **Durante el cuatrimestre.** Se usó para redactar y consolidar la documentación, contrastándola con el código; para revisar código y detectar inconsistencias entre la documentación y la implementación; y para generar código repetitivo (DTO, pruebas de unidad y scripts de verificación).
 - **Entrega N.º 2 (15 y 16/11).** Se usó para auditar la plataforma con pruebas contra la aplicación desplegada y para implementar las correcciones, integradas en los PR #50 a #59.
 - **Sprint final (desde el 17/11).** El uso fue intensivo y con orquestación de varios agentes. Una sesión coordinadora repartía tareas acotadas a agentes que trabajaban en copias aisladas del repositorio (git worktrees) y se usó para:
-    - **implementar los PR #66 a #72:** los ADR, las interfaces `*Local` y la presentación de obras sociales, el panel del administrador, el componente NestJS y su corrección de persistencia, el endurecimiento de seguridad y la compensación del cobro huérfano;
-    - **rescatar los PR del equipo** (#34, #38 y #40) mergeando `main` en sus ramas, sin reescribir su historia;
+    - **implementar los PR #66 a #72 y #74 a #77:**
+        - los ADR, las interfaces `*Local` y la presentación de obras sociales;
+        - el panel del administrador;
+        - el componente NestJS y su corrección de persistencia;
+        - el endurecimiento de seguridad y la compensación del cobro huérfano;
+        - el smoke final, el detalle del fault SOAP, la prueba de carga y la carrera del expirador;
+    - **rescatar los PR del equipo** (#34, #38, #40 y #37), mergeando `main` en sus ramas sin reescribir su historia y, en el caso de #37, llevando el circuit breaker a los adaptadores actuales;
+    - **correr las verificaciones:** el smoke, newman, la demo del circuit breaker y las mediciones de k6;
     - **revisar automáticamente cada PR** antes del merge, con cuatro enfoques: riesgo, resiliencia, legibilidad y confiabilidad;
     - **redactar este documento**, verificado contra el código.
 
