@@ -17,7 +17,7 @@ export function calcularEnvio(fechaHoraTurno: Date, ahora: Date): Date {
   return new Date(Math.max(fechaHoraTurno.getTime() - ANTICIPACION_MS, ahora.getTime()));
 }
 
-export function recordatoriosVencidos(recordatorios: Recordatorio[], ahora: Date): Recordatorio[] {
+export function recordatoriosVencidos(recordatorios: readonly Recordatorio[], ahora: Date): Recordatorio[] {
   return recordatorios.filter((r) => r.enviadoEn === null && new Date(r.programadoPara) <= ahora);
 }
 
@@ -57,24 +57,36 @@ export class ServicioDeRecordatorios implements OnModuleInit, OnModuleDestroy {
       programadoPara: calcularEnvio(new Date(evento.fechaHora), ahora).toISOString(),
       enviadoEn: null,
     };
+    // Si guardar falla, lanza sin haber cambiado nada: el suscriptor libera el
+    // mensaje y la reentrega lo vuelve a intentar.
     this.repositorio.agregar(recordatorio);
     this.log.log(`Recordatorio programado para el turno ${recordatorio.turnoId}: se envia el ${recordatorio.programadoPara}`);
+    // Ya quedo guardado: enviarVencidos no lanza, asi que el mensaje se acepta.
     this.enviarVencidos(ahora);
-    return recordatorio;
+    return this.repositorio.buscarPorTurno(evento.turnoId)[0];
   }
 
+  /**
+   * No lanza nunca: corre desde un setInterval, donde una excepcion tiraria
+   * el proceso. Primero envia y despues marca: si marcar falla, quedan
+   * pendientes y se reenvian en la proxima revision (al menos una vez).
+   */
   enviarVencidos(ahora = new Date()): void {
-    const vencidos = recordatoriosVencidos(this.repositorio.todos(), ahora);
-    for (const r of vencidos) {
-      this.log.log(`Recordatorio enviado al paciente ${r.pacienteId}: tiene un turno el ${r.fechaHoraTurno} (turno ${r.turnoId})`);
-      r.enviadoEn = ahora.toISOString();
-    }
-    if (vencidos.length > 0) {
-      this.repositorio.guardar();
+    try {
+      const vencidos = recordatoriosVencidos(this.repositorio.todos(), ahora);
+      if (vencidos.length === 0) {
+        return;
+      }
+      for (const r of vencidos) {
+        this.log.log(`Recordatorio enviado al paciente ${r.pacienteId}: tiene un turno el ${r.fechaHoraTurno} (turno ${r.turnoId})`);
+      }
+      this.repositorio.marcarEnviados(vencidos.map((r) => r.turnoId), ahora.toISOString());
+    } catch (e) {
+      this.log.error('No se pudo guardar el envio de recordatorios; quedan pendientes para la proxima revision', e as Error);
     }
   }
 
-  listar(turnoId?: number): Recordatorio[] {
+  listar(turnoId?: number): readonly Recordatorio[] {
     return turnoId === undefined ? this.repositorio.todos() : this.repositorio.buscarPorTurno(turnoId);
   }
 }

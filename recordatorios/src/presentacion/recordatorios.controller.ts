@@ -13,7 +13,7 @@ export class RecordatoriosController {
       optional: true,
       exceptionFactory: () => new BadRequestException('turnoId debe ser un numero entero'),
     })) turnoId?: number,
-  ): Recordatorio[] {
+  ): readonly Recordatorio[] {
     return this.servicio.listar(turnoId);
   }
 }
