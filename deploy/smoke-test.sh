@@ -61,7 +61,13 @@ comprobar "profesionales sigue siendo publico"        200 "$(codigo "$BASE/usuar
 comprobar "el login sigue siendo publico"             200 "$(codigo -H "Content-Type: application/json" \
                                                              -d "{\"email\":\"${PACI%%:*}\",\"contrasena\":\"${PACI#*:}\"}" \
                                                              "$BASE/usuarios/login")"
-comprobar "el registro sigue siendo publico"          201 "$(codigo -H "Content-Type: application/json" \
+# SCRUM-132: el email no distingue mayusculas, ni en el login ni en Basic.
+PACI_MAYUS="$(printf '%s' "${PACI%%:*}" | tr '[:lower:]' '[:upper:]')"
+comprobar "login con el email en mayusculas"          200 "$(codigo -H "Content-Type: application/json" \
+                                                             -d "{\"email\":\"$PACI_MAYUS\",\"contrasena\":\"${PACI#*:}\"}" \
+                                                             "$BASE/usuarios/login")"
+comprobar "Basic con el email en mayusculas"          200 "$(codigo -u "$PACI_MAYUS:${PACI#*:}" "$BASE/turnos/mios")"
+comprobar "el registro sigue siendo publico"         201 "$(codigo -H "Content-Type: application/json" \
                                                              -d "{\"nombre\":\"Registro publico\",\"email\":\"smoke-reg-$(date +%s)@mediconecta.com\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
                                                              "$BASE/usuarios")"
 # SCRUM-127: 5 fallos seguidos bloquean el email 15 minutos. Se usa un email

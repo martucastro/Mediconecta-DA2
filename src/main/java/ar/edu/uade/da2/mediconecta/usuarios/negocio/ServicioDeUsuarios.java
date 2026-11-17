@@ -6,6 +6,7 @@ import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.UsuarioDAO;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -82,6 +83,10 @@ public class ServicioDeUsuarios {
                 || contrasenaPlana == null || contrasenaPlana.isBlank()) {
             throw new DatosInvalidosException("Todos los datos son obligatorios.");
         }
+
+        // Un email es el mismo con cualquier combinacion de mayusculas
+        // (SCRUM-132): se guarda en minusculas para no tener dos cuentas.
+        email = email.toLowerCase(Locale.ROOT);
 
         if (nombre.length() > MAXIMO_TEXTO || email.length() > MAXIMO_TEXTO) {
             throw new DatosInvalidosException(

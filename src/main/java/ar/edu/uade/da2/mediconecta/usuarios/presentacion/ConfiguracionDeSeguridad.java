@@ -25,13 +25,14 @@ import jakarta.security.enterprise.identitystore.DatabaseIdentityStoreDefinition
  *
  * callerQuery devuelve la contraseña hasheada y groupsQuery el rol. En
  * MediConecta cada usuario tiene un único rol, así que groupsQuery devuelve una
- * sola fila.
+ * sola fila. Las dos comparan el email en minúsculas (SCRUM-132), igual que
+ * UsuarioDAO: el encabezado Basic puede traerlo con otras mayúsculas.
  */
 @ApplicationScoped
 @DatabaseIdentityStoreDefinition(
         dataSourceLookup = "java:/MediConectaDS",
-        callerQuery = "SELECT contrasenaHash FROM usuarios WHERE email = ?",
-        groupsQuery = "SELECT rol FROM usuarios WHERE email = ?",
+        callerQuery = "SELECT contrasenaHash FROM usuarios WHERE LOWER(email) = LOWER(?)",
+        groupsQuery = "SELECT rol FROM usuarios WHERE LOWER(email) = LOWER(?)",
         hashAlgorithm = HashDeContrasena.class,
         priority = 10)
 public class ConfiguracionDeSeguridad {

@@ -20,9 +20,13 @@ public class UsuarioDAO {
         return em.find(Usuario.class, id);
     }
     
+    // Sin distinguir mayusculas (SCRUM-132): el registro ya guarda en
+    // minusculas, y LOWER tambien encuentra las filas anteriores a ese cambio.
+    // ponytail: LOWER(email) no usa un indice comun; con muchos usuarios,
+    // un indice funcional sobre lower(email).
     public Usuario buscarPorEmail(String email) {
         List<Usuario> resultado = em.createQuery(
-                "SELECT u FROM Usuario u WHERE u.email = :email", Usuario.class)
+                "SELECT u FROM Usuario u WHERE LOWER(u.email) = LOWER(:email)", Usuario.class)
                 .setParameter("email", email)
                 .getResultList();
         return resultado.isEmpty() ? null : resultado.get(0);
