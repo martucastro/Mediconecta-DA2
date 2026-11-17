@@ -73,6 +73,7 @@ flowchart LR
     classDef broker fill:#FFB575,stroke:#CC7830,color:#542700
 
     spa["Frontend SPA<br/>React + TypeScript"]:::client
+    rec["ServicioDeRecordatorios<br/>Node.js + NestJS, proceso aparte"]:::impl
 
     subgraph wf["WildFly 41, WAR mediconecta"]
         api["API REST<br/>JAX-RS /api"]:::impl
@@ -103,6 +104,7 @@ flowchart LR
     tur -->|"topico JMS: publica al confirmar"| top
     top -->|"topico JMS: suscriptor"| fac
     top -->|"topico JMS: suscriptor"| noti
+    top -->|"AMQP 1.0: suscripcion durable"| rec
     fac -->|"cola JMS: encola el reclamo"| cola
     cola -->|"cola JMS: MDB consume con reintentos"| fac
     cola -.->|"mensajes no procesables"| dlq
@@ -116,6 +118,42 @@ flowchart LR
     tur -->|"evento CDI sincronico: sala al confirmar (SCRUM-95)"| tel
     tel -->|"REST"| vid
 ```
+
+### Un componente en otra tecnología: ServicioDeRecordatorios (Node.js)
+
+`ServicioDeRecordatorios` (`recordatorios/`) está escrito en TypeScript con
+NestJS y corre como un proceso Node.js aparte de WildFly. Es el tercer
+suscriptor del tópico `TurnoConfirmado`: por cada turno confirmado programa un
+recordatorio para 24 h antes, lo guarda en su propio almacén y lo expone en
+`GET /recordatorios`.
+
+**Por qué en Node.js.** Es un componente periférico: reacciona a eventos y
+expone una API de lectura chica. No usa nada de lo que da el contenedor Jakarta
+EE (transacciones JTA, seguridad declarativa, EJB). Además prueba que el tópico
+es un contrato de integración y no un detalle de Java: `ServicioDeTurnos` no
+cambió una línea y no sabe que existe un suscriptor en otra tecnología.
+
+**El contrato entre stacks** es el tópico más el formato del mensaje:
+
+- **Protocolo:** AMQP 1.0, un estándar abierto que Artemis atiende con un
+  acceptor propio en el puerto 5672 (paso 6 de `deploy/mediconecta-setup.cli`).
+- **Dirección:** `jms.topic.TurnoConfirmadoTopic`. Es el mismo destino que
+  `java:/jms/topic/TurnoConfirmado`, con el prefijo que le pone WildFly.
+- **Cuerpo:** Artemis convierte el `MapMessage` JMS en un mapa AMQP con las
+  mismas claves (`turnoId`, `pacienteId`, `profesionalId`, `fechaHora`).
+- **Entrega:** la suscripción es durable, así que Artemis guarda los eventos
+  mientras el proceso Node está caído. Igual que los MDB, un mensaje ilegible
+  se descarta, y un error al guardar hace que Artemis lo reentregue con la
+  política del tópico.
+- **Seguridad:** SASL PLAIN contra el `ApplicationRealm` de WildFly, con un
+  usuario de aplicación del rol `recordatorios`, que solo puede consumir el
+  tópico y crear su cola durable.
+
+**Por qué AMQP y no STOMP.** Por STOMP, Artemis entrega el `MapMessage` como
+los bytes de su formato interno: llega un `MESSAGE` con `content-length:4` y un
+cuerpo binario, sin `turnoId` ni `fechaHora` legibles. Para usar STOMP habría
+que duplicar esos campos como propiedades en el publicador. AMQP tiene un tipo
+mapa nativo, así que el evento se reusa tal como se publica.
 
 ## Cobro del copago al confirmar: qué pasa si la pasarela falla (SCRUM-93)
 

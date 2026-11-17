@@ -282,7 +282,7 @@ public class ServicioDeTurnos implements ServicioDeTurnosLocal {
         verificarQueElHoldEsDelCaller(turno);
         if (turno.getEstado() != EstadoTurno.EN_HOLD) {
             throw new ConflictoDeNegocioException(
-                    "El turno no tiene un hold activo: está " + enPalabras(turno.getEstado()));
+                    "El turno no tiene una reserva vigente: está " + enPalabras(turno.getEstado()));
         }
         // El temporizador de ExpiradorDeHolds no es persistente: tras un
         // reinicio un hold vencido sigue EN_HOLD hasta el proximo barrido
@@ -290,7 +290,7 @@ public class ServicioDeTurnos implements ServicioDeTurnosLocal {
         if (turno.getInicioHold() != null && turno.getInicioHold()
                 .plus(ExpiradorDeHolds.DURACION_HOLD_MS, ChronoUnit.MILLIS)
                 .isBefore(LocalDateTime.now())) {
-            throw new ConflictoDeNegocioException("El turno no tiene un hold activo: el hold venció");
+            throw new ConflictoDeNegocioException("La reserva del turno venció: ya no se puede confirmar");
         }
 
         // PUNTO DE EXTENSION (confirmacion). Observadores, en este orden:

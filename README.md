@@ -118,6 +118,19 @@ set MEDICONECTA_PROFESIONAL_PASSWORD=cambiar123
 set MEDICONECTA_PACIENTE_PASSWORD=cambiar123
 ```
 
+En la misma consola, fijá la zona horaria de la JVM. Las fechas viajan como
+`LocalDateTime`, sin zona: el backend decide qué es "ahora" (el vencimiento del
+hold, una franja en el pasado) con la zona de la JVM, y el navegador muestra las
+horas en la suya. Si WildFly corre en UTC (un contenedor, una VM en la nube),
+todo se corre tres horas. Va en `JAVA_TOOL_OPTIONS` y no en `JAVA_OPTS`: si
+`JAVA_OPTS` está definida, `standalone.conf` deja de aplicar sus valores de
+memoria por defecto.
+
+```bash
+export JAVA_TOOL_OPTIONS=-Duser.timezone=America/Argentina/Buenos_Aires   # Linux y macOS
+set JAVA_TOOL_OPTIONS=-Duser.timezone=America/Argentina/Buenos_Aires      # Windows (cmd)
+```
+
 Arrancá el servidor **con el perfil full (`standalone-full.xml`), es un
 requisito**: es el que incluye el subsistema de mensajería (`messaging-activemq`)
 donde el script de configuración crea el tópico y la cola JMS. Con
@@ -299,8 +312,9 @@ en cada pedido a la API.
 
 - Dura lo que dura la pestaña: sobrevive a un refresco, pero no a una pestaña
   nueva ni a cerrar el navegador.
-- Cada ruta exige un rol: un paciente que pide `/agenda` vuelve a `/home`, y un
-  profesional que pide `/home` vuelve a `/agenda`. Es solo para no mostrar
+- Cada ruta exige un rol: un paciente que pide `/agenda` vuelve a `/home`, un
+  profesional que pide `/home` vuelve a `/agenda`, y el administrador vuelve a
+  `/admin`. Es solo para no mostrar
   pantallas que no le corresponden; la autorización real la hace el backend.
 - Un 401 en medio de la sesión (la credencial ya no vale) cierra la sesión y
   vuelve al login. Esto depende de que el fetch pueda manejar la respuesta: la
@@ -309,8 +323,10 @@ en cada pedido a la API.
   así el navegador no abre su popup nativo de credenciales antes de que el
   código de arriba se ejecute. Un curl o un Postman que no manden ese
   encabezado sí reciben `WWW-Authenticate`, como corresponde a HTTP Basic.
-- El administrador no tiene pantallas: si inicia sesión en la interfaz web se le
-  avisa que opera por la API, y no se guarda la sesión.
+- El administrador entra a `/admin`, el panel de reclamos de facturación
+  (`GET /api/reclamos`): turno, monto, estado, intentos y última actualización,
+  con un filtro por estado. Un reclamo aparece al confirmar un turno con
+  cobertura y pasa a "Enviado" cuando la obra social lo acepta.
 
 Guardar la credencial en el navegador es lo que pide la card porque hoy el
 backend solo habla HTTP Basic. Reemplazarlo por un token con vencimiento
@@ -639,6 +655,28 @@ Y para volver al comportamiento normal:
 ```bash
 $WILDFLY_HOME/bin/jboss-cli.sh --connect '/system-property=mediconecta.obrasocial.url:remove'
 ```
+
+---
+
+## Componente en otra tecnología: `recordatorios/` (Node.js)
+
+Además de los ocho componentes Java, `ServicioDeRecordatorios` está escrito en
+TypeScript con NestJS y corre como un proceso aparte de WildFly. Se suscribe al
+tópico `TurnoConfirmado` por AMQP 1.0 con una suscripción durable, programa un
+recordatorio para 24 h antes de cada turno confirmado y lo expone en
+`GET http://localhost:3000/recordatorios`.
+
+El paso 6 de `deploy/mediconecta-setup.cli` abre el acceptor AMQP (puerto 5672)
+y le da permisos al rol `recordatorios`. Falta crear el usuario de aplicación
+(la clave es un ejemplo):
+
+```bash
+add-user.sh -a -u recordatorios -p recordatorios123 -g recordatorios    # Windows: add-user.bat
+```
+
+Cómo correrlo, el contrato del mensaje y la demo están en
+[`recordatorios/README.md`](recordatorios/README.md). Por qué está en Node.js,
+en [`docs/arquitectura.md`](docs/arquitectura.md).
 
 ---
 
