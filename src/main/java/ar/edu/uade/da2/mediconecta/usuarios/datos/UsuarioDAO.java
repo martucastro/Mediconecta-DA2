@@ -1,6 +1,7 @@
 package ar.edu.uade.da2.mediconecta.usuarios.datos;
 
 import java.util.List;
+import java.util.Locale;
 
 import jakarta.ejb.Stateless;
 import jakarta.persistence.EntityManager;
@@ -20,14 +21,15 @@ public class UsuarioDAO {
         return em.find(Usuario.class, id);
     }
     
-    // Sin distinguir mayusculas (SCRUM-132): el registro ya guarda en
-    // minusculas, y LOWER tambien encuentra las filas anteriores a ese cambio.
-    // ponytail: LOWER(email) no usa un indice comun; con muchos usuarios,
-    // un indice funcional sobre lower(email).
+    // Sin distinguir mayusculas (SCRUM-132): se normaliza el parametro, como
+    // en el registro, y la columna se compara tal cual. Pasar tambien la
+    // columna a minusculas haria coincidir una fila vieja "ADMIN@x.com" (otra
+    // cuenta) junto con "admin@x.com". Una fila vieja con mayusculas deja de
+    // encontrarse: falla cerrada, a proposito.
     public Usuario buscarPorEmail(String email) {
         List<Usuario> resultado = em.createQuery(
-                "SELECT u FROM Usuario u WHERE LOWER(u.email) = LOWER(:email)", Usuario.class)
-                .setParameter("email", email)
+                "SELECT u FROM Usuario u WHERE u.email = :email", Usuario.class)
+                .setParameter("email", email == null ? null : email.trim().toLowerCase(Locale.ROOT))
                 .getResultList();
         return resultado.isEmpty() ? null : resultado.get(0);
     }

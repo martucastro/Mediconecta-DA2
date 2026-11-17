@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.usuarios.datos;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -21,9 +22,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 
 /**
- * SCRUM-132: "Ana@Mail.com" y "ana@mail.com" son el mismo usuario. La
- * comparacion se hace en minusculas en la consulta, asi tambien encuentra las
- * filas guardadas antes de normalizar el registro.
+ * SCRUM-132: "Ana@Mail.com" y "ana@mail.com" son el mismo usuario. Se
+ * normaliza el parametro y la columna se compara tal cual: una fila vieja con
+ * mayusculas (otra cuenta) nunca coincide junto con la de minusculas.
  */
 @ExtendWith(MockitoExtension.class)
 class UsuarioDAOTest {
@@ -36,15 +37,17 @@ class UsuarioDAOTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void buscarPorEmailNoDistingueMayusculas() {
+    void buscarPorEmailNormalizaElParametroYComparaLaColumnaExacta() {
         TypedQuery<Usuario> consulta = mock(TypedQuery.class, RETURNS_SELF);
         when(em.createQuery(anyString(), eq(Usuario.class))).thenReturn(consulta);
         when(consulta.getResultList()).thenReturn(List.of());
 
-        dao.buscarPorEmail("Ana@Mail.com");
+        dao.buscarPorEmail("  Ana@Mail.com ");
 
         ArgumentCaptor<String> jpql = ArgumentCaptor.forClass(String.class);
         verify(em).createQuery(jpql.capture(), eq(Usuario.class));
-        assertTrue(jpql.getValue().contains("LOWER(u.email) = LOWER(:email)"), jpql.getValue());
+        assertTrue(jpql.getValue().endsWith("WHERE u.email = :email"), jpql.getValue());
+        assertFalse(jpql.getValue().contains("LOWER"), jpql.getValue());
+        verify(consulta).setParameter("email", "ana@mail.com");
     }
 }
