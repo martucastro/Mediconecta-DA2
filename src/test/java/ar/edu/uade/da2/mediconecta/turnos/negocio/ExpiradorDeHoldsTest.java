@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -35,6 +36,7 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import jakarta.ejb.Lock;
 import jakarta.ejb.LockType;
+import jakarta.ejb.NoSuchObjectLocalException;
 import jakarta.ejb.Timer;
 import jakarta.ejb.TimerConfig;
 import jakarta.ejb.TimerService;
@@ -256,6 +258,31 @@ class ExpiradorDeHoldsTest {
 
         verify(delTurno).cancel();
         verify(deOtroPaciente, never()).cancel();
+    }
+
+    @Test
+    void unTemporizadorQueOtroPedidoYaCanceloNoHaceFallarLaCancelacion() {
+        // Entre getTimers() y getInfo() otra transaccion cancelo ese timer:
+        // WildFly lanza NoSuchObjectLocalException (WFLYEJB0331). Antes salia
+        // del metodo, revertia la reserva o la cancelacion entera y daba 500
+        // (14 veces en 27.600 iteraciones de la prueba de carga).
+        Timer desaparecido = mock(Timer.class);
+        when(desaparecido.getInfo()).thenThrow(new NoSuchObjectLocalException("WFLYEJB0331"));
+        Timer delTurno = timerDe(7L);
+        when(timerService.getTimers()).thenReturn(List.of(desaparecido, delTurno));
+
+        expirador.cancelar(7L);
+
+        verify(delTurno).cancel();
+    }
+
+    @Test
+    void siElTemporizadorDelTurnoDesapareceAntesDeCancelarloNoFalla() {
+        Timer delTurno = timerDe(7L);
+        doThrow(new NoSuchObjectLocalException("WFLYEJB0331")).when(delTurno).cancel();
+        when(timerService.getTimers()).thenReturn(List.of(delTurno));
+
+        expirador.cancelar(7L);
     }
 
     @Test
