@@ -719,3 +719,7 @@ Están acá a propósito: son decisiones de alcance de esta entrega, no descuido
 - **Usuarios de prueba en el arranque.** `SeedDeUsuariosIniciales` crea un
   profesional y un paciente de ejemplo. Fuera de un entorno de desarrollo esos dos
   no deberían existir.
+
+## Resiliencia ante sistemas externos
+
+Los tres adaptadores externos (legado de obra social, pasarela de pago y proveedor de video) están protegidos con timeouts y un circuit breaker: tras 3 fallas seguidas se deja de llamar al sistema por 10 s y se responde al instante (`503` con `Retry-After` para el legado y el proveedor de video, `502` para la pasarela de pago); el resto de la plataforma sigue funcionando. Los reclamos usan reintentos y `ReclamosFacturacionDLQ`. Detalle en `docs/documento-tecnico.md` (sección 9.5). Para verlo en acción con el servidor desplegado: `bash deploy/demo-circuit-breaker.sh`.

@@ -5,6 +5,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
+import ar.edu.uade.da2.mediconecta.comun.resiliencia.CircuitBreaker;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -48,6 +49,13 @@ public class ProveedorDeVideoRestClient implements ProveedorDeVideoAdapter {
     // PasarelaDePagoRestClient): es caro de crear y es thread-safe.
     private Client cliente;
 
+    // Circuit breaker: con el proveedor caido, tras 3 fallas seguidas la
+    // confirmacion de turnos falla al instante (503) en vez de esperar el timeout
+    // de lectura en cada intento. Un 4xx (409) no cuenta. Propiedades:
+    // mediconecta.video.cb.umbral y mediconecta.video.cb.abiertoMs.
+    private final CircuitBreaker circuito =
+            CircuitBreaker.deConfiguracion("proveedor-de-video", "mediconecta.video", 3, 10_000);
+
     @PostConstruct
     public void iniciar() {
         cliente = ClientBuilder.newBuilder()
@@ -63,6 +71,13 @@ public class ProveedorDeVideoRestClient implements ProveedorDeVideoAdapter {
 
     @Override
     public SalaDeVideo crearSala(Long turnoId, LocalDateTime fechaHora) {
+        return circuito.ejecutar(() -> crearSalaSinProteger(turnoId, fechaHora),
+                ProveedorDeVideoNoDisponibleException.class,
+                () -> new ProveedorDeVideoNoDisponibleException(
+                        "El proveedor de video no está disponible por el momento. Intentá de nuevo en unos segundos."));
+    }
+
+    private SalaDeVideo crearSalaSinProteger(Long turnoId, LocalDateTime fechaHora) {
         SalaExternaRequest cuerpo = new SalaExternaRequest("turno-" + turnoId,
                 fechaHora != null ? fechaHora.toString() : null);
 

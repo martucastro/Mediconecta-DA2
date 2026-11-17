@@ -13,7 +13,8 @@
 #                 proveedor de video. Las provoca con system properties de
 #                 WildFly, asi que necesita JBOSS_CLI con la ruta a
 #                 jboss-cli.sh (o .bat). Las quita siempre al terminar, incluso
-#                 si el script se interrumpe.
+#                 si el script se interrumpe. Termina con el circuit breaker
+#                 de la pasarela (espera 11 s a que se vuelva a cerrar).
 #
 #   JBOSS_CLI=/ruta/a/wildfly/bin/jboss-cli.sh bash deploy/smoke-test.sh --rapido --resiliencia
 #
@@ -399,7 +400,7 @@ fi
 
 if [ "$RESILIENCIA" = "si" ]; then
   echo
-  echo "Resiliencia: legado de la obra social y proveedor de video caidos"
+  echo "Resiliencia: legado de la obra social, proveedor de video y pasarela caidos"
   if [ -z "${JBOSS_CLI:-}" ] || [ ! -f "$JBOSS_CLI" ]; then
     echo "  --resiliencia necesita JBOSS_CLI con la ruta a jboss-cli.sh o jboss-cli.bat"
     exit 2
@@ -478,6 +479,22 @@ if [ "$RESILIENCIA" = "si" ]; then
   cli "/system-property=$PROP_VIDEO:remove"
   comprobar "video de vuelta: se confirma y hay sala" 200 "$(confirmar_con "$PACI" "$IDV" tok_visa_demo)"
   comprobar "el paciente paga una sola vez"           1 "$(curl -s -u "$PACI" "$BASE/pagos?turnoId=$IDV" | grep -o '"estado":"APROBADO"' | wc -l | tr -d ' ')"
+
+  # 4. Circuit breaker de la pasarela (SCRUM-120), con los valores por defecto
+  #    (mediconecta.pasarela.cb.umbral=3, cb.abiertoMs=10000): tras 3 fallas
+  #    seguidas deja de llamarla y responde 502 al instante, el mismo contrato
+  #    que la pasarela caida. Un token que aprueba tambien da 502: la prueba de
+  #    que no se llamo a la pasarela.
+  IDP=$(abrir 2027-01-18T13:00:00 PRESENCIAL)
+  reservar "$IDP" >/dev/null
+  for i in 1 2 3; do
+    comprobar "pasarela caida, intento $i: 502"        502 "$(confirmar_con "$PACI" "$IDP" caer_demo)"
+  done
+  comprobar "circuito abierto: 502 sin llamarla"       502 "$(confirmar_con "$PACI" "$IDP" tok_visa_demo)"
+  comprobar "y no se cobro nada"                       0 "$(curl -s -u "$PACI" "$BASE/pagos?turnoId=$IDP" | grep -o '"estado":"APROBADO"' | wc -l | tr -d ' ')"
+  echo "  esperando que venza el tiempo de apertura del circuito (11 s)..."
+  sleep 11
+  comprobar "vencido, la llamada de prueba confirma"   200 "$(confirmar_con "$PACI" "$IDP" tok_visa_demo)"
   quedan=$(activas)
   comprobar "no queda ninguna falla en el servidor"   ninguna "${quedan:-ninguna}"
 fi
