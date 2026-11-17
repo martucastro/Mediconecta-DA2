@@ -5,6 +5,7 @@ import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import jakarta.annotation.security.RolesAllowed;
@@ -53,7 +54,8 @@ public class UsuariosResource {
         Usuario usuario = servicio.consultarUsuario(id);
         if (usuario == null) {
             return Response.status(Response.Status.NOT_FOUND)
-                    .entity("Usuario no encontrado")
+                    .entity(Map.of("error", "Usuario no encontrado."))
+                    .type(MediaType.APPLICATION_JSON)
                     .build();
         }
         return Response.ok(new UsuarioDTO(usuario)).build();
@@ -84,7 +86,8 @@ public class UsuariosResource {
         Usuario usuario = servicio.autenticar(credenciales.getEmail(), credenciales.getContrasena());
         if (usuario == null) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity("Email o contraseña incorrectos")
+                    .entity(Map.of("error", "Email o contraseña incorrectos."))
+                    .type(MediaType.APPLICATION_JSON)
                     .build();
         }
         return Response.ok(new UsuarioDTO(usuario)).build();

@@ -30,6 +30,7 @@ comprobar() { # descripcion, esperado, obtenido
 }
 
 codigo() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+tipo() { curl -s -o /dev/null -w '%{content_type}' "$@" | cut -d';' -f1; }
 
 echo "MediConecta, verificacion de humo contra $BASE"
 echo
@@ -39,6 +40,19 @@ comprobar "credencial incorrecta"             401 "$(codigo -u "admin@mediconect
 comprobar "admin lista usuarios"              200 "$(codigo -u "$ADMIN" "$BASE/usuarios")"
 comprobar "paciente NO lista usuarios"        403 "$(codigo -u "$PACI" "$BASE/usuarios")"
 comprobar "profesional NO lista usuarios"     403 "$(codigo -u "$PROF" "$BASE/usuarios")"
+
+echo
+echo "Errores en JSON (SCRUM-132)"
+comprobar "401 del contenedor"                application/json "$(tipo "$BASE/turnos/mios")"
+comprobar "403 del contenedor (web.xml)"      application/json "$(tipo -u "$PACI" "$BASE/usuarios")"
+comprobar "403 del componente"                application/json "$(tipo -u "$PACI" "$BASE/usuarios/999999999")"
+comprobar "404 de un usuario inexistente"     application/json "$(tipo -u "$ADMIN" "$BASE/usuarios/999999999")"
+comprobar "401 del login"                     application/json "$(tipo -H "Content-Type: application/json" \
+                                                     -d '{"email":"nadie@mediconecta.com","contrasena":"mal"}' "$BASE/usuarios/login")"
+# AutenticacionBasica (SCRUM-103): sin X-Requested-With se pide Basic; con el
+# encabezado del SPA, no (si no, el navegador muestra su popup).
+comprobar "401 de curl pide Basic"            si "$(curl -s -D - -o /dev/null "$BASE/turnos/mios" | grep -qi '^WWW-Authenticate: Basic' && echo si || echo no)"
+comprobar "401 del SPA no pide Basic"         si "$(curl -s -D - -o /dev/null -H 'X-Requested-With: XMLHttpRequest' "$BASE/turnos/mios" | grep -qi '^WWW-Authenticate' && echo no || echo si)"
 
 
 echo
@@ -142,6 +156,8 @@ echo "Pagos (SCRUM-127: el mismo 403 para un id inexistente que para uno ajeno)"
 comprobar "paciente con un pago inexistente da 403"  403 "$(codigo -u "$PACI" "$BASE/pagos/999999999")"
 comprobar "paciente con un turno inexistente da 403" 403 "$(codigo -u "$PACI" "$BASE/pagos?turnoId=999999999")"
 comprobar "admin con un pago inexistente da 404"     404 "$(codigo -u "$ADMIN" "$BASE/pagos/999999999")"
+# SCRUM-132: el reembolso de un pago inexistente era 400; ahora 404, como el GET.
+comprobar "admin reembolsa un pago inexistente: 404" 404 "$(codigo -u "$ADMIN" -X PUT "$BASE/pagos/999999999/reembolso")"
 
 echo
 echo "Telemedicina (proveedor de video simulado y componente)"

@@ -217,4 +217,21 @@
         <location>/index.html</location>
     </error-page>
 
+    <!--
+      Los 401 y 403 que arma el contenedor (credencial invalida o ausente en
+      AutenticacionBasica, o un auth-constraint de este archivo que no incluye
+      el rol del caller) no pasan por JAX-RS: sin esto Undertow responde con su
+      pagina HTML. ErrorDeSeguridadServlet devuelve el mismo {"error": "..."}
+      que el resto de la API (SCRUM-132). Solo /api/* tiene restricciones, asi
+      que estos codigos no aparecen en las pantallas del frontend.
+    -->
+    <error-page>
+        <error-code>401</error-code>
+        <location>/errores/seguridad</location>
+    </error-page>
+    <error-page>
+        <error-code>403</error-code>
+        <location>/errores/seguridad</location>
+    </error-page>
+
 </web-app>
