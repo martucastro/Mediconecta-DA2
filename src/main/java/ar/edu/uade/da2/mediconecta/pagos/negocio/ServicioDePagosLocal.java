@@ -30,8 +30,10 @@ public interface ServicioDePagosLocal {
     List<Pago> listarPorTurno(Long turnoId);
 
     /**
-     * Reembolsa un pago aprobado. Falla con ConflictoDeNegocioException si el
-     * pago no está en estado APROBADO.
+     * Reembolsa un pago APROBADO o COMPENSACION_PENDIENTE. Falla con
+     * ConflictoDeNegocioException si el pago está en otro estado, si es el
+     * copago de un turno que sigue CONFIRMADO (hay que cancelar el turno) o si
+     * la pasarela no confirma el reembolso.
      */
     Pago reembolsar(Long pagoId);
 

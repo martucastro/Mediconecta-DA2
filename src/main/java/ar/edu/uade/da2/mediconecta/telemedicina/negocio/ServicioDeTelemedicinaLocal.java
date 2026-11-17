@@ -46,4 +46,16 @@ public interface ServicioDeTelemedicinaLocal {
      * EJBAccessException si el caller no es paciente ni profesional del turno.
      */
     EnlaceDeSesion obtenerEnlace(Long turnoId);
+
+    /**
+     * Marca CANCELADA la sala de un turno que el paciente canceló (lo llama
+     * SalaAlCancelar). Un turno sin sala no tiene nada que cancelar.
+     *
+     * Roles: PACIENTE o PROFESIONAL del turno. Transacción: MANDATORY; corre
+     * dentro de cancelarTurno y se revierte con ella.
+     *
+     * Falla con DatosInvalidosException si el id es null y con
+     * EJBAccessException si el caller no es paciente ni profesional del turno.
+     */
+    void cancelarSesion(Long turnoId);
 }

@@ -1549,6 +1549,7 @@
                   "    var aprobado = pagos.find(function (p) { return p.estado === 'APROBADO'; });",
                   "    pm.expect(aprobado, 'pago aprobado').to.exist;",
                   "    pm.expect(Number(aprobado.monto)).to.eql(6000);",
+                  "    pm.collectionVariables.set('pago_id_async', aprobado.id);",
                   "});"
                 ]
               }
@@ -1588,6 +1589,56 @@
               ]
             },
             "description": "El cobro lo hace la confirmacion (pasarela externa simulada), antes de publicar en el topico."
+          }
+        },
+        {
+          "name": "7 - ADMINISTRADOR no reembolsa el copago de un turno confirmado (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test('Pide cancelar el turno', function () {",
+                  "    pm.expect(pm.response.json().error).to.include('confirmado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/pagos/{{pago_id_async}}/reembolso",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pagos",
+                "{{pago_id_async}}",
+                "reembolso"
+              ]
+            },
+            "description": "SCRUM-132: devolver el copago de un turno que sigue CONFIRMADO lo dejaba confirmado y con su reclamo ENVIADO, sin pago. Para devolverlo se cancela el turno, y la cancelacion lo reembolsa."
           }
         }
       ]
@@ -2671,6 +2722,109 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+            }
+          }
+        },
+        {
+          "name": "SCRUM-132 - PACIENTE_A no puede tener dos holds (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test('Pide confirmar o cancelar el otro', function () {",
+                  "    pm.expect(pm.response.json().error).to.include('otro turno reservado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_tele_conf}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos"
+              ]
+            },
+            "description": "Un hold vigente por paciente: cada reserva pide una autorizacion al legado de la obra social. PACIENTE_A todavia retiene el turno de la sala."
+          }
+        },
+        {
+          "name": "PACIENTE_A suelta el hold de la sala (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_tele}}/cancelar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "{{turno_tele}}",
+                "cancelar"
+              ]
             }
           }
         },
@@ -3850,6 +4004,53 @@
                 },
                 "description": "Con el legado restaurado la misma franja se reserva sin pasos adicionales."
               }
+            },
+            {
+              "name": "7 - Soltar el hold para seguir (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_legado}}/cancelar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_legado}}",
+                    "cancelar"
+                  ]
+                },
+                "description": "Un hold vigente por paciente: sin esto, la reserva de 08c responde 409."
+              }
             }
           ]
         },
@@ -4437,6 +4638,60 @@
               }
             },
             {
+              "name": "5b - El copago cobrado se reembolso solo (REEMBOLSADO)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "pm.test('El cobro huerfano quedo REEMBOLSADO', function () {",
+                      "    pm.expect(pm.response.json().some(function (p) { return p.estado === 'REEMBOLSADO'; })).to.be.true;",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/pagos?turnoId={{turno_id_tele_falla}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "pagos"
+                  ],
+                  "query": [
+                    {
+                      "key": "turnoId",
+                      "value": "{{turno_id_tele_falla}}"
+                    }
+                  ]
+                },
+                "description": "La pasarela aprobo el copago antes de que fallara la sala. El rollback no alcanza a la pasarela: CompensacionDeCobro lo reembolsa despues del rollback, antes de que llegue el 503."
+              }
+            },
+            {
               "name": "6 - NOTA: restaurar el proveedor de video (terminal)",
               "event": [
                 {
@@ -4521,6 +4776,57 @@
                   ]
                 },
                 "description": "Se recupera: la sala se crea y el turno queda CONFIRMADO."
+              }
+            },
+            {
+              "name": "8 - El paciente paga una sola vez (un solo APROBADO)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Un solo pago APROBADO', function () {",
+                      "    var aprobados = pm.response.json().filter(function (p) { return p.estado === 'APROBADO'; });",
+                      "    pm.expect(aprobados.length).to.eql(1);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/pagos?turnoId={{turno_id_tele_falla}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "pagos"
+                  ],
+                  "query": [
+                    {
+                      "key": "turnoId",
+                      "value": "{{turno_id_tele_falla}}"
+                    }
+                  ]
+                }
               }
             }
           ]

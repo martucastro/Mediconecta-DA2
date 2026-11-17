@@ -39,12 +39,13 @@ import jakarta.transaction.Transactional.TxType;
  *     en RECHAZADO (ya guardado en REQUIRES_NEW, sobrevive al rollback); aca
  *     se lo traduce a ConflictoDeNegocioException (409) para no confirmar un
  *     turno impago, y la transaccion se revierte.
- *   - Cobro aprobado pero un paso posterior (la sala) falla -> JTA revierte la
- *     fila Pago, pero el cobro externo ya salio (cobro huerfano). El rastro
- *     PENDIENTE que ServicioDePagos inserta en REQUIRES_NEW sobrevive al
- *     rollback como rastro para conciliar a mano. Hoy no hay compensacion
- *     automatica: reembolsar exige un Pago APROBADO con id de transaccion,
- *     y ese dato se pierde en el rollback.
+ *   - Cobro aprobado pero un paso posterior (la sala, el topico) o el commit
+ *     falla -> JTA revierte la fila Pago, pero el cobro externo ya salio
+ *     (cobro huerfano). ServicioDePagos dispara CobroAprobado y
+ *     CompensacionDeCobro, que lo observa AFTER_FAILURE, lo reembolsa despues
+ *     del rollback: el rastro PENDIENTE queda REEMBOLSADO, o
+ *     COMPENSACION_PENDIENTE para el administrador si el reembolso tambien
+ *     falla. Un reintento del paciente cobra de nuevo y paga una sola vez.
  */
 @ApplicationScoped
 public class CobroAlConfirmar {

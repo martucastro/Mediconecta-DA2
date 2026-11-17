@@ -52,6 +52,33 @@ public class PagoDAO {
         return em.merge(pago);
     }
 
+    /**
+     * Guarda el resultado de la compensación de un cobro huérfano
+     * (CompensacionDeCobro): REEMBOLSADO o COMPENSACION_PENDIENTE, con el id de
+     * transacción que la actualización revertida se llevó.
+     *
+     * REQUIRES_NEW porque corre después del rollback de la confirmación, sin
+     * transacción en curso. La fila existe: es el rastro PENDIENTE que
+     * guardarEnNuevaTransaccion dejó antes de cobrar.
+     */
+    @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
+    public void registrarCompensacion(Long pagoId, EstadoPago estado, String idTransaccionExterna) {
+        Pago pago = em.find(Pago.class, pagoId);
+        pago.setEstado(estado);
+        pago.setIdTransaccionExterna(idTransaccionExterna);
+    }
+
+    /**
+     * Manda a la base los cambios pendientes de la transacción en curso. El
+     * contexto de persistencia es uno por transacción JTA, así que incluye lo
+     * que escribieron otros componentes en ella (el turno, el reclamo, la
+     * sala): ServicioDePagos lo usa antes de una llamada a la pasarela que el
+     * rollback no deshace, para que un error de base salga antes y no después.
+     */
+    public void sincronizar() {
+        em.flush();
+    }
+
     public Pago actualizar(Pago pago) {
         return em.merge(pago);
     }

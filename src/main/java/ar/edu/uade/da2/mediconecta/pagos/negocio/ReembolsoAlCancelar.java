@@ -13,7 +13,8 @@ import jakarta.transaction.Transactional.TxType;
  * Devuelve el copago cuando el paciente cancela un turno confirmado (SCRUM-124).
  * Contraparte de CobroAlConfirmar: corre dentro de la transaccion de
  * cancelarTurno, asi que si la pasarela falla la cancelacion entera se revierte
- * (502) y el turno sigue CONFIRMADO.
+ * (502) y el turno sigue CONFIRMADO. Va ultimo (REEMBOLSO_COPAGO) y con el
+ * turno ya CANCELADO: ver ServicioDePagos.reembolsarCopagoDelTurno.
  */
 @ApplicationScoped
 public class ReembolsoAlCancelar {

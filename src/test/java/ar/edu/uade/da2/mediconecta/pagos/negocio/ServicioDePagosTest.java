@@ -6,10 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
@@ -17,6 +22,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -26,6 +33,7 @@ import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.Pago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.PagoDAO;
+import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
@@ -34,6 +42,7 @@ import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.ejb.ApplicationException;
 import jakarta.ejb.EJBAccessException;
 import jakarta.ejb.SessionContext;
+import jakarta.enterprise.event.Event;
 
 /**
  * Reembolso del copago al cancelar un turno confirmado (SCRUM-124). El rollback
@@ -59,6 +68,8 @@ class ServicioDePagosTest {
     private ServicioDeUsuariosLocal servicioDeUsuarios;
     @Mock
     private ServicioDeTurnosLocal servicioDeTurnos;
+    @Mock
+    private Event<CobroAprobado> cobroAprobado;
 
     @InjectMocks
     private ServicioDePagos servicio;
@@ -80,6 +91,8 @@ class ServicioDePagosTest {
         verify(pagoDAO).guardarEnNuevaTransaccion(pago);
         verify(pagoDAO).actualizarEnNuevaTransaccion(pago);
         verify(pagoDAO, never()).actualizar(any());
+        // No salio dinero: no hay nada que compensar.
+        verify(cobroAprobado, never()).fire(any());
     }
 
     @Test
@@ -92,6 +105,54 @@ class ServicioDePagosTest {
         assertEquals(EstadoPago.APROBADO, servicio.cobrar(cobro("tok_visa_demo")).getEstado());
 
         verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
+        // Camino feliz: nada se reembolsa.
+        verify(pasarela, never()).reembolsar(any());
+    }
+
+    @Test
+    void unCobroAprobadoQuedaAnotadoParaCompensarSiLaConfirmacionFalla() {
+        comoElPacienteDelTurno();
+        conIdAlGuardar(21L);
+        when(pasarela.cobrar(any(), any(), any()))
+                .thenReturn(new ResultadoPasarela(EstadoPago.APROBADO, "tx-21"));
+        when(pagoDAO.actualizar(any())).thenAnswer(i -> i.getArgument(0));
+
+        servicio.cobrar(cobro("tok_visa_demo"));
+
+        // El evento es transaccional (CompensacionDeCobro observa
+        // AFTER_FAILURE): solo tiene efecto si la confirmacion no se confirma.
+        verify(cobroAprobado).fire(new CobroAprobado(21L, TURNO, "tx-21"));
+    }
+
+    @Test
+    void reintentarDespuesDeUnaConfirmacionCompensadaCobraUnaSolaVez() throws Exception {
+        comoElPacienteDelTurno();
+        conIdAlGuardar(31L, 32L);
+        when(pasarela.cobrar(any(), any(), any()))
+                .thenReturn(new ResultadoPasarela(EstadoPago.APROBADO, "tx-31"))
+                .thenReturn(new ResultadoPasarela(EstadoPago.APROBADO, "tx-32"));
+        when(pagoDAO.actualizar(any())).thenAnswer(i -> i.getArgument(0));
+        when(pasarela.reembolsar("tx-31"))
+                .thenReturn(new ResultadoPasarela(EstadoPago.REEMBOLSADO, "tx-31"));
+        CompensacionDeCobro compensacion = new CompensacionDeCobro();
+        inyectar(compensacion, "pasarela", pasarela);
+        inyectar(compensacion, "pagoDAO", pagoDAO);
+
+        // 1. Se cobra y la confirmacion falla despues (por ejemplo, la sala):
+        //    el contenedor revierte y dispara la compensacion.
+        servicio.cobrar(cobro("tok_visa_demo"));
+        ArgumentCaptor<CobroAprobado> evento = ArgumentCaptor.forClass(CobroAprobado.class);
+        verify(cobroAprobado).fire(evento.capture());
+        compensacion.alFallarLaTransaccion(evento.getValue());
+        // 2. El paciente reintenta y esta vez la confirmacion sale bien.
+        Pago segundo = servicio.cobrar(cobro("tok_visa_demo"));
+
+        // Dos cobros en la pasarela y uno devuelto: el paciente paga una vez.
+        verify(pasarela, times(2)).cobrar(any(), any(), any());
+        verify(pagoDAO).registrarCompensacion(31L, EstadoPago.REEMBOLSADO, "tx-31");
+        verify(pasarela, never()).reembolsar("tx-32");
+        assertEquals(EstadoPago.APROBADO, segundo.getEstado());
+        assertEquals("tx-32", segundo.getIdTransaccionExterna());
     }
 
     @Test
@@ -134,8 +195,17 @@ class ServicioDePagosTest {
 
         assertEquals(EstadoPago.REEMBOLSADO, aprobado.getEstado());
         assertEquals(EstadoPago.RECHAZADO, rechazado.getEstado());
-        verify(pagoDAO).actualizar(aprobado);
-        verify(pagoDAO, never()).actualizar(rechazado);
+        // SCRUM-128: lo que la cancelacion escribio (turno, reclamo, sala) va a
+        // la base antes de la llamada externa, y el reembolso se guarda en una
+        // transaccion propia: si despues falla el commit, el pago no vuelve a
+        // figurar APROBADO con el dinero devuelto, y un reintento no lo
+        // reembolsa dos veces.
+        InOrder orden = inOrder(pagoDAO, pasarela);
+        orden.verify(pagoDAO).sincronizar();
+        orden.verify(pasarela).reembolsar("tx-1");
+        orden.verify(pagoDAO).actualizarEnNuevaTransaccion(aprobado);
+        verify(pagoDAO, never()).actualizarEnNuevaTransaccion(rechazado);
+        verify(pagoDAO, never()).actualizar(any());
     }
 
     @Test
@@ -153,6 +223,7 @@ class ServicioDePagosTest {
                 .rollback());
         assertEquals(EstadoPago.APROBADO, aprobado.getEstado());
         verify(pagoDAO, never()).actualizar(any());
+        verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
     }
 
     @Test
@@ -165,6 +236,7 @@ class ServicioDePagosTest {
         assertThrows(ConflictoDeNegocioException.class,
                 () -> servicio.reembolsarCopagoDelTurno(TURNO));
         verify(pagoDAO, never()).actualizar(any());
+        verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
     }
 
     @Test
@@ -175,6 +247,68 @@ class ServicioDePagosTest {
         servicio.reembolsarCopagoDelTurno(TURNO);
 
         verify(pasarela, never()).reembolsar(any());
+        verify(pagoDAO, never()).sincronizar();
+    }
+
+    // ---- Reembolso del administrador (SCRUM-132) -----------------------------
+
+    @Test
+    void elAdministradorNoReembolsaElCopagoDeUnTurnoConfirmado() {
+        // Antes lo devolvia y el turno seguia CONFIRMADO, con su reclamo
+        // ENVIADO a la obra social: un turno vigente sin pago. Para devolverlo,
+        // se cancela el turno y la cancelacion lo reembolsa.
+        Pago aprobado = pagoComoAdministrador(40L, EstadoPago.APROBADO, EstadoTurno.CONFIRMADO);
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.reembolsar(40L));
+
+        assertTrue(e.getMessage().contains("confirmado"), e.getMessage());
+        assertEquals(EstadoPago.APROBADO, aprobado.getEstado());
+        verify(pasarela, never()).reembolsar(any());
+    }
+
+    @Test
+    void elAdministradorReembolsaElCopagoDeUnTurnoQueYaNoEstaConfirmado() {
+        Pago aprobado = pagoComoAdministrador(41L, EstadoPago.APROBADO, EstadoTurno.CANCELADO);
+        when(pasarela.reembolsar("tx-41")).thenReturn(new ResultadoPasarela(EstadoPago.REEMBOLSADO, "tx-41"));
+        when(pagoDAO.actualizar(aprobado)).thenReturn(aprobado);
+
+        assertEquals(EstadoPago.REEMBOLSADO, servicio.reembolsar(41L).getEstado());
+    }
+
+    @Test
+    void elAdministradorDevuelveUnaCompensacionPendiente() {
+        // El cobro huerfano cuyo reembolso automatico fallo (CompensacionDeCobro).
+        Pago pendiente = pagoComoAdministrador(42L, EstadoPago.COMPENSACION_PENDIENTE, EstadoTurno.EN_HOLD);
+        when(pasarela.reembolsar("tx-42")).thenReturn(new ResultadoPasarela(EstadoPago.REEMBOLSADO, "tx-42"));
+        when(pagoDAO.actualizar(pendiente)).thenReturn(pendiente);
+
+        assertEquals(EstadoPago.REEMBOLSADO, servicio.reembolsar(42L).getEstado());
+    }
+
+    @Test
+    void siLaPasarelaNoConfirmaElReembolsoDelAdministradorElPagoNoCambia() {
+        // Antes guardaba el estado que viniera: un RECHAZADO dejaba el pago
+        // RECHAZADO con el dinero todavia cobrado.
+        Pago pendiente = pagoComoAdministrador(43L, EstadoPago.COMPENSACION_PENDIENTE, EstadoTurno.EN_HOLD);
+        when(pasarela.reembolsar("tx-43")).thenReturn(new ResultadoPasarela(EstadoPago.RECHAZADO, null));
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.reembolsar(43L));
+
+        assertEquals(EstadoPago.COMPENSACION_PENDIENTE, pendiente.getEstado());
+        verify(pagoDAO, never()).actualizar(any());
+    }
+
+    private Pago pagoComoAdministrador(Long pagoId, EstadoPago estado, EstadoTurno estadoTurno) {
+        Pago pago = pago(estado, "tx-" + pagoId);
+        pago.setId(pagoId);
+        Turno turno = new Turno(null, LocalDateTime.now().plusDays(1));
+        turno.setId(TURNO);
+        turno.setEstado(estadoTurno);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(true);
+        when(pagoDAO.buscarPorId(pagoId)).thenReturn(pago);
+        lenient().when(servicioDeTurnos.obtenerTurno(TURNO)).thenReturn(turno);
+        return pago;
     }
 
     // ---- Validacion y BOLA del cobro ------------------------------------------
@@ -321,6 +455,22 @@ class ServicioDePagosTest {
         when(servicioDeTurnos.obtenerTurno(TURNO)).thenReturn(turno);
         when(contexto.getCallerPrincipal()).thenReturn(principal);
         when(servicioDeUsuarios.obtenerPorEmail(paciente.getEmail())).thenReturn(paciente);
+    }
+
+    private static void inyectar(Object destino, String campo, Object valor) throws Exception {
+        Field field = destino.getClass().getDeclaredField(campo);
+        field.setAccessible(true);
+        field.set(destino, valor);
+    }
+
+    // IDENTITY asigna el id al persistir: el mock lo simula, uno por cobro.
+    private void conIdAlGuardar(Long... ids) {
+        int[] siguiente = {0};
+        doAnswer(i -> {
+            Pago pago = i.getArgument(0);
+            pago.setId(ids[siguiente[0]++]);
+            return pago;
+        }).when(pagoDAO).guardarEnNuevaTransaccion(any());
     }
 
     private static CobroDTO cobro(String token) {

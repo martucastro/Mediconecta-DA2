@@ -9,6 +9,7 @@ import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.Pago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.PagoDAO;
+import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
@@ -24,6 +25,7 @@ import jakarta.ejb.SessionContext;
 import jakarta.ejb.Stateless;
 import jakarta.ejb.TransactionAttribute;
 import jakarta.ejb.TransactionAttributeType;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 
 /**
@@ -69,6 +71,11 @@ public class ServicioDePagos implements ServicioDePagosLocal {
     @Inject
     private ServicioDeTurnosLocal servicioDeTurnos;
 
+    // Aviso transaccional de que salio dinero: si la transaccion que cobro no
+    // se confirma, CompensacionDeCobro lo devuelve (ver cobrar).
+    @Inject
+    private Event<CobroAprobado> cobroAprobado;
+
     @PostConstruct
     public void inicializar() {
         LOGGER.info("ServicioDePagos: instancia creada por el contenedor.");
@@ -108,6 +115,14 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         if (resultado.getEstado() == EstadoPago.RECHAZADO) {
             return pagoDAO.actualizarEnNuevaTransaccion(pago);
         }
+        // Desde aca el dinero ya salio y esta actualizacion depende de que la
+        // transaccion se confirme. Si falla un paso posterior (la sala, el
+        // topico) o el commit, el rollback la deshace pero no a la pasarela:
+        // CompensacionDeCobro observa este evento AFTER_FAILURE y reembolsa.
+        if (resultado.getEstado() == EstadoPago.APROBADO) {
+            cobroAprobado.fire(new CobroAprobado(pago.getId(), pago.getTurnoId(),
+                    pago.getIdTransaccionExterna()));
+        }
         return pagoDAO.actualizar(pago);
     }
 
@@ -144,6 +159,17 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         return pagoDAO.listarPorTurno(turnoId);
     }
 
+    /**
+     * Reembolso suelto, del administrador (PUT /api/pagos/{id}/reembolso).
+     *
+     * Acepta un pago APROBADO o COMPENSACION_PENDIENTE (un cobro huérfano cuyo
+     * reembolso automático falló, ver CompensacionDeCobro). Un copago APROBADO
+     * de un turno que sigue CONFIRMADO se rechaza con 409 (SCRUM-132): antes se
+     * devolvía y el turno quedaba confirmado, con su reclamo ENVIADO a la obra
+     * social, sin pago. Para devolverlo se cancela el turno, y la cancelación
+     * lo reembolsa. Si la pasarela no confirma el reembolso, 409 y el pago no
+     * cambia.
+     */
     @Override
     @RolesAllowed(ServicioDeUsuarios.ROL_ADMINISTRADOR)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
@@ -152,13 +178,28 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         if (pago == null) {
             throw new DatosInvalidosException("No existe un pago con id " + pagoId + ".");
         }
-        if (pago.getEstado() != EstadoPago.APROBADO) {
+        if (pago.getEstado() != EstadoPago.APROBADO
+                && pago.getEstado() != EstadoPago.COMPENSACION_PENDIENTE) {
             throw new ConflictoDeNegocioException(
-                    "Solo se puede reembolsar un pago APROBADO; el pago " + pagoId
-                            + " está en estado " + pago.getEstado() + ".");
+                    "Solo se puede reembolsar un pago APROBADO o COMPENSACION_PENDIENTE; el pago "
+                            + pagoId + " está en estado " + pago.getEstado() + ".");
+        }
+        if (pago.getEstado() == EstadoPago.APROBADO) {
+            Turno turno = servicioDeTurnos.obtenerTurno(pago.getTurnoId());
+            if (turno != null && turno.getEstado() == EstadoTurno.CONFIRMADO) {
+                throw new ConflictoDeNegocioException("El turno " + pago.getTurnoId()
+                        + " sigue confirmado: para devolver su copago hay que cancelar el turno,"
+                        + " y la cancelación lo reembolsa.");
+            }
         }
 
-        return reembolsarEnPasarela(pago);
+        ResultadoPasarela resultado = pasarela.reembolsar(pago.getIdTransaccionExterna());
+        if (resultado.getEstado() != EstadoPago.REEMBOLSADO) {
+            throw new ConflictoDeNegocioException("La pasarela no confirmó el reembolso del pago "
+                    + pagoId + " (estado " + resultado.getEstado() + ").");
+        }
+        pago.setEstado(EstadoPago.REEMBOLSADO);
+        return pagoDAO.actualizar(pago);
     }
 
     /**
@@ -171,29 +212,35 @@ public class ServicioDePagos implements ServicioDePagosLocal {
      * Pasarela que no confirma el reembolso: ConflictoDeNegocioException (409).
      * En ambos casos la cancelacion entera se revierte. Sin pago APROBADO
      * (copago 0 o sin cotizar) no hay nada que devolver.
+     *
+     * La llamada a la pasarela es lo unico que el rollback no deshace (SCRUM-128):
+     * antes se manda a la base todo lo que la cancelacion ya escribio (el turno
+     * CANCELADO, el reclamo, la sala), asi un error de base sale antes de
+     * devolver el dinero. Y cada reembolso confirmado se guarda en su propia
+     * transaccion: si despues falla el commit, el pago no vuelve a figurar
+     * APROBADO con el dinero ya devuelto, y reintentar la cancelacion no lo
+     * reembolsa dos veces. Ver ServicioDeTurnos.cancelarTurno.
      */
     @Override
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public void reembolsarCopagoDelTurno(Long turnoId) {
         verificarQueElTurnoEsDelCaller(turnoId);
-        for (Pago pago : pagoDAO.listarPorTurno(turnoId)) {
-            if (pago.getEstado() != EstadoPago.APROBADO) {
-                continue;
-            }
+        List<Pago> aprobados = pagoDAO.listarPorTurno(turnoId).stream()
+                .filter(pago -> pago.getEstado() == EstadoPago.APROBADO)
+                .toList();
+        if (aprobados.isEmpty()) {
+            return;
+        }
+        pagoDAO.sincronizar();
+        for (Pago pago : aprobados) {
             ResultadoPasarela resultado = pasarela.reembolsar(pago.getIdTransaccionExterna());
             if (resultado.getEstado() != EstadoPago.REEMBOLSADO) {
                 throw new ConflictoDeNegocioException("La pasarela no confirmo el reembolso del pago "
                         + pago.getId() + " (estado " + resultado.getEstado() + ").");
             }
             pago.setEstado(resultado.getEstado());
-            pagoDAO.actualizar(pago);
+            pagoDAO.actualizarEnNuevaTransaccion(pago);
         }
-    }
-
-    private Pago reembolsarEnPasarela(Pago pago) {
-        ResultadoPasarela resultado = pasarela.reembolsar(pago.getIdTransaccionExterna());
-        pago.setEstado(resultado.getEstado());
-        return pagoDAO.actualizar(pago);
     }
 
     private void validarCobro(CobroDTO datos) {

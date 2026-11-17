@@ -86,9 +86,10 @@ public interface ServicioDeTurnosLocal {
      * transacción, así que si falla no queda ningún hold.
      *
      * Falla con DatosInvalidosException si el id es null o el turno no existe;
-     * con ConflictoDeNegocioException si el turno no está DISPONIBLE o ya pasó,
-     * y con ObraSocialNoDisponibleException si el legado de la obra social no
-     * responde.
+     * con ConflictoDeNegocioException si el turno no está DISPONIBLE, ya pasó
+     * o el paciente ya retiene otro turno con el hold vigente (uno por
+     * paciente), y con ObraSocialNoDisponibleException si el legado de la obra
+     * social no responde.
      */
     Turno reservarTurno(Long turnoId);
 
@@ -112,9 +113,9 @@ public interface ServicioDeTurnosLocal {
 
     /**
      * Cancela el turno del paciente autenticado. Un hold vuelve a la agenda
-     * como DISPONIBLE; un turno CONFIRMADO queda CANCELADO y antes dispara el
-     * punto de extensión TurnoEnCancelacion (reembolso del copago y anulación
-     * del reclamo).
+     * como DISPONIBLE; un turno CONFIRMADO queda CANCELADO y después dispara el
+     * punto de extensión TurnoEnCancelacion (anulación del reclamo, sala
+     * CANCELADA y, al final, reembolso del copago).
      *
      * Roles: PACIENTE. Transacción: REQUIRED; si la compensación falla, la
      * cancelación entera se revierte y el turno sigue CONFIRMADO.

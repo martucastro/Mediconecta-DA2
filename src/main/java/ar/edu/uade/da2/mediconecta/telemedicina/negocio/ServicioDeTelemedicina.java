@@ -4,6 +4,7 @@ import java.util.logging.Logger;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
+import ar.edu.uade.da2.mediconecta.telemedicina.datos.EstadoSesionVideo;
 import ar.edu.uade.da2.mediconecta.telemedicina.datos.SesionVideo;
 import ar.edu.uade.da2.mediconecta.telemedicina.datos.SesionVideoDAO;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
@@ -144,6 +145,22 @@ public class ServicioDeTelemedicina implements ServicioDeTelemedicinaLocal {
             return null;
         }
         return enlacePara(caller, turno, sesion);
+    }
+
+    /**
+     * Marca CANCELADA la sala de un turno que el paciente cancelo
+     * (SalaAlCancelar, dentro de la transaccion de cancelarTurno). Un turno
+     * sin sala no tiene nada que cancelar. Misma regla de acceso que el resto
+     * de la fachada: solo el paciente o el profesional del turno.
+     */
+    @Override
+    @TransactionAttribute(TransactionAttributeType.MANDATORY)
+    public void cancelarSesion(Long turnoId) {
+        turnoDelCaller(turnoId, usuarioAutenticado(), false);
+        SesionVideo sesion = sesionDAO.buscarPorTurno(turnoId);
+        if (sesion != null) {
+            sesion.setEstado(EstadoSesionVideo.CANCELADA);
+        }
     }
 
     /** El enlace de anfitrion para el profesional, el de invitado para el paciente. */

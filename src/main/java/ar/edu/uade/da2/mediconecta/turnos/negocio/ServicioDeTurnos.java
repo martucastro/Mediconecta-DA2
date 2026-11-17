@@ -213,6 +213,12 @@ public class ServicioDeTurnos implements ServicioDeTurnosLocal {
      * El paciente se resuelve del caller principal y no de un parametro: si
      * viniera del cuerpo de la peticion, cualquiera podria reservar a nombre de
      * otro.
+     *
+     * Un hold vigente por paciente (SCRUM-132): cada reserva pide una
+     * autorizacion al legado de la obra social, y sin tope un paciente podia
+     * retener la agenda entera. Un hold vencido que el barrido todavia no
+     * libero no cuenta. Se verifica antes del evento, asi no se pide otra
+     * autorizacion.
      */
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
@@ -233,6 +239,15 @@ public class ServicioDeTurnos implements ServicioDeTurnosLocal {
         // La agenda todavia lista franjas DISPONIBLE ya pasadas; reservarlas no.
         if (turno.getFechaHora().isBefore(LocalDateTime.now())) {
             throw new ConflictoDeNegocioException("El turno ya pasó: no se puede reservar");
+        }
+        // ponytail: dos reservas simultaneas del mismo paciente todavia pueden
+        // pasar las dos (el lock es del turno, no del paciente); tomar el lock
+        // de la fila del paciente si alguna vez hace falta.
+        boolean tieneOtroHold = turnoDAO.listarPorPaciente(paciente.getId()).stream()
+                .anyMatch(t -> t.getEstado() == EstadoTurno.EN_HOLD && !holdVencido(t));
+        if (tieneOtroHold) {
+            throw new ConflictoDeNegocioException("Ya tenés otro turno reservado sin confirmar: "
+                    + "confirmalo o cancelalo antes de reservar uno nuevo.");
         }
 
         turno.setPaciente(paciente);
@@ -287,9 +302,7 @@ public class ServicioDeTurnos implements ServicioDeTurnosLocal {
         // El temporizador de ExpiradorDeHolds no es persistente: tras un
         // reinicio un hold vencido sigue EN_HOLD hasta el proximo barrido
         // (hasta 60 s). Sin este chequeo se podia confirmar en ese hueco.
-        if (turno.getInicioHold() != null && turno.getInicioHold()
-                .plus(ExpiradorDeHolds.DURACION_HOLD_MS, ChronoUnit.MILLIS)
-                .isBefore(LocalDateTime.now())) {
+        if (holdVencido(turno)) {
             throw new ConflictoDeNegocioException("La reserva del turno venció: ya no se puede confirmar");
         }
 
@@ -315,6 +328,24 @@ public class ServicioDeTurnos implements ServicioDeTurnosLocal {
         return confirmado;
     }
 
+    /**
+     * Libera un hold o cancela un turno confirmado.
+     *
+     * Cancelar un CONFIRMADO deshace lo que dejo la confirmacion (SCRUM-124):
+     * anula el reclamo, cancela la sala y reembolsa el copago, en ese orden
+     * (PuntosDeExtension). El turno se marca CANCELADO antes de avisar, y
+     * ServicioDePagos manda a la base todo lo escrito antes de llamar a la
+     * pasarela (SCRUM-128): una falla al escribir el turno, el reclamo o la
+     * sala sale antes del reembolso, revierte todo y no devuelve nada. Antes el
+     * estado cambiaba despues del reembolso, y una falla al guardarlo dejaba el
+     * dinero devuelto con el turno CONFIRMADO.
+     *
+     * Limite que queda: el commit en si todavia puede fallar despues del
+     * reembolso (se corta la base, falla el commit en dos fases). El turno
+     * vuelve a CONFIRMADO, pero el pago ya quedo REEMBOLSADO en su propia
+     * transaccion: la base no miente sobre el dinero, y si el paciente
+     * reintenta la cancelacion termina sin reembolsar dos veces.
+     */
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno cancelarTurno(Long turnoId) {
@@ -332,24 +363,24 @@ public class ServicioDeTurnos implements ServicioDeTurnosLocal {
                     "El turno no está reservado, no hay nada que cancelar");
         }
 
-        if (turno.getEstado() == EstadoTurno.CONFIRMADO) {
-            // Deshace lo que dejo la confirmacion: reembolso del copago y
-            // anulacion del reclamo (SCRUM-124). Antes de cambiar el estado;
-            // si alguno falla, la cancelacion entera se revierte y el turno
-            // sigue CONFIRMADO.
-            eventoCancelacion.fire(new TurnoEnCancelacion(turno));
-        }
-
         // Liberar un hold devuelve el turno a la agenda, igual que cuando vence
         // (ExpiradorDeHolds). Un turno confirmado queda CANCELADO y conserva al
         // paciente: si lo soltara, el paciente perdia el turno de /mios y su
         // pago REEMBOLSADO le daba 403. La franja no vuelve a la agenda: el
         // profesional abre otra (abrirDisponibilidad ignora las CANCELADO).
-        if (turno.getEstado() == EstadoTurno.EN_HOLD) {
+        boolean confirmado = turno.getEstado() == EstadoTurno.CONFIRMADO;
+        if (confirmado) {
+            turno.setEstado(EstadoTurno.CANCELADO);
+        } else {
             turno.setEstado(EstadoTurno.DISPONIBLE);
             turno.liberar();
-        } else {
-            turno.setEstado(EstadoTurno.CANCELADO);
+        }
+
+        if (confirmado) {
+            // Deshace lo que dejo la confirmacion, con el turno ya CANCELADO
+            // (ver el javadoc). Si algun paso falla, la cancelacion entera se
+            // revierte y el turno sigue CONFIRMADO.
+            eventoCancelacion.fire(new TurnoEnCancelacion(turno));
         }
         expirador.cancelar(turnoId);
         return turnoDAO.actualizar(turno);
@@ -391,6 +422,12 @@ public class ServicioDeTurnos implements ServicioDeTurnosLocal {
         } catch (JMSException e) {
             throw new JMSRuntimeException(e.getMessage(), e.getErrorCode(), e);
         }
+    }
+
+    private static boolean holdVencido(Turno turno) {
+        return turno.getInicioHold() != null && turno.getInicioHold()
+                .plus(ExpiradorDeHolds.DURACION_HOLD_MS, ChronoUnit.MILLIS)
+                .isBefore(LocalDateTime.now());
     }
 
     // Los mensajes de error llegan tal cual a la pantalla: fechas y estados se
