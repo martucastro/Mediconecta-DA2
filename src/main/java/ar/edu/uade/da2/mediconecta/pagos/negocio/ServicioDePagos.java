@@ -102,16 +102,29 @@ public class ServicioDePagos implements ServicioDePagosLocal {
                 datos.getMoneda().trim().toUpperCase());
         pagoDAO.guardarEnNuevaTransaccion(pago);
 
-        ResultadoPasarela resultado = pasarela.cobrar(
-                pago.getMonto(), pago.getMoneda(), datos.getTokenMedioDePago());
+        ResultadoPasarela resultado;
+        try {
+            resultado = pasarela.cobrar(pago.getMonto(), pago.getMoneda(), datos.getTokenMedioDePago());
+        } catch (CobroInciertoException e) {
+            // El pedido salio y no hubo respuesta: la pasarela pudo haber cobrado
+            // y no hay id para reembolsar. Queda INCIERTO, en su propia
+            // transaccion, para que un administrador lo concilie; el 502 sigue.
+            // El log va primero: tiene los datos para conciliar aunque falle la base.
+            LOGGER.warning(() -> "Cobro incierto: la pasarela no respondio al pago " + pago.getId()
+                    + " del turno " + pago.getTurnoId() + " (" + pago.getMonto() + " " + pago.getMoneda()
+                    + "). Queda INCIERTO: conciliar con la pasarela antes de reembolsar o reintentar.");
+            pago.setEstado(EstadoPago.INCIERTO);
+            pagoDAO.actualizarEnNuevaTransaccion(pago);
+            throw e;
+        }
 
         pago.setEstado(resultado.getEstado());
         pago.setIdTransaccionExterna(resultado.getIdTransaccionExterna());
         // Un rechazo es un resultado conocido, pero CobroAlConfirmar lo
         // convierte en 409 y la confirmacion se revierte: con actualizar() el
         // intento quedaba PENDIENTE para siempre. Se guarda aparte. Si la
-        // pasarela no respondio (excepcion arriba), el resultado es desconocido
-        // y el intento queda PENDIENTE a proposito.
+        // pasarela no estaba disponible (excepcion arriba), el intento queda
+        // PENDIENTE; si el pedido salio y no hubo respuesta, INCIERTO.
         if (resultado.getEstado() == EstadoPago.RECHAZADO) {
             return pagoDAO.actualizarEnNuevaTransaccion(pago);
         }

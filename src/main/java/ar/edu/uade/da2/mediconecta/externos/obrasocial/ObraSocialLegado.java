@@ -30,15 +30,17 @@ import jakarta.xml.ws.soap.SOAPFaultException;
  * el error es del cliente, no del servidor. Un cliente puede así distinguirlo de
  * una falla interna del legado (código Server), que no se reintenta igual.
  *
- * Ese fault está declarado en el contrato (SCRUM-129): cada operación lanza
- * PedidoInvalidoException, así que el WSDL publica un wsdl:fault por operación
+ * Ese fault está declarado en el contrato (SCRUM-129): cada operación declara
+ * PedidoInvalidoException, así que el WSDL publica un wsdl:fault por operación,
  * y el SOAP Fault lleva el elemento PedidoInvalido en su detail.
  */
 @WebService(
         serviceName = "ObraSocialLegadoService",
         portName = "ObraSocialLegadoPort",
-        targetNamespace = "http://legado.obrasocial.example/")
+        targetNamespace = ObraSocialLegado.NAMESPACE)
 public class ObraSocialLegado {
+
+    static final String NAMESPACE = "http://legado.obrasocial.example/";
 
     /**
      * Consulta si la prestación está cubierta y cuánto pagaría el afiliado. No
@@ -90,34 +92,41 @@ public class ObraSocialLegado {
         try {
             return PadronDeAfiliados.presentarReclamo(dni, numeroAfiliado, numeroAutorizacion);
         } catch (PedidoInvalidoException e) {
-            throw comoFaultDelCliente(e);
+            throw faultDelCliente(e);
         }
     }
 
-    private static RespuestaCobertura evaluar(String dni, String numeroAfiliado, String codigoPrestacion)
-            throws PedidoInvalidoException {
+    private static RespuestaCobertura evaluar(String dni, String numeroAfiliado, String codigoPrestacion) {
         try {
             return PadronDeAfiliados.evaluar(dni, numeroAfiliado, codigoPrestacion);
         } catch (PedidoInvalidoException e) {
-            throw comoFaultDelCliente(e);
+            throw faultDelCliente(e);
         }
     }
 
     /**
-     * Un fault declarado sale por defecto con código Server (JAX-WS lo trata
-     * como excepción de la aplicación), y el cliente lo tomaría como una falla
-     * del legado. Con un SOAPFaultException de código Client como causa, CXF
-     * toma de ahí el faultcode y escribe el detail a partir de la excepción.
+     * El fault declarado, armado a mano: código Client y, en el detail, el
+     * elemento PedidoInvalido con su message, tal como lo publica el WSDL.
+     *
+     * No se lanza PedidoInvalidoException porque JAX-WS la enviaría con código
+     * Server, y el cliente la tomaría como una falla del legado. Tampoco sirve
+     * lanzarla con un SOAPFaultException como causa: WildFly le entrega a CXF
+     * ese SOAPFaultException y no la excepción declarada
+     * (AbstractInvocationHandler.handleInvocationException), así que el
+     * detail tiene que viajar dentro del propio fault.
      */
-    // ponytail: depende de cómo CXF (el runtime de WildFly) arma el fault; el
-    // smoke test verifica el código Client contra el servidor desplegado. Si se
-    // cambia de runtime, un SOAPHandler que fije el faultcode cumple lo mismo.
-    private static PedidoInvalidoException comoFaultDelCliente(PedidoInvalidoException e) {
+    private static SOAPFaultException faultDelCliente(PedidoInvalidoException e) {
         try {
             SOAPFault fault = SOAPFactory.newInstance().createFault(e.getMessage(),
                     new QName(SOAPConstants.URI_NS_SOAP_1_1_ENVELOPE, "Client"));
-            e.initCause(new SOAPFaultException(fault));
-            return e;
+            // message va sin namespace: el schema del WSDL es elementFormDefault
+            // unqualified. Con prefijo en PedidoInvalido no queda un namespace
+            // por defecto que message herede.
+            fault.addDetail()
+                    .addDetailEntry(new QName(NAMESPACE, "PedidoInvalido", "os"))
+                    .addChildElement(new QName("message"))
+                    .addTextNode(e.getMessage());
+            return new SOAPFaultException(fault);
         } catch (SOAPException ex) {
             throw new IllegalStateException("No se pudo armar el SOAP Fault", ex);
         }

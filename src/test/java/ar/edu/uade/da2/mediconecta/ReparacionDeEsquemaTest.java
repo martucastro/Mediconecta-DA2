@@ -24,7 +24,7 @@ import jakarta.transaction.UserTransaction;
  * Una base creada antes de que un enum de estado sumara un valor conserva el
  * CHECK viejo (hbm2ddl.auto=update no lo actualiza) y la primera fila con el
  * valor nuevo falla al commit. Paso con ANULADO en reclamos; ahora tambien
- * aplica a COMPENSACION_PENDIENTE en pagos y CANCELADA en sesiones_video. El
+ * aplica a COMPENSACION_PENDIENTE e INCIERTO en pagos y CANCELADA en sesiones_video. El
  * bean lo quita al desplegar.
  */
 @ExtendWith(MockitoExtension.class)
@@ -42,7 +42,7 @@ class ReparacionDeEsquemaTest {
     private static final String PAGOS_ACTUAL = "CHECK (((estado)::text = ANY ((ARRAY["
             + "'PENDIENTE'::character varying, 'APROBADO'::character varying, "
             + "'RECHAZADO'::character varying, 'REEMBOLSADO'::character varying, "
-            + "'COMPENSACION_PENDIENTE'::character varying])::text[])))";
+            + "'COMPENSACION_PENDIENTE'::character varying, 'INCIERTO'::character varying])::text[])))";
 
     @Mock
     private EntityManager em;

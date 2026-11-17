@@ -12,6 +12,7 @@ import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
 import jakarta.ejb.Lock;
 import jakarta.ejb.LockType;
+import jakarta.ejb.NoSuchObjectLocalException;
 import jakarta.ejb.Schedule;
 import jakarta.ejb.Singleton;
 import jakarta.ejb.Timeout;
@@ -90,11 +91,21 @@ public class ExpiradorDeHolds {
      * conversacion ni a un turno en particular. Cancelarlos todos liberaria los
      * holds de los demas pacientes, asi que hay que filtrar por el info que se
      * guardo al programarlos.
+     *
+     * La lista es una foto: entre getTimers() y getInfo() o cancel(), otra
+     * transaccion puede cancelar un timer (o este vencer), y WildFly lanza
+     * NoSuchObjectLocalException (WFLYEJB0331). Ese timer ya no existe, que es
+     * justo lo que se buscaba, asi que se saltea. Antes la excepcion revertia
+     * la reserva o la cancelacion entera y el cliente recibia 500.
      */
     public void cancelar(Long turnoId) {
         for (Timer timer : timerService.getTimers()) {
-            if (turnoId.equals(timer.getInfo())) {
-                timer.cancel();
+            try {
+                if (turnoId.equals(timer.getInfo())) {
+                    timer.cancel();
+                }
+            } catch (NoSuchObjectLocalException yaNoExiste) {
+                // Lo cancelo otro pedido o ya vencio: no queda nada que cancelar.
             }
         }
     }
