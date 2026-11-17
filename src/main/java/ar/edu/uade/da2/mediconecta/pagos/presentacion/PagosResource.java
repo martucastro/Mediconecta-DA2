@@ -5,14 +5,11 @@ import java.util.List;
 import java.util.Map;
 
 import ar.edu.uade.da2.mediconecta.pagos.datos.Pago;
-import ar.edu.uade.da2.mediconecta.pagos.negocio.CobroDTO;
 import ar.edu.uade.da2.mediconecta.pagos.negocio.ServicioDePagosLocal;
 
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -36,14 +33,9 @@ public class PagosResource {
     @Inject
     private ServicioDePagosLocal servicio;
 
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response cobrar(CobroDTO datos) {
-        return Response.status(Response.Status.CREATED)
-                .entity(new PagoDTO(servicio.cobrar(datos)))
-                .build();
-    }
+    // No hay POST: el copago solo se cobra dentro de la confirmacion del turno
+    // (CobroAlConfirmar). Un endpoint de cobro suelto dejaba cobrar cualquier
+    // monto sobre cualquier turno, incluso uno ya confirmado.
 
     @GET
     @Path("/{id}")
@@ -51,10 +43,7 @@ public class PagosResource {
     public Response consultar(@PathParam("id") Long id) {
         Pago pago = servicio.consultarPago(id);
         if (pago == null) {
-            return Response.status(Response.Status.NOT_FOUND)
-                    .entity(Map.of("error", "No existe un pago con id " + id + "."))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return pagoInexistente(id);
         }
         return Response.ok(new PagoDTO(pago)).build();
     }
@@ -73,6 +62,18 @@ public class PagosResource {
     @Path("/{id}/reembolso")
     @Produces(MediaType.APPLICATION_JSON)
     public Response reembolsar(@PathParam("id") Long id) {
+        // Mismo 404 que el GET (SCRUM-132): antes el PUT de un pago inexistente
+        // salia 400. consultarPago ya da 403 a un no-administrador, exista o no.
+        if (servicio.consultarPago(id) == null) {
+            return pagoInexistente(id);
+        }
         return Response.ok(new PagoDTO(servicio.reembolsar(id))).build();
+    }
+
+    private static Response pagoInexistente(Long id) {
+        return Response.status(Response.Status.NOT_FOUND)
+                .entity(Map.of("error", "No existe un pago con id " + id + "."))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
     }
 }

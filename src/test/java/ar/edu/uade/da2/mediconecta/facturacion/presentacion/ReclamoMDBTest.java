@@ -12,7 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import ar.edu.uade.da2.mediconecta.facturacion.negocio.ServicioDeFacturacion;
+import ar.edu.uade.da2.mediconecta.facturacion.negocio.ServicioDeFacturacionLocal;
 import jakarta.jms.JMSException;
 import jakarta.jms.MapMessage;
 import jakarta.jms.TextMessage;
@@ -26,7 +26,7 @@ import jakarta.jms.TextMessage;
 class ReclamoMDBTest {
 
     @Mock
-    private ServicioDeFacturacion servicio;
+    private ServicioDeFacturacionLocal servicio;
 
     @InjectMocks
     private ReclamoMDB mdb;

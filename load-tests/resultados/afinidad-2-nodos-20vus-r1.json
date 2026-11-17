@@ -1,0 +1,300 @@
+{
+    "metrics": {
+        "http_req_waiting": {
+            "avg": 56.5151952693735,
+            "min": 21.5962,
+            "med": 48.6571,
+            "p(90)": 84.24676,
+            "p(95)": 96.45933,
+            "p(99)": 134.29436599999997,
+            "max": 349.6475
+        },
+        "http_req_duration{operacion:reservar}": {
+            "p(95)": 98.96082500000003,
+            "p(99)": 135.74761300000003,
+            "max": 230.1529,
+            "avg": 57.586676160000145,
+            "min": 23.3287,
+            "med": 49.9017,
+            "p(90)": 85.40777,
+            "thresholds": {
+                "p(95)<1000": false
+            }
+        },
+        "http_reqs": {
+            "count": 15072,
+            "rate": 320.8256424066789
+        },
+        "checks": {
+            "passes": 25000,
+            "fails": 31,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 0.9987615356957373
+        },
+        "http_req_duration{operacion:disponibilidad}": {
+            "med": 48.00565,
+            "p(90)": 81.99195000000002,
+            "p(95)": 93.52454500000002,
+            "p(99)": 125.832917,
+            "max": 315.0246,
+            "avg": 55.465050100000134,
+            "min": 22.5014,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "iterations": {
+            "rate": 106.43101194489083,
+            "count": 5000
+        },
+        "http_req_failed": {
+            "passes": 31,
+            "fails": 15041,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0.0020567940552016985
+        },
+        "group_duration": {
+            "min": 69.5377,
+            "med": 164.36239999999998,
+            "p(90)": 214.86243000000007,
+            "p(95)": 237.85291500000005,
+            "p(99)": 293.30163500000026,
+            "max": 565.1928,
+            "avg": 171.2185999600004
+        },
+        "flujo_reserva_completo": {
+            "p(90)": 215,
+            "p(95)": 238,
+            "p(99)": 293.0100000000002,
+            "max": 565,
+            "avg": 171.223,
+            "min": 70,
+            "med": 164
+        },
+        "http_req_duration{operacion:cancelar}": {
+            "min": 21.8254,
+            "med": 48.99655,
+            "p(90)": 85.41118000000002,
+            "p(95)": 97.98478500000002,
+            "p(99)": 141.38401500000015,
+            "max": 349.6475,
+            "avg": 57.57248579999992,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "vus_max": {
+            "value": 20,
+            "min": 20,
+            "max": 20
+        },
+        "data_sent": {
+            "count": 4222842,
+            "rate": 89888.26946867733
+        },
+        "http_req_duration": {
+            "med": 48.957899999999995,
+            "p(90)": 84.42378,
+            "p(95)": 96.67062999999996,
+            "p(99)": 134.42118299999987,
+            "max": 349.6475,
+            "avg": 56.80807455546708,
+            "min": 21.8254
+        },
+        "iteration_duration": {
+            "max": 565.1928,
+            "avg": 171.23866298000036,
+            "min": 69.5377,
+            "med": 164.388,
+            "p(90)": 214.86243000000007,
+            "p(95)": 237.85291500000005,
+            "p(99)": 293.30163500000026
+        },
+        "vus": {
+            "value": 10,
+            "min": 0,
+            "max": 20
+        },
+        "http_reqs{instancia:1}": {
+            "count": 7504,
+            "rate": 159.73166272689215,
+            "thresholds": {
+                "count>0": false
+            }
+        },
+        "http_reqs{instancia:2}": {
+            "count": 7527,
+            "rate": 160.22124538183866,
+            "thresholds": {
+                "count>0": false
+            }
+        },
+        "http_req_connecting": {
+            "avg": 0.0028793259023354566,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 3.7774
+        },
+        "http_req_tls_handshaking": {
+            "max": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0
+        },
+        "http_req_receiving": {
+            "min": 0,
+            "med": 0,
+            "p(90)": 0.833,
+            "p(95)": 0.9297,
+            "p(99)": 1.0002,
+            "max": 2.1675,
+            "avg": 0.2862531913481961
+        },
+        "http_req_sending": {
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 1.5339,
+            "avg": 0.0066260947452229275
+        },
+        "data_received": {
+            "count": 17556838,
+            "rate": 373718.40697850264
+        },
+        "http_req_blocked": {
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 10.6234,
+            "avg": 0.004972691082802548,
+            "min": 0
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(90)": 84.2542,
+            "p(95)": 96.497,
+            "p(99)": 134.22842000000006,
+            "max": 349.6475,
+            "avg": 56.740859889635,
+            "min": 21.8254,
+            "med": 48.9365
+        }
+    },
+    "setup_data": {
+        "profesionalId": 2,
+        "franjas": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+        ],
+        "pacientes": [
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0yQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0zQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS00QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS01QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS02QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS03QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS04QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS05QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xMUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xMkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xM0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xNEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xNUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xNkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xN0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xOEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0xOUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTAzNzM4NS0yMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY="
+        ]
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {
+            "reserva de un turno": {
+                "name": "reserva de un turno",
+                "path": "::reserva de un turno",
+                "id": "3b70060e04723ebe3ffe516ba71404ad",
+                "groups": {},
+                "checks": {
+                    "disponibilidad 200": {
+                        "id": "42d69d30f5778ed3011efbb6d550c7ff",
+                        "passes": 5000,
+                        "fails": 0,
+                        "name": "disponibilidad 200",
+                        "path": "::reserva de un turno::disponibilidad 200"
+                    },
+                    "la franja del VU sigue disponible": {
+                        "path": "::reserva de un turno::la franja del VU sigue disponible",
+                        "id": "77506fcee692669a62717bd775c2bdc5",
+                        "passes": 5000,
+                        "fails": 0,
+                        "name": "la franja del VU sigue disponible"
+                    },
+                    "reservar 200": {
+                        "name": "reservar 200",
+                        "path": "::reserva de un turno::reservar 200",
+                        "id": "d580a5624bcee4de64cae9e42e0a9ad5",
+                        "passes": 5000,
+                        "fails": 0
+                    },
+                    "queda EN_HOLD": {
+                        "name": "queda EN_HOLD",
+                        "path": "::reserva de un turno::queda EN_HOLD",
+                        "id": "349cf677d2ca1aefbcfed4e845a6f337",
+                        "passes": 5000,
+                        "fails": 0
+                    },
+                    "cancelar 200": {
+                        "id": "20e6daab49a3c9f1478cf7ecac89b175",
+                        "passes": 4969,
+                        "fails": 31,
+                        "name": "cancelar 200",
+                        "path": "::reserva de un turno::cancelar 200"
+                    },
+                    "cancelar (reintento) 200": {
+                        "name": "cancelar (reintento) 200",
+                        "path": "::reserva de un turno::cancelar (reintento) 200",
+                        "id": "6598fa2f3dbf2ae3b25122075387da25",
+                        "passes": 31,
+                        "fails": 0
+                    }
+                }
+            }
+        },
+        "checks": {}
+    }
+}

@@ -166,20 +166,81 @@
     </security-constraint>
 
     <!--
-      Fallback del frontend: cualquier URL que no corresponda a un archivo ni a
-      la API devuelve index.html. El frontend es una SPA y sus rutas (por
-      ejemplo /mediconecta/agenda) no existen como archivos en el servidor:
-      sin esto, refrescar el navegador en una pantalla daria el 404 del
-      contenedor. Una URL que tampoco sea una pantalla la resuelve el router
-      del frontend con su propia pagina 404.
+      Operacion sensible 8: consultar un usuario por id (SCRUM-102).
+      Antes cualquiera, sin autenticarse, podia pedir /api/usuarios/{id} y ver
+      email y rol. Ahora hay que estar logueado. Que un paciente solo pueda ver
+      SU PROPIO id se controla ademas en ServicioDeUsuarios (no alcanza con web.xml).
+      Solo GET: el registro (POST /api/usuarios) y el login (POST /api/usuarios/login)
+      siguen publicos.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Consulta de usuario por id</web-resource-name>
+            <url-pattern>/api/usuarios/*</url-pattern>
+            <http-method>GET</http-method>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
 
-      Los 404 de la API no pasan por aca: JAX-RS escribe la respuesta
-      directamente, asi que el cliente sigue recibiendo su mensaje de error y
-      no el HTML de la aplicacion.
+    <!--
+      Excepcion a la regla anterior: el listado de profesionales es publico
+      (lo usa la pantalla de busqueda antes de loguearse). Un patron exacto
+      le gana a uno con /*, por eso esta entrada no pasa por la restriccion
+      anterior. Sin auth-constraint = acceso libre.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Listado publico de profesionales</web-resource-name>
+            <url-pattern>/api/usuarios/profesionales</url-pattern>
+            <http-method>GET</http-method>
+        </web-resource-collection>
+    </security-constraint>
+
+    <!--
+      Operacion sensible 9: las afiliaciones a la obra social (DNI y numero de
+      afiliado). Ninguna operacion es anonima. Que registrar sea solo del
+      ADMINISTRADOR y que GET /mia sea solo del PACIENTE lo decide @RolesAllowed
+      sobre ServicioDeObrasSociales; aca solo se exige estar autenticado, asi un
+      rol equivocado recibe 403 desde el componente y un anonimo recibe 401.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Afiliaciones a la obra social</web-resource-name>
+            <url-pattern>/api/afiliaciones/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
+      Las pantallas del frontend (/home, /agenda, /admin...) no existen como
+      archivos: las sirve con index.html y status 200 el filtro
+      web.RutasDelFrontend (SCRUM-134). Antes lo hacia una error-page de 404,
+      que respondia la pantalla correcta pero con status 404.
+    -->
+
+    <!--
+      Los 401 y 403 que arma el contenedor (credencial invalida o ausente en
+      AutenticacionBasica, o un auth-constraint de este archivo que no incluye
+      el rol del caller) no pasan por JAX-RS: sin esto Undertow responde con su
+      pagina HTML. ErrorDeSeguridadServlet devuelve el mismo {"error": "..."}
+      que el resto de la API (SCRUM-132). Solo /api/* tiene restricciones, asi
+      que estos codigos no aparecen en las pantallas del frontend.
     -->
     <error-page>
-        <error-code>404</error-code>
-        <location>/index.html</location>
+        <error-code>401</error-code>
+        <location>/errores/seguridad</location>
+    </error-page>
+    <error-page>
+        <error-code>403</error-code>
+        <location>/errores/seguridad</location>
     </error-page>
 
 </web-app>

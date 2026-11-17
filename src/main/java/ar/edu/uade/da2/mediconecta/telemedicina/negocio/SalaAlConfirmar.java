@@ -37,7 +37,7 @@ import jakarta.transaction.Transactional.TxType;
 public class SalaAlConfirmar {
 
     @Inject
-    private ServicioDeTelemedicina servicioDeTelemedicina;
+    private ServicioDeTelemedicinaLocal servicioDeTelemedicina;
 
     @Transactional(TxType.MANDATORY)
     public void alConfirmar(

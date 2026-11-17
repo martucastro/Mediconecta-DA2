@@ -41,6 +41,44 @@ public class PagoDAO {
         return pago;
     }
 
+    /**
+     * Guarda el resultado del intento en una transacción propia, igual que
+     * guardarEnNuevaTransaccion. Lo usa ServicioDePagos cuando la pasarela
+     * rechaza el cobro: la confirmación del turno se revierte (409), pero el
+     * intento tiene que quedar RECHAZADO y no PENDIENTE para siempre.
+     */
+    @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
+    public Pago actualizarEnNuevaTransaccion(Pago pago) {
+        return em.merge(pago);
+    }
+
+    /**
+     * Guarda el resultado de la compensación de un cobro huérfano
+     * (CompensacionDeCobro): REEMBOLSADO o COMPENSACION_PENDIENTE, con el id de
+     * transacción que la actualización revertida se llevó.
+     *
+     * REQUIRES_NEW porque corre después del rollback de la confirmación, sin
+     * transacción en curso. La fila existe: es el rastro PENDIENTE que
+     * guardarEnNuevaTransaccion dejó antes de cobrar.
+     */
+    @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
+    public void registrarCompensacion(Long pagoId, EstadoPago estado, String idTransaccionExterna) {
+        Pago pago = em.find(Pago.class, pagoId);
+        pago.setEstado(estado);
+        pago.setIdTransaccionExterna(idTransaccionExterna);
+    }
+
+    /**
+     * Manda a la base los cambios pendientes de la transacción en curso. El
+     * contexto de persistencia es uno por transacción JTA, así que incluye lo
+     * que escribieron otros componentes en ella (el turno, el reclamo, la
+     * sala): ServicioDePagos lo usa antes de una llamada a la pasarela que el
+     * rollback no deshace, para que un error de base salga antes y no después.
+     */
+    public void sincronizar() {
+        em.flush();
+    }
+
     public Pago actualizar(Pago pago) {
         return em.merge(pago);
     }

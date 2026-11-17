@@ -1,0 +1,300 @@
+{
+    "metrics": {
+        "http_req_duration{operacion:reservar}": {
+            "med": 152.08995,
+            "p(90)": 463.5109999999999,
+            "p(95)": 561.8067499999997,
+            "p(99)": 676.4981959999992,
+            "max": 1471.5191,
+            "avg": 214.30089170833304,
+            "min": 34.1823,
+            "thresholds": {
+                "p(95)<1000": false
+            }
+        },
+        "http_req_tls_handshaking": {
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0
+        },
+        "data_sent": {
+            "count": 2030073,
+            "rate": 24924.45528070043
+        },
+        "http_req_blocked": {
+            "avg": 0.018514843965755316,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 31.4178
+        },
+        "vus": {
+            "max": 20,
+            "value": 8,
+            "min": 0
+        },
+        "http_req_failed": {
+            "passes": 1,
+            "fails": 7241,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0.00013808340237503452
+        },
+        "group_duration": {
+            "min": 106.9339,
+            "med": 456.267,
+            "p(90)": 1145.6491800000001,
+            "p(95)": 1250.6148449999998,
+            "p(99)": 1523.6117269999988,
+            "max": 2731.2035,
+            "avg": 574.8940450416655
+        },
+        "iteration_duration": {
+            "avg": 575.0180877916653,
+            "min": 106.9339,
+            "med": 456.48985,
+            "p(90)": 1145.6491800000001,
+            "p(95)": 1250.6148449999998,
+            "p(99)": 1523.6117269999988,
+            "max": 2731.2035
+        },
+        "http_req_duration{operacion:disponibilidad}": {
+            "min": 30.9823,
+            "med": 138.08875,
+            "p(90)": 285.9226999999999,
+            "p(95)": 339.3684999999999,
+            "p(99)": 452.7330219999984,
+            "max": 1051.049,
+            "avg": 165.16626920833343,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "flujo_reserva_completo": {
+            "p(90)": 1145.1,
+            "p(95)": 1251,
+            "p(99)": 1524.039999999999,
+            "max": 2732,
+            "avg": 574.9170833333334,
+            "min": 107,
+            "med": 456
+        },
+        "http_reqs": {
+            "count": 7242,
+            "rate": 88.91448984486395
+        },
+        "checks": {
+            "passes": 12000,
+            "fails": 1,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 0.9999166736105325
+        },
+        "http_req_duration{expected_response:true}": {
+            "med": 143.791,
+            "p(90)": 375.2027,
+            "p(95)": 468.6655,
+            "p(99)": 635.1990400000003,
+            "max": 1526.6434,
+            "avg": 190.28922506559917,
+            "min": 17.2376
+        },
+        "http_req_connecting": {
+            "p(99)": 0,
+            "max": 3.1486,
+            "avg": 0.0039042667771333893,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_duration": {
+            "avg": 190.3002417288047,
+            "min": 17.2376,
+            "med": 143.80349999999999,
+            "p(90)": 375.17796000000016,
+            "p(95)": 468.6404999999999,
+            "p(99)": 635.1894310000001,
+            "max": 1526.6434
+        },
+        "http_req_waiting": {
+            "avg": 189.91091739850918,
+            "min": 7.5451,
+            "med": 143.56865,
+            "p(90)": 374.99922000000004,
+            "p(95)": 468.16206,
+            "p(99)": 635.1894310000001,
+            "max": 1526.6434
+        },
+        "http_req_duration{operacion:cancelar}": {
+            "p(90)": 385.31902,
+            "p(95)": 458.0126249999995,
+            "p(99)": 576.4042989999996,
+            "max": 1526.6434,
+            "avg": 194.1909942500003,
+            "min": 33.4934,
+            "med": 146.15294999999998,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "http_req_sending": {
+            "p(99)": 0,
+            "max": 46.906,
+            "avg": 0.05248302954984812,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_reqs{instancia:1}": {
+            "count": 3600,
+            "rate": 44.19941500158937,
+            "thresholds": {
+                "count>0": false
+            }
+        },
+        "data_received": {
+            "count": 8750226,
+            "rate": 107431.9084254715
+        },
+        "iterations": {
+            "count": 2400,
+            "rate": 29.466276667726248
+        },
+        "vus_max": {
+            "min": 20,
+            "max": 20,
+            "value": 20
+        },
+        "http_reqs{instancia:2}": {
+            "count": 3601,
+            "rate": 44.211692616867595,
+            "thresholds": {
+                "count>0": false
+            }
+        },
+        "http_req_receiving": {
+            "avg": 0.33684130074565055,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0.5238499999999995,
+            "p(99)": 9.407315,
+            "max": 71.9637
+        }
+    },
+    "setup_data": {
+        "franjas": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+        ],
+        "pacientes": [
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0yQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0zQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi00QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi01QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi02QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi03QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi04QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi05QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xMUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xMkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xM0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xNEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xNUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xNkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xN0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xOEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0xOUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0MzY5MzYwMi0yMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY="
+        ],
+        "profesionalId": 2
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {
+            "reserva de un turno": {
+                "name": "reserva de un turno",
+                "path": "::reserva de un turno",
+                "id": "3b70060e04723ebe3ffe516ba71404ad",
+                "groups": {},
+                "checks": {
+                    "disponibilidad 200": {
+                        "passes": 2400,
+                        "fails": 0,
+                        "name": "disponibilidad 200",
+                        "path": "::reserva de un turno::disponibilidad 200",
+                        "id": "42d69d30f5778ed3011efbb6d550c7ff"
+                    },
+                    "la franja del VU sigue disponible": {
+                        "passes": 2400,
+                        "fails": 0,
+                        "name": "la franja del VU sigue disponible",
+                        "path": "::reserva de un turno::la franja del VU sigue disponible",
+                        "id": "77506fcee692669a62717bd775c2bdc5"
+                    },
+                    "reservar 200": {
+                        "name": "reservar 200",
+                        "path": "::reserva de un turno::reservar 200",
+                        "id": "d580a5624bcee4de64cae9e42e0a9ad5",
+                        "passes": 2400,
+                        "fails": 0
+                    },
+                    "queda EN_HOLD": {
+                        "name": "queda EN_HOLD",
+                        "path": "::reserva de un turno::queda EN_HOLD",
+                        "id": "349cf677d2ca1aefbcfed4e845a6f337",
+                        "passes": 2400,
+                        "fails": 0
+                    },
+                    "cancelar 200": {
+                        "name": "cancelar 200",
+                        "path": "::reserva de un turno::cancelar 200",
+                        "id": "20e6daab49a3c9f1478cf7ecac89b175",
+                        "passes": 2399,
+                        "fails": 1
+                    },
+                    "cancelar (reintento) 200": {
+                        "name": "cancelar (reintento) 200",
+                        "path": "::reserva de un turno::cancelar (reintento) 200",
+                        "id": "6598fa2f3dbf2ae3b25122075387da25",
+                        "passes": 1,
+                        "fails": 0
+                    }
+                }
+            }
+        },
+        "checks": {}
+    }
+}

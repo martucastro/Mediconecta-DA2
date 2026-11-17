@@ -1,6 +1,8 @@
-package ar.edu.uade.da2.mediconecta.pagos.negocio;
+package ar.edu.uade.da2.mediconecta;
 
 import java.util.Map;
+
+import ar.edu.uade.da2.mediconecta.pagos.negocio.PasarelaNoDisponibleException;
 
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -10,9 +12,8 @@ import jakarta.ws.rs.ext.Provider;
 /**
  * Traduce PasarelaNoDisponibleException a HTTP 502.
  *
- * A diferencia de DatosInvalidosException y ConflictoDeNegocioException, esta
- * excepcion es especifica de pagos, asi que su mapper vive junto a ella en vez
- * de en el paquete raiz.
+ * La excepcion es de pagos, pero el mapper vive en el paquete raiz con los
+ * demas: armar respuestas HTTP no es trabajo de la capa de negocio.
  */
 @Provider
 public class PasarelaNoDisponibleMapper implements ExceptionMapper<PasarelaNoDisponibleException> {

@@ -1,6 +1,6 @@
 package ar.edu.uade.da2.mediconecta.notificaciones.presentacion;
 
-import ar.edu.uade.da2.mediconecta.notificaciones.negocio.ServicioDeNotificaciones;
+import ar.edu.uade.da2.mediconecta.notificaciones.negocio.ServicioDeNotificacionesLocal;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -43,7 +43,7 @@ public class NotificacionMDB implements MessageListener {
     private static final Logger LOG = Logger.getLogger(NotificacionMDB.class.getName());
 
     @Inject
-    private ServicioDeNotificaciones servicio;
+    private ServicioDeNotificacionesLocal servicio;
 
     @Override
     public void onMessage(Message mensaje) {

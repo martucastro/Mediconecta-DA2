@@ -34,7 +34,7 @@ class CoberturaEnLaReservaTest {
     private static final Long PACIENTE_ID = 3L;
 
     @Mock
-    private ServicioDeObrasSociales obrasSociales;
+    private ServicioDeObrasSocialesLocal obrasSociales;
 
     @InjectMocks
     private CoberturaEnLaReserva observador;

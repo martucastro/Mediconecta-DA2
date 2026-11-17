@@ -29,12 +29,18 @@ import jakarta.xml.ws.soap.SOAPFaultException;
  * corresponde, prestación desconocida) vuelve como SOAP Fault de código Client:
  * el error es del cliente, no del servidor. Un cliente puede así distinguirlo de
  * una falla interna del legado (código Server), que no se reintenta igual.
+ *
+ * Ese fault está declarado en el contrato (SCRUM-129): cada operación declara
+ * PedidoInvalidoException, así que el WSDL publica un wsdl:fault por operación,
+ * y el SOAP Fault lleva el elemento PedidoInvalido en su detail.
  */
 @WebService(
         serviceName = "ObraSocialLegadoService",
         portName = "ObraSocialLegadoPort",
-        targetNamespace = "http://legado.obrasocial.example/")
+        targetNamespace = ObraSocialLegado.NAMESPACE)
 public class ObraSocialLegado {
+
+    static final String NAMESPACE = "http://legado.obrasocial.example/";
 
     /**
      * Consulta si la prestación está cubierta y cuánto pagaría el afiliado. No
@@ -45,7 +51,7 @@ public class ObraSocialLegado {
     public RespuestaCobertura validarCobertura(
             @WebParam(name = "dni") String dni,
             @WebParam(name = "numeroAfiliado") String numeroAfiliado,
-            @WebParam(name = "codigoPrestacion") String codigoPrestacion) {
+            @WebParam(name = "codigoPrestacion") String codigoPrestacion) throws PedidoInvalidoException {
         return evaluar(dni, numeroAfiliado, codigoPrestacion);
     }
 
@@ -59,7 +65,7 @@ public class ObraSocialLegado {
     public RespuestaCobertura autorizarPrestacion(
             @WebParam(name = "dni") String dni,
             @WebParam(name = "numeroAfiliado") String numeroAfiliado,
-            @WebParam(name = "codigoPrestacion") String codigoPrestacion) {
+            @WebParam(name = "codigoPrestacion") String codigoPrestacion) throws PedidoInvalidoException {
         RespuestaCobertura respuesta = evaluar(dni, numeroAfiliado, codigoPrestacion);
         if (respuesta.isAutorizado()) {
             respuesta.setNumeroAutorizacion("AUT-" + numeroAfiliado + "-" + codigoPrestacion);
@@ -82,11 +88,11 @@ public class ObraSocialLegado {
     public RespuestaReclamo presentarReclamo(
             @WebParam(name = "dni") String dni,
             @WebParam(name = "numeroAfiliado") String numeroAfiliado,
-            @WebParam(name = "numeroAutorizacion") String numeroAutorizacion) {
+            @WebParam(name = "numeroAutorizacion") String numeroAutorizacion) throws PedidoInvalidoException {
         try {
             return PadronDeAfiliados.presentarReclamo(dni, numeroAfiliado, numeroAutorizacion);
         } catch (PedidoInvalidoException e) {
-            throw faultDelCliente(e.getMessage());
+            throw faultDelCliente(e);
         }
     }
 
@@ -94,17 +100,35 @@ public class ObraSocialLegado {
         try {
             return PadronDeAfiliados.evaluar(dni, numeroAfiliado, codigoPrestacion);
         } catch (PedidoInvalidoException e) {
-            throw faultDelCliente(e.getMessage());
+            throw faultDelCliente(e);
         }
     }
 
-    private static SOAPFaultException faultDelCliente(String mensaje) {
+    /**
+     * El fault declarado, armado a mano: código Client y, en el detail, el
+     * elemento PedidoInvalido con su message, tal como lo publica el WSDL.
+     *
+     * No se lanza PedidoInvalidoException porque JAX-WS la enviaría con código
+     * Server, y el cliente la tomaría como una falla del legado. Tampoco sirve
+     * lanzarla con un SOAPFaultException como causa: WildFly le entrega a CXF
+     * ese SOAPFaultException y no la excepción declarada
+     * (AbstractInvocationHandler.handleInvocationException), así que el
+     * detail tiene que viajar dentro del propio fault.
+     */
+    private static SOAPFaultException faultDelCliente(PedidoInvalidoException e) {
         try {
-            SOAPFault fault = SOAPFactory.newInstance().createFault(mensaje,
+            SOAPFault fault = SOAPFactory.newInstance().createFault(e.getMessage(),
                     new QName(SOAPConstants.URI_NS_SOAP_1_1_ENVELOPE, "Client"));
+            // message va sin namespace: el schema del WSDL es elementFormDefault
+            // unqualified. Con prefijo en PedidoInvalido no queda un namespace
+            // por defecto que message herede.
+            fault.addDetail()
+                    .addDetailEntry(new QName(NAMESPACE, "PedidoInvalido", "os"))
+                    .addChildElement(new QName("message"))
+                    .addTextNode(e.getMessage());
             return new SOAPFaultException(fault);
-        } catch (SOAPException e) {
-            throw new IllegalStateException("No se pudo armar el SOAP Fault", e);
+        } catch (SOAPException ex) {
+            throw new IllegalStateException("No se pudo armar el SOAP Fault", ex);
         }
     }
 }

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
+import { aDate, claveDelDia, formatearHora, inicioDelDia, parsearFechaHora, soloFuturos } from '../fechas'
+import { paginar } from '../paginado'
+import Paginador from './Paginador'
 import { guardarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
@@ -17,20 +20,6 @@ const MESES = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ]
 
-function dosDigitos(n: number): string {
-  return String(n).padStart(2, '0')
-}
-
-// Clave de agrupacion por dia en horario local (no toISOString: eso pasa a
-// UTC y correria la fecha si el navegador no esta en GMT-3).
-function claveDelDia(fecha: Date): string {
-  return `${fecha.getFullYear()}-${dosDigitos(fecha.getMonth() + 1)}-${dosDigitos(fecha.getDate())}`
-}
-
-function fechaDesdeClave(clave: string): Date {
-  return new Date(`${clave}T00:00:00`)
-}
-
 function etiquetaCorta(fecha: Date): { abreviatura: string; numero: number } {
   return { abreviatura: DIAS_ABREV[fecha.getDay()], numero: fecha.getDate() }
 }
@@ -39,9 +28,10 @@ function etiquetaLarga(fecha: Date): string {
   return `${DIAS_LARGO[fecha.getDay()]} ${fecha.getDate()} de ${MESES[fecha.getMonth()]}`
 }
 
-function formatearHora(fechaHora: string): string {
-  const fecha = new Date(fechaHora)
-  return `${dosDigitos(fecha.getHours())}:${dosDigitos(fecha.getMinutes())}`
+// Todos los turnos de esta pantalla ya pasaron por soloFuturos: tienen una
+// fecha legible, de ahi los "!" aca y en agruparPorDia.
+function horaDelTurno(turno: TurnoDTO): string {
+  return formatearHora(parsearFechaHora(turno.fechaHora)!)
 }
 
 /**
@@ -53,7 +43,7 @@ function agruparPorDia(turnos: TurnoDTO[]): Map<string, TurnoDTO[]> {
   const grupos = new Map<string, TurnoDTO[]>()
   const ordenados = [...turnos].sort((a, b) => a.fechaHora.localeCompare(b.fechaHora))
   for (const turno of ordenados) {
-    const clave = claveDelDia(new Date(turno.fechaHora))
+    const clave = claveDelDia(aDate(parsearFechaHora(turno.fechaHora)!))
     const grupo = grupos.get(clave)
     if (grupo) grupo.push(turno)
     else grupos.set(clave, [turno])
@@ -64,11 +54,19 @@ function agruparPorDia(turnos: TurnoDTO[]): Map<string, TurnoDTO[]> {
 export default function DisponibilidadPage() {
   useTitulo('Disponibilidad')
   const navigate = useNavigate()
+  // Al liberar un hold, HoldPage vuelve aca con el profesional que se estaba
+  // mirando, para no tener que elegirlo de nuevo.
+  const { state } = useLocation()
 
   const [profesionales, setProfesionales] = useState<ProfesionalDTO[] | null>(null)
-  const [profesionalId, setProfesionalId] = useState<number | null>(null)
+  const [profesionalId, setProfesionalId] = useState<number | null>(
+    () => (state as { profesionalId?: number } | null)?.profesionalId ?? null,
+  )
   const [turnos, setTurnos] = useState<TurnoDTO[] | null>(null)
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
+  // La pagina es de un dia: cualquier cambio de dia (boton, otro profesional,
+  // refresco) vuelve a la pagina 1 sin tener que resetearla en cada lugar.
+  const [paginaHorarios, setPaginaHorarios] = useState<{ dia: string | null; n: number }>({ dia: null, n: 0 })
   const [turnoSeleccionado, setTurnoSeleccionado] = useState<TurnoDTO | null>(null)
   const [error, setError] = useState('')
   const [reservando, setReservando] = useState(false)
@@ -94,8 +92,10 @@ export default function DisponibilidadPage() {
     if (profesionalId === null) return
     let cancelado = false
     api<TurnoDTO[]>(`/turnos?profesionalId=${profesionalId}`)
-      .then((disponibles) => {
+      .then((todos) => {
         if (cancelado) return
+        // Las franjas que ya empezaron no se pueden reservar (el backend da 409).
+        const disponibles = soloFuturos(todos, Date.now())
         setTurnos(disponibles)
         setDiaSeleccionado([...agruparPorDia(disponibles).keys()][0] ?? null)
       })
@@ -138,7 +138,7 @@ export default function DisponibilidadPage() {
         // Otro paciente se quedo con el turno primero: se refresca la grilla
         // para que no siga mostrando un horario que ya no existe.
         try {
-          const disponibles = await api<TurnoDTO[]>(`/turnos?profesionalId=${profesionalId}`)
+          const disponibles = soloFuturos(await api<TurnoDTO[]>(`/turnos?profesionalId=${profesionalId}`), Date.now())
           setTurnos(disponibles)
           setTurnoSeleccionado(null)
           // Si el dia elegido se quedo sin turnos, se pasa al siguiente que
@@ -163,6 +163,7 @@ export default function DisponibilidadPage() {
   const grupos = turnos ? agruparPorDia(turnos) : new Map<string, TurnoDTO[]>()
   const dias = [...grupos.keys()]
   const turnosDelDia = diaSeleccionado ? grupos.get(diaSeleccionado) ?? [] : []
+  const horarios = paginar(turnosDelDia, paginaHorarios.dia === diaSeleccionado ? paginaHorarios.n : 0)
 
   return (
     <>
@@ -172,16 +173,16 @@ export default function DisponibilidadPage() {
           MediConecta
         </Link>
         <nav className="nav">
-          <Link to="/home" aria-current="page">Mis turnos</Link>
-          <a href="#">Mi historia clínica</a>
-          <a href="#">Cobertura</a>
-          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
+          <Link to="/home">Mis turnos</Link>
+          <Link to="/historia">Mi historia clínica</Link>
+          <Link to="/notificaciones">Notificaciones</Link>
+          <img className="avatar" src={ASSETS.avatar} alt="" />
         </nav>
-        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="" />
       </header>
 
       <main className="content avail">
-        <Link className="muted" to="/home" style={{ fontSize: 14, fontWeight: 500 }}>← Volver a la búsqueda</Link>
+        <Link className="muted" to="/home" style={{ fontSize: 14, fontWeight: 500 }}>← Volver al inicio</Link>
 
         <section className="field" style={{ maxWidth: 360 }}>
           <label htmlFor="profesional">PROFESIONAL</label>
@@ -227,7 +228,7 @@ export default function DisponibilidadPage() {
               <h2 className="h2">Elegí un horario</h2>
               <div className="days" data-single-select>
                 {dias.map((clave) => {
-                  const { abreviatura, numero } = etiquetaCorta(fechaDesdeClave(clave))
+                  const { abreviatura, numero } = etiquetaCorta(inicioDelDia(clave))
                   return (
                     <button
                       key={clave}
@@ -249,10 +250,10 @@ export default function DisponibilidadPage() {
 
             <section className="stack" style={{ gap: 14 }}>
               <p className="muted" style={{ fontWeight: 500 }}>
-                {diaSeleccionado && etiquetaLarga(fechaDesdeClave(diaSeleccionado))} · {turnosDelDia.length} turnos disponibles
+                {diaSeleccionado && etiquetaLarga(inicioDelDia(diaSeleccionado))} · {turnosDelDia.length} {turnosDelDia.length === 1 ? 'turno disponible' : 'turnos disponibles'}
               </p>
               <div className="slots" data-single-select>
-                {turnosDelDia.map((turno) => (
+                {horarios.items.map((turno) => (
                   <button
                     key={turno.id}
                     type="button"
@@ -260,10 +261,18 @@ export default function DisponibilidadPage() {
                     aria-pressed={turno.id === turnoSeleccionado?.id}
                     onClick={() => setTurnoSeleccionado(turno)}
                   >
-                    {formatearHora(turno.fechaHora)}
+                    {horaDelTurno(turno)}
+                    <small className="slot-modalidad">
+                      {turno.modalidad === 'TELEMEDICINA' ? 'Telemedicina' : 'Presencial'}
+                    </small>
                   </button>
                 ))}
               </div>
+              <Paginador
+                pagina={horarios.pagina}
+                totalPaginas={horarios.totalPaginas}
+                onCambiar={(n) => setPaginaHorarios({ dia: diaSeleccionado, n })}
+              />
             </section>
 
             <button
@@ -277,7 +286,7 @@ export default function DisponibilidadPage() {
               {reservando
                 ? 'Reservando…'
                 : turnoSeleccionado
-                  ? `Reservar ${formatearHora(turnoSeleccionado.fechaHora)} hs`
+                  ? `Reservar ${horaDelTurno(turnoSeleccionado)} hs`
                   : 'Elegí un horario'}
             </button>
           </>

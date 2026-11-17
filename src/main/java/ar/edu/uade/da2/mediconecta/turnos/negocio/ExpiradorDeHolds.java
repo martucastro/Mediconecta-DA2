@@ -1,5 +1,6 @@
 package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.logging.Logger;
@@ -9,6 +10,9 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
+import jakarta.ejb.Lock;
+import jakarta.ejb.LockType;
+import jakarta.ejb.NoSuchObjectLocalException;
 import jakarta.ejb.Schedule;
 import jakarta.ejb.Singleton;
 import jakarta.ejb.Timeout;
@@ -41,8 +45,17 @@ import jakarta.inject.Inject;
  *    sobrevive pero la tarea programada no.
  *
  * Sin el barrido, un reinicio dejaba turnos EN_HOLD para siempre.
+ *
+ * Lleva @Lock(READ) porque, sin eso, un @Singleton toma el lock de ESCRITURA
+ * en cada metodo, incluidos @Timeout y @Schedule. Si el temporizador vencia mientras
+ * confirmarTurno tenia la fila del turno bloqueada, el timer se quedaba
+ * esperando ese FOR UPDATE con el singleton tomado, y la confirmacion se
+ * quedaba esperando el singleton en expirador.cancelar: deadlock hasta el
+ * timeout del lock y 500. No hace falta serializar nada aca: TimerService es
+ * thread-safe y el lock de la fila en liberar() ya ordena a quien toca el turno.
  */
 @Singleton
+@Lock(LockType.READ)
 @PermitAll
 public class ExpiradorDeHolds {
 
@@ -55,6 +68,12 @@ public class ExpiradorDeHolds {
 
     @Inject
     private TurnoDAO turnoDAO;
+
+    // De donde sale "ahora" para decidir que holds vencieron. En produccion es
+    // el reloj del sistema; los tests lo reemplazan por un reloj fijo para que
+    // el limite del barrido no dependa de cuando corren (SCRUM-118). No lleva
+    // @Inject: no hay un productor CDI de Clock y no hace falta uno.
+    private Clock reloj = Clock.systemDefaultZone();
 
     /**
      * Programa la liberacion automatica de un turno retenido.
@@ -72,11 +91,21 @@ public class ExpiradorDeHolds {
      * conversacion ni a un turno en particular. Cancelarlos todos liberaria los
      * holds de los demas pacientes, asi que hay que filtrar por el info que se
      * guardo al programarlos.
+     *
+     * La lista es una foto: entre getTimers() y getInfo() o cancel(), otra
+     * transaccion puede cancelar un timer (o este vencer), y WildFly lanza
+     * NoSuchObjectLocalException (WFLYEJB0331). Ese timer ya no existe, que es
+     * justo lo que se buscaba, asi que se saltea. Antes la excepcion revertia
+     * la reserva o la cancelacion entera y el cliente recibia 500.
      */
     public void cancelar(Long turnoId) {
         for (Timer timer : timerService.getTimers()) {
-            if (turnoId.equals(timer.getInfo())) {
-                timer.cancel();
+            try {
+                if (turnoId.equals(timer.getInfo())) {
+                    timer.cancel();
+                }
+            } catch (NoSuchObjectLocalException yaNoExiste) {
+                // Lo cancelo otro pedido o ya vencio: no queda nada que cancelar.
             }
         }
     }
@@ -84,7 +113,11 @@ public class ExpiradorDeHolds {
     @Timeout
     @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
     public void expirar(Timer timer) {
-        liberar((Long) timer.getInfo(), "temporizador");
+        // Este temporizador vence DURACION_HOLD_MS despues de que empezo su
+        // hold: uno de menos de un minuto es de otro paciente, que reservo
+        // mientras este ya corria, y lo libera su propio temporizador. El
+        // minuto de margen absorbe la precision de inicioHold y del timer.
+        liberar((Long) timer.getInfo(), "temporizador", LocalDateTime.now(reloj).minusMinutes(1));
     }
 
     /**
@@ -97,16 +130,25 @@ public class ExpiradorDeHolds {
     @Schedule(hour = "*", minute = "*", second = "0", persistent = false)
     @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
     public void barrerHoldsVencidos() {
-        LocalDateTime limite = LocalDateTime.now().minusNanos(DURACION_HOLD_MS * 1_000_000);
+        LocalDateTime limite = LocalDateTime.now(reloj).minusNanos(DURACION_HOLD_MS * 1_000_000);
         List<Turno> vencidos = turnoDAO.listarHoldsVencidos(limite);
         for (Turno turno : vencidos) {
-            liberar(turno.getId(), "barrido");
+            liberar(turno.getId(), "barrido", limite);
         }
     }
 
-    private void liberar(Long turnoId, String origen) {
+    /**
+     * Libera el hold si al tomar el lock sigue EN_HOLD y no empezo despues de
+     * limite. Entre la consulta del barrido (o el disparo del temporizador) y
+     * el lock, el hold vencido pudo liberarse y otro paciente reservar el
+     * turno: ese hold nuevo empezo despues de limite y no se toca.
+     */
+    private void liberar(Long turnoId, String origen, LocalDateTime limite) {
         Turno turno = turnoDAO.buscarParaActualizar(turnoId);
         if (turno == null || turno.getEstado() != EstadoTurno.EN_HOLD) {
+            return;
+        }
+        if (turno.getInicioHold() != null && turno.getInicioHold().isAfter(limite)) {
             return;
         }
         turno.setEstado(EstadoTurno.DISPONIBLE);

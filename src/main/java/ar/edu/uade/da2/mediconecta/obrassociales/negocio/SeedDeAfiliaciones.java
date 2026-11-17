@@ -5,7 +5,7 @@ import java.util.logging.Logger;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AfiliacionDAO;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AfiliacionDePaciente;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
-import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.annotation.PostConstruct;
 import jakarta.ejb.DependsOn;
 import jakarta.ejb.Singleton;
@@ -40,7 +40,7 @@ public class SeedDeAfiliaciones {
     private AfiliacionDAO afiliacionDAO;
 
     @Inject
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     @PostConstruct
     @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)

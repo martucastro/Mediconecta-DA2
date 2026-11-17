@@ -1,3 +1,5 @@
+import { limpiarTurnoEnHold } from './turnoEnHold'
+
 export type Rol = 'PACIENTE' | 'PROFESIONAL' | 'ADMINISTRADOR'
 
 export interface Sesion {
@@ -45,17 +47,20 @@ export function obtenerSesion(): Sesion | null {
 export function cerrarSesion() {
   sessionStorage.removeItem(CLAVE_SESION)
   sessionStorage.removeItem(CLAVE_AUTH)
+  // El hold guardado es del usuario que sale: el proximo que entre en esta
+  // pestana no tiene que verlo (confirmarlo le daria 403).
+  limpiarTurnoEnHold()
 }
 
-/** Pantalla de inicio de cada rol, o null si ese rol no tiene pantallas. */
-export function rutaInicial(rol: Rol): string | null {
+/** Pantalla de inicio de cada rol. */
+export function rutaInicial(rol: Rol): string {
   switch (rol) {
     case 'PACIENTE':
       return '/home'
     case 'PROFESIONAL':
       return '/agenda'
-    default:
-      return null
+    case 'ADMINISTRADOR':
+      return '/admin'
   }
 }
 
@@ -66,7 +71,7 @@ export function rutaInicial(rol: Rol): string | null {
  */
 export function decidirAcceso(sesion: Sesion | null, roles?: Rol[]): string | null {
   if (!sesion) return '/'
-  if (roles && !roles.includes(sesion.rol)) return rutaInicial(sesion.rol) ?? '/'
+  if (roles && !roles.includes(sesion.rol)) return rutaInicial(sesion.rol)
   return null
 }
 
@@ -123,10 +128,10 @@ export async function api<T = unknown>(path: string, opciones: RequestInit = {})
 async function errorDe(respuesta: Response, path: string, habiaSesion: boolean): Promise<ApiError> {
   const estado = respuesta.status
 
-  // 503: un servicio externo (por ejemplo la obra social) no esta disponible.
-  // A diferencia de otros 5xx, el backend responde {"error": "..."} con un
-  // mensaje pensado para mostrarse, no una pagina de error con stack trace.
-  if (estado === 503) {
+  // 502/503: un servicio externo (la pasarela de pago, la obra social) no esta
+  // disponible. A diferencia de otros 5xx, el backend responde {"error": "..."}
+  // con un mensaje pensado para mostrarse, no una pagina de error con stack trace.
+  if (estado === 502 || estado === 503) {
     const mensaje = mensajeDelBackend(await respuesta.text())
     return new ApiError(mensaje || 'El servicio no está disponible. Probá de nuevo en unos minutos.', estado)
   }

@@ -3,8 +3,9 @@
 # Deja el servidor listo para recibir el WAR: instala el driver de PostgreSQL,
 # crea el datasource java:/MediConectaDS, habilita la integracion de Jakarta
 # Security con Elytron, crea el topico JMS TurnoConfirmadoTopic y la cola
-# ReclamosFacturacionQueue con su politica de reintentos (requiere haber
-# arrancado con standalone-full.xml).
+# ReclamosFacturacionQueue con su politica de reintentos, y abre el acceptor
+# AMQP que usa ServicioDeRecordatorios (requiere haber arrancado con
+# standalone-full.xml).
 #
 # Uso, con WildFly YA CORRIENDO y el driver descargado (ver README):
 #
@@ -84,6 +85,20 @@ if (outcome != success) of /subsystem=messaging-activemq/server=default/jms-topi
         entries=["java:/jms/topic/TurnoConfirmado"])
 end-if
 
+# Reintentos de los suscriptores del topico (facturacion y notificaciones).
+# Sin esto heredan el address-setting "#": 10 reentregas inmediatas, y una
+# caida de la base de un segundo las agota y se pierde el reclamo o la
+# notificacion. Espera 1 s, 2 s, 4 s... hasta 30 s; tras 10 intentos el
+# mensaje va a la DLQ general (jms.queue.DLQ) para revisarlo a mano.
+if (outcome != success) of /subsystem=messaging-activemq/server=default/address-setting=jms.topic.TurnoConfirmadoTopic:read-resource
+    /subsystem=messaging-activemq/server=default/address-setting=jms.topic.TurnoConfirmadoTopic:add( \
+        dead-letter-address=jms.queue.DLQ, \
+        max-delivery-attempts=10, \
+        redelivery-delay=1000, \
+        redelivery-multiplier=2.0, \
+        max-redelivery-delay=30000)
+end-if
+
 # ---------------------------------------------------------------------------
 # 5. Cola JMS ReclamosFacturacionQueue
 #
@@ -121,6 +136,43 @@ if (outcome != success) of /subsystem=messaging-activemq/server=default/address-
 end-if
 
 # ---------------------------------------------------------------------------
-# 6. Aplicar
+# 6. Acceso AMQP 1.0 al topico para ServicioDeRecordatorios (recordatorios/)
+#
+# ServicioDeRecordatorios no corre en WildFly: es un proceso Node.js (NestJS)
+# que se suscribe a TurnoConfirmado por AMQP 1.0 con una suscripcion durable.
+# Artemis solo atiende el protocolo CORE por el puerto HTTP; este paso abre un
+# acceptor AMQP en el socket-binding "amqp" (5672, mas el port-offset).
+#
+# El cliente se autentica contra ApplicationRealm con un usuario de aplicacion
+# del rol "recordatorios", que se crea con add-user (no es un comando de CLI):
+#
+#   add-user.bat -a -u recordatorios -p <clave> -g recordatorios
+#
+# El security-setting de la direccion del topico es mas especifico que "#" y
+# lo reemplaza, por eso repite el permiso de "guest". "recordatorios" solo
+# puede consumir y crear su cola de suscripcion durable. El publicador y los
+# MDB no pasan por aca: van in-vm y WildFly no les aplica seguridad
+# (override-in-vm-security).
+# ---------------------------------------------------------------------------
+if (outcome != success) of /socket-binding-group=standard-sockets/socket-binding=amqp:read-resource
+    /socket-binding-group=standard-sockets/socket-binding=amqp:add(port=5672)
+end-if
+
+if (outcome != success) of /subsystem=messaging-activemq/server=default/remote-acceptor=amqp:read-resource
+    /subsystem=messaging-activemq/server=default/remote-acceptor=amqp:add( \
+        socket-binding=amqp, \
+        params={protocols=AMQP})
+end-if
+
+if (outcome != success) of /subsystem=messaging-activemq/server=default/security-setting=jms.topic.TurnoConfirmadoTopic:read-resource
+    /subsystem=messaging-activemq/server=default/security-setting=jms.topic.TurnoConfirmadoTopic:add()
+    /subsystem=messaging-activemq/server=default/security-setting=jms.topic.TurnoConfirmadoTopic/role=guest:add( \
+        send=true, consume=true, create-non-durable-queue=true, delete-non-durable-queue=true)
+    /subsystem=messaging-activemq/server=default/security-setting=jms.topic.TurnoConfirmadoTopic/role=recordatorios:add( \
+        consume=true, create-durable-queue=true)
+end-if
+
+# ---------------------------------------------------------------------------
+# 7. Aplicar
 # ---------------------------------------------------------------------------
 reload

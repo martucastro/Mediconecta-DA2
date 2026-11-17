@@ -1,6 +1,9 @@
 package ar.edu.uade.da2.mediconecta;
 
+import java.util.Map;
+
 import jakarta.ejb.EJBAccessException;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
@@ -14,11 +17,15 @@ import jakarta.ws.rs.ext.Provider;
 @Provider
 public class AccesoDenegadoMapper implements ExceptionMapper<EJBAccessException> {
 
+    // El mismo texto para todo 403: no se repite el motivo interno (que dice,
+    // por ejemplo, de quien es un turno).
+    static final String MENSAJE = "No tiene permisos para realizar esta operación.";
+
     @Override
     public Response toResponse(EJBAccessException excepcion) {
         return Response.status(Response.Status.FORBIDDEN)
-                .entity("No tiene permisos para realizar esta operacion")
-                .type("text/plain")
+                .entity(Map.of("error", MENSAJE))
+                .type(MediaType.APPLICATION_JSON)
                 .build();
     }
 }

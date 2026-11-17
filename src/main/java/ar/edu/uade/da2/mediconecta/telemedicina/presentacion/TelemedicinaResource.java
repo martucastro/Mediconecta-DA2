@@ -3,7 +3,7 @@ package ar.edu.uade.da2.mediconecta.telemedicina.presentacion;
 import java.util.Map;
 
 import ar.edu.uade.da2.mediconecta.telemedicina.negocio.EnlaceDeSesion;
-import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ServicioDeTelemedicina;
+import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ServicioDeTelemedicinaLocal;
 import ar.edu.uade.da2.mediconecta.telemedicina.negocio.SesionCreada;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -25,7 +25,7 @@ import jakarta.ws.rs.core.Response;
 public class TelemedicinaResource {
 
     @Inject
-    private ServicioDeTelemedicina servicio;
+    private ServicioDeTelemedicinaLocal servicio;
 
     /**
      * Crea la sala del turno (o devuelve la que ya tiene) y responde con el

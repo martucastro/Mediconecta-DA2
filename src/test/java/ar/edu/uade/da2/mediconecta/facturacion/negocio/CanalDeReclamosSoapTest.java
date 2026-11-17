@@ -16,7 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ResultadoPresentacion;
-import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSociales;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSocialesLocal;
 
 /**
  * CanalDeReclamos contra la fachada ServicioDeObrasSociales, sin contenedor:
@@ -33,7 +33,7 @@ class CanalDeReclamosSoapTest {
     private static final BigDecimal PORCENTAJE = new BigDecimal("70.00");
 
     @Mock
-    private ServicioDeObrasSociales servicioDeObrasSociales;
+    private ServicioDeObrasSocialesLocal servicioDeObrasSociales;
 
     @InjectMocks
     private CanalDeReclamosSoap canal;
