@@ -124,11 +124,13 @@ hold, una franja en el pasado) con la zona de la JVM, y el navegador muestra las
 horas en la suya. Si WildFly corre en UTC (un contenedor, una VM en la nube),
 todo se corre tres horas. Va en `JAVA_TOOL_OPTIONS` y no en `JAVA_OPTS`: si
 `JAVA_OPTS` está definida, `standalone.conf` deja de aplicar sus valores de
-memoria por defecto.
+memoria por defecto. Usá `America/Buenos_Aires` y no `America/Argentina/Buenos_Aires`:
+PostgreSQL 18 rechaza ese nombre al abrir las conexiones del datasource
+(`FATAL: invalid value for parameter "TimeZone"`) y la aplicación no arranca.
 
 ```bash
-export JAVA_TOOL_OPTIONS=-Duser.timezone=America/Argentina/Buenos_Aires   # Linux y macOS
-set JAVA_TOOL_OPTIONS=-Duser.timezone=America/Argentina/Buenos_Aires      # Windows (cmd)
+export JAVA_TOOL_OPTIONS=-Duser.timezone=America/Buenos_Aires   # Linux y macOS
+set JAVA_TOOL_OPTIONS=-Duser.timezone=America/Buenos_Aires      # Windows (cmd)
 ```
 
 Arrancá el servidor **con el perfil full (`standalone-full.xml`), es un
@@ -260,12 +262,13 @@ y ahí se guardan los ids que la colección va creando.
 corta; también toma los ids de las respuestas, pero la de `postman/` cubre más
 casos: preferí esa.
 
-Las pruebas de unidad corren sin servidor: 256 del backend (JUnit y Mockito) y
-28 del frontend (Vitest):
+Las pruebas de unidad corren sin servidor: 450 del backend (JUnit y Mockito),
+58 del frontend (Vitest) y 27 del componente Node.js `recordatorios` (Jest):
 
 ```bash
 mvn test
 cd frontend && npm test
+cd recordatorios && npm test
 ```
 
 ### 6. Frontend (React + Vite)

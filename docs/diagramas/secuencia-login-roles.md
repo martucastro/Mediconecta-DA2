@@ -61,7 +61,7 @@ sequenceDiagram
     alt el rol no coincide con @RolesAllowed(PACIENTE)
         SV--xRS: EJBAccessException
         RS->>MP: toResponse(EJBAccessException)
-        MP-->>FE: 403 No tiene permisos para realizar esta operacion
+        MP-->>FE: 403 No tiene permisos para realizar esta operación
     else el rol es PACIENTE
         SV-->>RS: Turno confirmado
         RS-->>FE: 200 TurnoDTO
