@@ -3,6 +3,8 @@ package ar.edu.uade.da2.mediconecta.usuarios.presentacion;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.LimitadorDeIntentos;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.security.enterprise.AuthenticationException;
@@ -49,16 +51,24 @@ public class AutenticacionBasica implements HttpAuthenticationMechanism {
     @Inject
     private IdentityStoreHandler manejadorDeIdentidades;
 
+    // El mismo limite de intentos que el login (SCRUM-127): sin esto, la
+    // fuerza bruta solo tenia que mandar las contraseñas por este encabezado.
+    // Un test lo reemplaza por uno propio.
+    private LimitadorDeIntentos intentos = LimitadorDeIntentos.COMPARTIDO;
+
     @Override
     public AuthenticationStatus validateRequest(HttpServletRequest request, HttpServletResponse response,
             HttpMessageContext httpMessageContext) throws AuthenticationException {
 
         UsernamePasswordCredential credencial = credencialDe(request);
-        if (credencial != null) {
+        // Un email bloqueado ni se valida: se trata como credencial invalida.
+        if (credencial != null && !intentos.estaBloqueado(credencial.getCaller())) {
             CredentialValidationResult resultado = manejadorDeIdentidades.validate(credencial);
             if (resultado.getStatus() == Status.VALID) {
+                intentos.registrarExito(credencial.getCaller());
                 return httpMessageContext.notifyContainerAboutLogin(resultado);
             }
+            intentos.registrarFallo(credencial.getCaller());
         }
 
         if (!httpMessageContext.isProtected()) {

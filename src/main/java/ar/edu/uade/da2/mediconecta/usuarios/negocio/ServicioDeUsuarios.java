@@ -7,6 +7,7 @@ import ar.edu.uade.da2.mediconecta.usuarios.datos.UsuarioDAO;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 import jakarta.annotation.Resource;
@@ -48,6 +49,10 @@ public class ServicioDeUsuarios {
     // chequeo un texto mas largo fallaba recien en el INSERT, como 500.
     private static final int MAXIMO_TEXTO = 255;
 
+    // Hash de una contraseña aleatoria que nadie conoce. Se verifica contra el
+    // cuando el email no existe (ver autenticar).
+    private static final String HASH_DE_RELLENO = PasswordUtil.hash(UUID.randomUUID().toString());
+
     @Inject
     private UsuarioDAO usuarioDAO;
 
@@ -55,6 +60,9 @@ public class ServicioDeUsuarios {
     // rol se esta pidiendo, y eso @RolesAllowed no lo puede expresar.
     @Resource
     private SessionContext contexto;
+
+    // Compartido con AutenticacionBasica; un test lo reemplaza por uno propio.
+    private LimitadorDeIntentos intentos = LimitadorDeIntentos.COMPARTIDO;
 
     /**
      * Alta de usuario.
@@ -116,13 +124,26 @@ public class ServicioDeUsuarios {
         return nuevoUsuario;
     }
 
+    /**
+     * Login (SCRUM-127). Un email inexistente igual paga una verificacion
+     * PBKDF2, contra HASH_DE_RELLENO: si respondiera al instante, el tiempo de
+     * respuesta delataria que emails tienen cuenta. Los fallos se cuentan por
+     * email en LimitadorDeIntentos; superado el limite, se rechaza con
+     * DemasiadosIntentosException (429) aunque la contraseña sea correcta.
+     */
     public Usuario autenticar(String email, String contrasenaPlana) {
+        if (intentos.estaBloqueado(email)) {
+            throw new DemasiadosIntentosException();
+        }
         Usuario usuario = usuarioDAO.buscarPorEmail(email);
-        if (usuario == null) {
+        String hash = usuario != null ? usuario.getContrasenaHash() : HASH_DE_RELLENO;
+        boolean coincide = PasswordUtil.verificar(contrasenaPlana, hash);
+        if (usuario == null || !coincide) {
+            intentos.registrarFallo(email);
             return null;
         }
-        boolean coincide = PasswordUtil.verificar(contrasenaPlana, usuario.getContrasenaHash());
-        return coincide ? usuario : null;
+        intentos.registrarExito(email);
+        return usuario;
     }
 
     public Usuario obtenerUsuario(Long id) {

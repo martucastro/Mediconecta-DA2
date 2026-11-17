@@ -2,6 +2,7 @@ package ar.edu.uade.da2.mediconecta.usuarios.presentacion;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -16,8 +17,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.LimitadorDeIntentos;
 import jakarta.security.enterprise.AuthenticationStatus;
 import jakarta.security.enterprise.authentication.mechanism.http.HttpMessageContext;
 import jakarta.security.enterprise.credential.Credential;
@@ -49,6 +52,10 @@ class AutenticacionBasicaTest {
     private HttpServletResponse response;
     @Mock
     private HttpMessageContext contexto;
+    // Uno nuevo por test: con el compartido, los fallos de un test
+    // bloquearian el email en los siguientes.
+    @Spy
+    private LimitadorDeIntentos intentos = new LimitadorDeIntentos();
 
     @InjectMocks
     private AutenticacionBasica mecanismo;
@@ -268,5 +275,35 @@ class AutenticacionBasicaTest {
             assertEquals(AuthenticationStatus.SUCCESS, mecanismo.validateRequest(request, response, contexto),
                     esquema);
         }
+    }
+
+    // ---- Limite de intentos (SCRUM-127) ---------------------------------------
+
+    @Test
+    void unEmailBloqueadoNoSeValidaYRecibe401() throws Exception {
+        // Ni siquiera se valida: si la contraseña correcta entrara durante el
+        // bloqueo, el limite no frenaria la fuerza bruta.
+        conAuthorization("admin@mediconecta.com", "cambiar123");
+        doReturn(true).when(intentos).estaBloqueado("admin@mediconecta.com");
+        when(contexto.isProtected()).thenReturn(true);
+        when(contexto.responseUnauthorized()).thenReturn(AuthenticationStatus.SEND_FAILURE);
+
+        assertEquals(AuthenticationStatus.SEND_FAILURE, mecanismo.validateRequest(request, response, contexto));
+        verify(manejadorDeIdentidades, never()).validate(any());
+    }
+
+    @Test
+    void unaCredencialInvalidaCuentaComoFalloYUnaValidaReiniciaElContador() throws Exception {
+        conAuthorization("admin@mediconecta.com", "incorrecta");
+        when(manejadorDeIdentidades.validate(any(Credential.class))).thenReturn(CredentialValidationResult.INVALID_RESULT);
+        when(contexto.isProtected()).thenReturn(false);
+
+        mecanismo.validateRequest(request, response, contexto);
+        verify(intentos).registrarFallo("admin@mediconecta.com");
+
+        CredentialValidationResult valido = new CredentialValidationResult("admin@mediconecta.com");
+        when(manejadorDeIdentidades.validate(any(Credential.class))).thenReturn(valido);
+        mecanismo.validateRequest(request, response, contexto);
+        verify(intentos).registrarExito("admin@mediconecta.com");
     }
 }

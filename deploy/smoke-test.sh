@@ -64,6 +64,15 @@ comprobar "el login sigue siendo publico"             200 "$(codigo -H "Content-
 comprobar "el registro sigue siendo publico"          201 "$(codigo -H "Content-Type: application/json" \
                                                              -d "{\"nombre\":\"Registro publico\",\"email\":\"smoke-reg-$(date +%s)@mediconecta.com\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
                                                              "$BASE/usuarios")"
+# SCRUM-127: 5 fallos seguidos bloquean el email 15 minutos. Se usa un email
+# inventado: se bloquea igual que uno real, asi el 429 no delata cuentas.
+BLOQ="smoke-bloqueo-$(date +%s)@mediconecta.com"
+for i in 1 2 3 4 5; do
+  codigo -H "Content-Type: application/json" -d "{\"email\":\"$BLOQ\",\"contrasena\":\"mal\"}" "$BASE/usuarios/login" > /dev/null
+done
+comprobar "tras 5 fallos el login responde 429"       429 "$(codigo -H "Content-Type: application/json" \
+                                                             -d "{\"email\":\"$BLOQ\",\"contrasena\":\"mal\"}" \
+                                                             "$BASE/usuarios/login")"
 
 echo
 echo "Turnos"
