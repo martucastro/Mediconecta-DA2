@@ -642,6 +642,28 @@ $WILDFLY_HOME/bin/jboss-cli.sh --connect '/system-property=mediconecta.obrasocia
 
 ---
 
+## Componente en otra tecnología: `recordatorios/` (Node.js)
+
+Además de los ocho componentes Java, `ServicioDeRecordatorios` está escrito en
+TypeScript con NestJS y corre como un proceso aparte de WildFly. Se suscribe al
+tópico `TurnoConfirmado` por AMQP 1.0 con una suscripción durable, programa un
+recordatorio para 24 h antes de cada turno confirmado y lo expone en
+`GET http://localhost:3000/recordatorios`.
+
+El paso 6 de `deploy/mediconecta-setup.cli` abre el acceptor AMQP (puerto 5672)
+y le da permisos al rol `recordatorios`. Falta crear el usuario de aplicación
+(la clave es un ejemplo):
+
+```bash
+add-user.sh -a -u recordatorios -p recordatorios123 -g recordatorios    # Windows: add-user.bat
+```
+
+Cómo correrlo, el contrato del mensaje y la demo están en
+[`recordatorios/README.md`](recordatorios/README.md). Por qué está en Node.js,
+en [`docs/arquitectura.md`](docs/arquitectura.md).
+
+---
+
 ## Si algo no arranca
 
 **Todos los endpoints devuelven 500, pero una credencial incorrecta devuelve 401.**
