@@ -477,50 +477,58 @@ Se eligió **B**. El invariante "un turno de telemedicina confirmado tiene su en
 1. **El cobro del copago (SCRUM-93).** Va antes que la sala (`COBRO_COPAGO` = 100) y es un cobro REST inmediato: si después falla la sala (o el commit), la base se revierte pero el cobro ya salió (cobro huérfano). Hoy no se compensa: el `Pago` que `ServicioDePagos` guarda en `REQUIRES_NEW` queda `PENDIENTE` y sin id de transacción externa (ese dato solo se escribe en la actualización que se revierte), y `ServicioDePagos.reembolsar` solo acepta pagos `APROBADO` con ese id. Las alternativas para la entrega final (crear la sala antes de cobrar, guardar el id en `REQUIRES_NEW` y reembolsar desde un observador `AFTER_FAILURE`, una clave de idempotencia por turno, o preautorizar y capturar con `AFTER_SUCCESS`) están en el [documento técnico de la Entrega N.º 2](documento-tecnico-entrega-2.md), sección 6.
 2. **Salas huérfanas en el proveedor.** Si el proveedor creó la sala pero la respuesta no llegó, o si un paso posterior revierte la transacción, la sala queda creada del otro lado sin registro acá. Con Jitsi no cuesta nada, porque la sala solo existe mientras alguien está conectado. Con un proveedor pago haría falta un barrido de limpieza.
 
-## 9.5 Resiliencia ante sistemas externos: circuit breaker, timeouts, 503 y DLQ
+### 9.5 Resiliencia ante sistemas externos: timeouts, circuit breaker y DLQ
 
-MediConecta depende de tres sistemas que no controla: el legado SOAP de la obra social, la pasarela de pago (REST) y el proveedor de video (REST). La estrategia es en capas; cada capa cubre una falla distinta, y la última (el circuit breaker) se sumó sobre las que ya existían.
+MediConecta depende de tres sistemas que no controla: el legado SOAP de la obra social, la pasarela de pago (REST) y el proveedor de video (REST). La estrategia es en capas; cada capa cubre una falla distinta, y la última (el circuit breaker, SCRUM-120) se sumó sobre las que ya existían.
 
 | Capa | Qué resuelve | Dónde |
 |---|---|---|
-| **Timeouts** | Un sistema que acepta la conexión y no contesta no deja colgado al hilo, a la transacción ni al usuario. | Obra social: 2 s de conexión y 5 s de respuesta (`mediconecta.obrasocial.timeoutConexionMs` / `timeoutRespuestaMs`). Video: 3 s y 5 s. |
+| **Timeouts** | Un sistema que acepta la conexión y no contesta no deja colgado al hilo, a la transacción ni al usuario. | Obra social: 2 s de conexión y 5 s de respuesta (`mediconecta.obrasocial.timeoutConexionMs` / `timeoutRespuestaMs`). Pasarela: 2 s y 5 s. Video: 3 s y 5 s. |
 | **Circuit breaker** | Un sistema que ya se sabe caído no se vuelve a llamar: se falla al instante, sin esperar el timeout en cada pedido. | `comun.resiliencia.CircuitBreaker`, usado por `SistemaDeObraSocialSoap`, `PasarelaDePagoRestClient` y `ProveedorDeVideoRestClient`. |
-| **503 con `Retry-After`** | El cliente HTTP recibe una respuesta clara y sabe que puede reintentar. | `ObraSocialNoDisponibleMapper`, `PasarelaNoDisponibleMapper`, `ProveedorDeVideoNoDisponibleMapper`: `503` + `Retry-After: 30`. |
+| **Respuesta HTTP clara** | El cliente sabe que el problema es un sistema externo y no su pedido. | Obra social y video: `503` con `Retry-After: 30`. Pasarela: `502`, el contrato que usan la SPA, la colección de Postman (carpeta 08) y el smoke test. |
 | **Reintentos + DLQ de reclamos** | El reclamo a la obra social es asíncrono: no se pierde si el legado está caído. | `ReclamoMDB` + `ReclamosFacturacionQueue`: hasta 5 entregas con backoff de 2 s a 30 s, luego `ReclamosFacturacionDLQ` y el reclamo queda `EN_REVISION_MANUAL` (sección 9.3). |
 
-### Circuit breaker
+#### Circuit breaker
 
 **Por qué propio y no `@CircuitBreaker` de MicroProfile Fault Tolerance.** WildFly 41 trae la implementación (SmallRye), pero el subsistema `microprofile-fault-tolerance-smallrye` está sólo en los perfiles `standalone-microprofile*.xml`; el proyecto se arranca con `standalone-full.xml` (necesita JMS) y ese perfil no lo incluye. Habilitarlo exigiría tocar la configuración del servidor de cada integrante del equipo. Se optó por una clase pequeña (`CircuitBreaker`, sin dependencias, probada sin contenedor) que funciona con cualquier perfil. Si más adelante se cambia de perfil, el reemplazo es mecánico: anotar los métodos públicos de cada adaptador con `@CircuitBreaker` y borrar el helper.
 
 **Estados.**
 
 - **CERRADO**: las llamadas pasan; se cuentan las fallas consecutivas.
-- **ABIERTO**: tras **3 fallas consecutivas** durante **10 s** las llamadas ni salen: el adaptador lanza directamente su excepción de "no disponible" (la misma de siempre, por eso los mappers y el `503` no cambian).
+- **ABIERTO**: tras **3 fallas consecutivas**, durante **10 s** las llamadas ni salen: el adaptador lanza directamente su excepción de "no disponible", así que el cliente recibe la misma respuesta que con el sistema caído (`503` o `502`). Una falla de una llamada que había salido antes de abrirse no alarga la apertura.
 - **SEMIABIERTO**: cumplido el tiempo, pasa **una** llamada de prueba (las demás se rechazan). Si sale bien, se cierra; si falla, se vuelve a abrir.
 
-**Qué cuenta como falla.** Sólo la excepción de "no disponible" del adaptador (conexión rechazada, timeout, 5xx, respuesta vacía o incompleta). Cualquier respuesta del sistema externo, incluso un rechazo de negocio (`DatosInvalidosException` por un fault SOAP `Client`, o un pago `RECHAZADO`), prueba que el sistema está vivo y reinicia la cuenta: no abre el circuito.
+Cada transición queda en el log: `ABIERTO` como `WARNING`, `SEMIABIERTO` y `CERRADO` como `INFO`. Umbral y tiempo se leen de propiedades de sistema en cada llamada, como las URL de los adaptadores, así que se cambian en caliente con jboss-cli: `mediconecta.<obrasocial|pasarela|video>.cb.umbral` y `.cb.abiertoMs`. Un valor inválido usa el valor por defecto. Cada adaptador es `@ApplicationScoped` y tiene un solo breaker para todos los pedidos; el estado cambia bajo el monitor del breaker, y la llamada protegida corre afuera, sin serializar los pedidos.
 
-**Alcance.** Un circuito por sistema externo (no por operación): `cobrar` y `reembolsar` comparten el de la pasarela; `validarCobertura`, `autorizarPrestacion` y `presentarReclamo` comparten el del legado. Umbral y tiempo se ajustan con propiedades de sistema: `mediconecta.<obrasocial|pasarela|video>.cb.umbral` y `.cb.abiertoMs`. Los cambios de estado quedan en el log (`ABIERTO`, `SEMIABIERTO`, `CERRADO`).
+**Qué cuenta como falla.** Sólo la excepción de "no disponible" del adaptador: conexión rechazada, timeout, 5xx, respuesta vacía o incompleta y, en la pasarela, `408` y `429`, que dicen "ahora no" y no "nunca". Cualquier otra respuesta del sistema externo prueba que está vivo y reinicia la cuenta: un fault SOAP `Client` (`DatosInvalidosException`, `400`), un `4xx` del video (`409`) o un pago `RECHAZADO` (`409`). Un `Error` de Java no prueba nada y cuenta como falla, así la llamada de prueba nunca queda trabada.
+
+**Alcance.** Un circuito por sistema externo (no por operación): `cobrar` y `reembolsar` comparten el de la pasarela; `validarCobertura`, `autorizarPrestacion` y `presentarReclamo` comparten el del legado. Con el circuito de la pasarela abierto, el reembolso de un cobro huérfano también falla al instante y el pago queda `COMPENSACION_PENDIENTE`, el camino de siempre cuando la pasarela no confirma.
 
 **Interacción con la DLQ de reclamos.** `presentarReclamo` también pasa por el circuito de la obra social. Con el circuito abierto, el intento falla al instante como "no disponible" y Artemis reentrega con su backoff (2 s, 4 s, 8 s, 16 s). Por eso el tiempo abierto por defecto (10 s) es menor que la ventana total de reintentos (~30 s): el circuito prueba el legado de nuevo dentro de esa ventana, y un reclamo no se agota sólo porque el circuito estaba abierto. Si se sube `cb.abiertoMs` por encima de ~30 s hay que revisarlo junto con `max-delivery-attempts`.
 
-### Demostración: si un sistema externo cae, el resto sigue
+#### Cobro incierto
 
-`bash deploy/demo-circuit-breaker.sh` (ver el encabezado del script para sus variables) simula la caída del proveedor de video en caliente y verificó, contra el WildFly 41 desplegado:
+Un cobro que salió hacia la pasarela y no tuvo respuesta (timeout de lectura, conexión cortada) tiene un resultado desconocido: la pasarela pudo haber cobrado. `PasarelaDePagoRestClient` lo distingue de un pedido que no salió (conexión rechazada, host desconocido, timeout de conexión) y lanza `CobroInciertoException`, una subclase de `PasarelaNoDisponibleException`: para el paciente sigue siendo `502` y para el breaker, una falla. `ServicioDePagos` deja el pago en el estado `INCIERTO`, en su propia transacción, y escribe un `WARNING` con el pago, el turno y el monto.
 
-| Escenario | Esperado | Observado |
-|---|---|---|
-| Confirmar un turno de telemedicina con el proveedor caído, 6 veces | `503` con `Retry-After` en todas | 6 de 6 |
-| Apertura del circuito | una sola vez, tras 3 fallas | una línea `ABIERTO por 10000 ms tras 3 falla(s)` en `server.log` |
-| Con el circuito abierto: confirmar un turno presencial, `GET /turnos/mios`, `GET /usuarios`, `GET /turnos` | `200` | `200` en los cuatro |
-| El turno de telemedicina que no se pudo confirmar | sigue `EN_HOLD`, se puede reintentar | `EN_HOLD` |
-| Vuelve el proveedor y pasan 10 s | la confirmación del mismo turno funciona | `200`; log: `SEMIABIERTO` y luego `CERRADO` |
+No se reembolsa solo porque no hay con qué: la pasarela no recibe una clave de idempotencia y, sin respuesta, no hay id de transacción. Tampoco se reutilizó `COMPENSACION_PENDIENTE`: ese estado dice que el cobro es seguro y se devuelve con `PUT /api/pagos/{id}/reembolso`, que sin id de transacción no puede funcionar. Un pago `INCIERTO` lo concilia un administrador con la pasarela; lo ve en `GET /api/pagos/{id}` y `GET /api/pagos?turnoId=…`. La solución completa (una clave de idempotencia por intento, que permita consultar o anular el cobro) queda como trabajo futuro.
+
+#### Demostración: si un sistema externo cae, el resto sigue
+
+`bash deploy/demo-circuit-breaker.sh` (ver el encabezado del script para sus variables) simula la caída del proveedor de video en caliente y comprueba:
+
+| Escenario | Esperado |
+|---|---|
+| Confirmar un turno de telemedicina con el proveedor caído, 6 veces | `503` con `Retry-After` en todas |
+| Apertura del circuito | una sola vez, tras 3 fallas: una línea `ABIERTO por 10000 ms tras 3 falla(s)` en `server.log` |
+| Con el circuito abierto: otro paciente reserva y confirma un turno presencial (con su copago); `GET /turnos/mios`, `GET /usuarios`, `GET /turnos` | `200` |
+| El turno de telemedicina que no se pudo confirmar | sigue `EN_HOLD`, se puede reintentar |
+| Vuelve el proveedor y pasan 10 s | la confirmación del mismo turno funciona (`200`; log: `SEMIABIERTO` y luego `CERRADO`) y el paciente paga una sola vez |
+
+La primera versión de la demo dio lo esperado en todos los casos contra el WildFly 41 desplegado. Al llevar el breaker a los adaptadores actuales se ajustó al flujo de hoy (el token de pago al confirmar y un hold vigente por paciente); su corrida queda para la verificación integral. `bash deploy/smoke-test.sh --resiliencia` suma el caso de la pasarela: tres confirmaciones con `caer_demo` dan `502`, la cuarta, con un token que aprueba, también da `502` porque el circuito no llama a la pasarela, y pasados 11 s la llamada de prueba confirma el turno.
 
 El aislamiento sale de tres decisiones: la falla se convierte en una excepción de negocio específica de cada integración (nunca un `500`), el circuito evita ocupar hilos esperando timeouts de un sistema caído, y la única operación que falla es la que necesita ese sistema (la confirmación de telemedicina falla entera, sección 9.4; las demás no lo llaman). Los reclamos, que sí dependen del legado, no fallan hacia el usuario: se reintentan y, agotados los intentos, quedan para revisión manual.
 
-Los tests de unidad (`CircuitBreakerTest`, y el caso del legado caído en `SistemaDeObraSocialSoapTest`) cubren las transiciones de estado y que, con el circuito abierto, no se arma ni un puerto SOAP.
-
-**Cambio de comportamiento:** `PasarelaNoDisponibleMapper` respondía `502`; ahora responde `503` con `Retry-After: 30`, igual que las otras dos integraciones, y `ObraSocialNoDisponibleMapper` suma el `Retry-After` que le faltaba.
+Los tests de unidad cubren las transiciones y su log, la configuración en caliente, la llamada de prueba única con varios hilos (`CircuitBreakerTest`), que con el circuito abierto no se arma un puerto SOAP (`SistemaDeObraSocialSoapTest`) ni se llama a la pasarela, `408`/`429` y el cobro incierto (`PasarelaDePagoRestClientTest`, `ServicioDePagosTest`), y que la pasarela caída sigue siendo `502` (`PasarelaNoDisponibleMapperTest`).
 
 ## 10. Verificación en ejecución
 
