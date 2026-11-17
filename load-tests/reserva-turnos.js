@@ -6,10 +6,10 @@
 //   3. PUT  /turnos/{id}/cancelar        soltar el hold (y su temporizador)
 //
 // Datos sin choques entre VUs: en setup() se crea un paciente por VU y el
-// profesional abre una franja por cada iteracion de cada VU. El VU n solo
-// reserva sus propias franjas, asi que un 409 es un error real y no dos VUs
-// peleando por el mismo turno. Los emails y los horarios llevan el id de la
-// corrida, asi que se puede correr varias veces contra la misma base.
+// profesional abre una franja por VU. El VU n solo reserva (y cancela) su
+// propia franja, asi que un 409 es un error real y no dos VUs peleando por el
+// mismo turno. Los emails llevan el id de la corrida y setup() saltea los
+// horarios ya ocupados, asi que se puede correr varias veces contra la misma base.
 //
 // Ver load-tests/README.md para como correrlo y que anotar.
 
@@ -49,6 +49,9 @@ export const options = {
     'http_req_duration{operacion:reservar}': ['p(95)<1000'],
     'http_req_duration{operacion:cancelar}': ['p(95)<800'],
     checks: ['rate>0.99'],
+    // Una submetrica por instancia (1, 2, ...): el resumen muestra cuantas
+    // requests del flujo atendio cada una, y falla si alguna no recibio ninguna.
+    ...Object.fromEntries(BASES.map((_, i) => [`http_reqs{instancia:${i + 1}}`, ['count>0']])),
   },
   summaryTrendStats: ['avg', 'min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max'],
 }
@@ -62,10 +65,11 @@ function basic(email, contrasena) {
 
 // X-Requested-With: como el frontend, para que un 401 no mande WWW-Authenticate
 // (SCRUM-103). Sin auth (registro, login) no se manda Authorization.
-function cabeceras(auth, operacion) {
+function cabeceras(auth, operacion, instancia) {
   const headers = { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
   if (auth) headers.Authorization = auth
-  return { headers, tags: { operacion } }
+  const tags = instancia ? { operacion, instancia } : { operacion }
+  return { headers, tags }
 }
 
 const dos = (n) => String(n).padStart(2, '0')
@@ -96,54 +100,67 @@ export function setup() {
     pacientes.push(basic(email, CONTRASENA_PACIENTES))
   }
 
-  // Una franja por iteracion de cada VU, cada una en un horario distinto. Arranca
-  // dentro de unos dias y usa los minutos de la corrida, asi dos corridas el
-  // mismo dia no abren franjas en los mismos horarios.
+  // Una franja por VU, que el VU reserva y cancela en cada iteracion: al
+  // cancelar el hold la franja vuelve a DISPONIBLE. Asi la agenda tiene VUS
+  // franjas sin importar ITERACIONES, y la respuesta de disponibilidad no crece
+  // con la duracion de la corrida. Arranca dentro de unos dias, un minuto por
+  // franja. Si el minuto ya tiene una franja (409 por SCRUM-125, por ejemplo de
+  // una corrida anterior contra la misma base), prueba el minuto siguiente.
   const inicio = new Date(corrida + 3 * 24 * 3600 * 1000)
   inicio.setSeconds(0, 0)
+  const abrirFranja = { ...cabeceras(authProfesional, 'setup'), responseCallback: http.expectedStatuses(201, 409) }
   const franjas = []
+  let minuto = 0
   for (let vu = 0; vu < VUS; vu++) {
-    const delVu = []
-    for (let i = 0; i < ITERACIONES; i++) {
-      const fecha = new Date(inicio.getTime() + (vu * ITERACIONES + i) * 60 * 1000)
-      const alta = http.post(`${base}/turnos/disponibilidad`,
+    let alta
+    do {
+      const fecha = new Date(inicio.getTime() + minuto++ * 60 * 1000)
+      alta = http.post(`${base}/turnos/disponibilidad`,
         JSON.stringify({ fechaHora: localDateTime(fecha), modalidad: 'PRESENCIAL', consultorio: 'Carga' }),
-        cabeceras(authProfesional, 'setup'))
-      if (alta.status !== 201) fail(`No se pudo abrir una franja: HTTP ${alta.status} ${alta.body}`)
-      delVu.push(alta.json('id'))
-    }
-    franjas.push(delVu)
+        abrirFranja)
+    } while (alta.status === 409)
+    if (alta.status !== 201) fail(`No se pudo abrir una franja: HTTP ${alta.status} ${alta.body}`)
+    franjas.push(alta.json('id'))
   }
 
-  console.log(`Corrida ${corrida}: ${VUS} pacientes, ${VUS * ITERACIONES} franjas, instancias: ${BASES.join(', ')}`)
+  console.log(`Corrida ${corrida}: ${VUS} pacientes, ${VUS} franjas, instancias: ${BASES.join(', ')}`)
   return { profesionalId, pacientes, franjas }
 }
 
 export default function (datos) {
   const vu = exec.vu.idInTest - 1 // 0-based
-  const iteracion = exec.vu.iterationInScenario
   const base = BASES[vu % BASES.length]
+  const instancia = String((vu % BASES.length) + 1)
   const auth = datos.pacientes[vu]
-  const turnoId = datos.franjas[vu][iteracion]
+  const turnoId = datos.franjas[vu]
   const comienzo = Date.now()
 
   group('reserva de un turno', () => {
     const disponibilidad = http.get(`${base}/turnos?profesionalId=${datos.profesionalId}`,
-      cabeceras(auth, 'disponibilidad'))
+      cabeceras(auth, 'disponibilidad', instancia))
     check(disponibilidad, {
       'disponibilidad 200': (r) => r.status === 200,
       'la franja del VU sigue disponible': (r) => r.status === 200 && r.json().some((t) => t.id === turnoId),
     })
 
-    const reserva = http.post(`${base}/turnos`, JSON.stringify({ turnoId }), cabeceras(auth, 'reservar'))
+    const reserva = http.post(`${base}/turnos`, JSON.stringify({ turnoId }), cabeceras(auth, 'reservar', instancia))
     const reservado = check(reserva, {
       'reservar 200': (r) => r.status === 200,
       'queda EN_HOLD': (r) => r.status === 200 && r.json('estado') === 'EN_HOLD',
     })
     if (!reservado) return
 
-    const cancelacion = http.put(`${base}/turnos/${turnoId}/cancelar`, null, cabeceras(auth, 'cancelar'))
+    const cancelacion = http.put(`${base}/turnos/${turnoId}/cancelar`, null, cabeceras(auth, 'cancelar', instancia))
     check(cancelacion, { 'cancelar 200': (r) => r.status === 200 })
+    // Si la cancelacion falla, se reintenta una vez. Con el hold tomado, cada
+    // reserva siguiente del VU daria 409 (un hold por paciente) hasta que el hold
+    // venza a los 5 minutos, y la corrida mediria esa cascada y no el sistema.
+    // El fallo original igual queda contado en checks y en http_req_failed.
+    if (cancelacion.status !== 200) {
+      const reintento = http.put(`${base}/turnos/${turnoId}/cancelar`, null,
+        cabeceras(auth, 'cancelar_reintento', instancia))
+      check(reintento, { 'cancelar (reintento) 200': (r) => r.status === 200 })
+    }
   })
 
   flujo.add(Date.now() - comienzo)
