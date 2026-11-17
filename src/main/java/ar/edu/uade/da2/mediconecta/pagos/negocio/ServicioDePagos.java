@@ -23,6 +23,7 @@ import jakarta.ejb.SessionContext;
 import jakarta.ejb.Stateless;
 import jakarta.ejb.TransactionAttribute;
 import jakarta.ejb.TransactionAttributeType;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 
 /**
@@ -68,6 +69,11 @@ public class ServicioDePagos implements ServicioDePagosLocal {
     @Inject
     private ServicioDeTurnos servicioDeTurnos;
 
+    // Aviso transaccional de que salio dinero: si la transaccion que cobro no
+    // se confirma, CompensacionDeCobro lo devuelve (ver cobrar).
+    @Inject
+    private Event<CobroAprobado> cobroAprobado;
+
     @PostConstruct
     public void inicializar() {
         LOGGER.info("ServicioDePagos: instancia creada por el contenedor.");
@@ -106,6 +112,14 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         // y el intento queda PENDIENTE a proposito.
         if (resultado.getEstado() == EstadoPago.RECHAZADO) {
             return pagoDAO.actualizarEnNuevaTransaccion(pago);
+        }
+        // Desde aca el dinero ya salio y esta actualizacion depende de que la
+        // transaccion se confirme. Si falla un paso posterior (la sala, el
+        // topico) o el commit, el rollback la deshace pero no a la pasarela:
+        // CompensacionDeCobro observa este evento AFTER_FAILURE y reembolsa.
+        if (resultado.getEstado() == EstadoPago.APROBADO) {
+            cobroAprobado.fire(new CobroAprobado(pago.getId(), pago.getTurnoId(),
+                    pago.getIdTransaccionExterna()));
         }
         return pagoDAO.actualizar(pago);
     }

@@ -52,6 +52,22 @@ public class PagoDAO {
         return em.merge(pago);
     }
 
+    /**
+     * Guarda el resultado de la compensación de un cobro huérfano
+     * (CompensacionDeCobro): REEMBOLSADO o COMPENSACION_PENDIENTE, con el id de
+     * transacción que la actualización revertida se llevó.
+     *
+     * REQUIRES_NEW porque corre después del rollback de la confirmación, sin
+     * transacción en curso. La fila existe: es el rastro PENDIENTE que
+     * guardarEnNuevaTransaccion dejó antes de cobrar.
+     */
+    @TransactionAttribute(TransactionAttributeType.REQUIRES_NEW)
+    public void registrarCompensacion(Long pagoId, EstadoPago estado, String idTransaccionExterna) {
+        Pago pago = em.find(Pago.class, pagoId);
+        pago.setEstado(estado);
+        pago.setIdTransaccionExterna(idTransaccionExterna);
+    }
+
     public Pago actualizar(Pago pago) {
         return em.merge(pago);
     }

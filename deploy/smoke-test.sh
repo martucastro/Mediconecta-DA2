@@ -348,8 +348,12 @@ if [ "$RESILIENCIA" = "si" ]; then
   cli "/system-property=$PROP_VIDEO:add(value=true)"
   comprobar "video caido: confirmar da 503"            503 "$(confirmar_con "$PACI" "$IDV" tok_visa_demo)"
   comprobar "el turno sigue EN_HOLD"                  "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | tr '{' '\n' | grep "\"id\":$IDV[,}]" | grep -q EN_HOLD && echo si || echo no)"
+  # El copago ya se habia cobrado cuando fallo la sala: CompensacionDeCobro lo
+  # devuelve despues del rollback, antes de que llegue el 503.
+  comprobar "el cobro huerfano se reembolsa"          "si" "$(curl -s -u "$PACI" "$BASE/pagos?turnoId=$IDV" | grep -q '"estado":"REEMBOLSADO"' && echo si || echo no)"
   cli "/system-property=$PROP_VIDEO:remove"
   comprobar "video de vuelta: se confirma y hay sala" 200 "$(confirmar_con "$PACI" "$IDV" tok_visa_demo)"
+  comprobar "el paciente paga una sola vez"           1 "$(curl -s -u "$PACI" "$BASE/pagos?turnoId=$IDV" | grep -o '"estado":"APROBADO"' | wc -l | tr -d ' ')"
 fi
 
 echo

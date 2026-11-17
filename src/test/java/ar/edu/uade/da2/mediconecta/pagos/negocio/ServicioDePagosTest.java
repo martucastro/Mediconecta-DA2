@@ -4,10 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Field;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
@@ -15,6 +18,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -30,6 +34,7 @@ import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 import jakarta.ejb.ApplicationException;
 import jakarta.ejb.SessionContext;
+import jakarta.enterprise.event.Event;
 
 /**
  * Reembolso del copago al cancelar un turno confirmado (SCRUM-124). El rollback
@@ -51,6 +56,8 @@ class ServicioDePagosTest {
     private ServicioDeUsuarios servicioDeUsuarios;
     @Mock
     private ServicioDeTurnos servicioDeTurnos;
+    @Mock
+    private Event<CobroAprobado> cobroAprobado;
 
     @InjectMocks
     private ServicioDePagos servicio;
@@ -72,6 +79,8 @@ class ServicioDePagosTest {
         verify(pagoDAO).guardarEnNuevaTransaccion(pago);
         verify(pagoDAO).actualizarEnNuevaTransaccion(pago);
         verify(pagoDAO, never()).actualizar(any());
+        // No salio dinero: no hay nada que compensar.
+        verify(cobroAprobado, never()).fire(any());
     }
 
     @Test
@@ -84,6 +93,54 @@ class ServicioDePagosTest {
         assertEquals(EstadoPago.APROBADO, servicio.cobrar(cobro("tok_visa_demo")).getEstado());
 
         verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
+        // Camino feliz: nada se reembolsa.
+        verify(pasarela, never()).reembolsar(any());
+    }
+
+    @Test
+    void unCobroAprobadoQuedaAnotadoParaCompensarSiLaConfirmacionFalla() {
+        comoElPacienteDelTurno();
+        conIdAlGuardar(21L);
+        when(pasarela.cobrar(any(), any(), any()))
+                .thenReturn(new ResultadoPasarela(EstadoPago.APROBADO, "tx-21"));
+        when(pagoDAO.actualizar(any())).thenAnswer(i -> i.getArgument(0));
+
+        servicio.cobrar(cobro("tok_visa_demo"));
+
+        // El evento es transaccional (CompensacionDeCobro observa
+        // AFTER_FAILURE): solo tiene efecto si la confirmacion no se confirma.
+        verify(cobroAprobado).fire(new CobroAprobado(21L, TURNO, "tx-21"));
+    }
+
+    @Test
+    void reintentarDespuesDeUnaConfirmacionCompensadaCobraUnaSolaVez() throws Exception {
+        comoElPacienteDelTurno();
+        conIdAlGuardar(31L, 32L);
+        when(pasarela.cobrar(any(), any(), any()))
+                .thenReturn(new ResultadoPasarela(EstadoPago.APROBADO, "tx-31"))
+                .thenReturn(new ResultadoPasarela(EstadoPago.APROBADO, "tx-32"));
+        when(pagoDAO.actualizar(any())).thenAnswer(i -> i.getArgument(0));
+        when(pasarela.reembolsar("tx-31"))
+                .thenReturn(new ResultadoPasarela(EstadoPago.REEMBOLSADO, "tx-31"));
+        CompensacionDeCobro compensacion = new CompensacionDeCobro();
+        inyectar(compensacion, "pasarela", pasarela);
+        inyectar(compensacion, "pagoDAO", pagoDAO);
+
+        // 1. Se cobra y la confirmacion falla despues (por ejemplo, la sala):
+        //    el contenedor revierte y dispara la compensacion.
+        servicio.cobrar(cobro("tok_visa_demo"));
+        ArgumentCaptor<CobroAprobado> evento = ArgumentCaptor.forClass(CobroAprobado.class);
+        verify(cobroAprobado).fire(evento.capture());
+        compensacion.alFallarLaTransaccion(evento.getValue());
+        // 2. El paciente reintenta y esta vez la confirmacion sale bien.
+        Pago segundo = servicio.cobrar(cobro("tok_visa_demo"));
+
+        // Dos cobros en la pasarela y uno devuelto: el paciente paga una vez.
+        verify(pasarela, times(2)).cobrar(any(), any(), any());
+        verify(pagoDAO).registrarCompensacion(31L, EstadoPago.REEMBOLSADO, "tx-31");
+        verify(pasarela, never()).reembolsar("tx-32");
+        assertEquals(EstadoPago.APROBADO, segundo.getEstado());
+        assertEquals("tx-32", segundo.getIdTransaccionExterna());
     }
 
     @Test
@@ -181,6 +238,22 @@ class ServicioDePagosTest {
         when(servicioDeTurnos.obtenerTurno(TURNO)).thenReturn(turno);
         when(contexto.getCallerPrincipal()).thenReturn(principal);
         when(servicioDeUsuarios.obtenerPorEmail(paciente.getEmail())).thenReturn(paciente);
+    }
+
+    private static void inyectar(Object destino, String campo, Object valor) throws Exception {
+        Field field = destino.getClass().getDeclaredField(campo);
+        field.setAccessible(true);
+        field.set(destino, valor);
+    }
+
+    // IDENTITY asigna el id al persistir: el mock lo simula, uno por cobro.
+    private void conIdAlGuardar(Long... ids) {
+        int[] siguiente = {0};
+        doAnswer(i -> {
+            Pago pago = i.getArgument(0);
+            pago.setId(ids[siguiente[0]++]);
+            return pago;
+        }).when(pagoDAO).guardarEnNuevaTransaccion(any());
     }
 
     private static CobroDTO cobro(String token) {
