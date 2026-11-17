@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "e1a2b3c4-mediconecta-demo-0001",
     "name": "MediConecta - Demo Entrega Obligatoria N1",
-    "description": "Secuencia de demo verificada contra el codigo (UsuariosResource/ServicioDeUsuarios, TurnosResource/ServicioDeTurnos, HistoriaClinicaResource/ServicioDeHistoriaClinica). Correr las carpetas en orden 00 -> 01 -> 02 -> 03, y despues de ~5 minutos sin confirmar el turno del paso 02, correr 04 para ver la liberacion automatica del hold.",
+    "description": "Secuencia de demo verificada contra el codigo (UsuariosResource/ServicioDeUsuarios, TurnosResource/ServicioDeTurnos, HistoriaClinicaResource/ServicioDeHistoriaClinica). Correr las carpetas en orden 00 -> 01 -> 02 -> 03, y despues de ~5 minutos sin confirmar el turno del paso 02, correr 04 para ver la liberacion automatica del hold. Un paciente solo puede tener un hold vigente (SCRUM-132): las carpetas 05, 07 y 08 reservan como PACIENTE_A, asi que van despues de la 04 o de confirmar el turno de la 02; la 02b usa a PACIENTE_B y se puede correr en cualquier momento.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -912,7 +912,8 @@
       ]
     },
     {
-      "name": "02b - Camino feliz opcional (segundo turno, no interfiere con el cierre)",
+      "name": "02b - Camino feliz opcional (segundo turno, de PACIENTE_B)",
+      "description": "Un paciente solo puede tener un hold vigente (SCRUM-132): si PACIENTE_A dejo el turno de la carpeta 02 sin confirmar para mostrar el cierre de la 04, un segundo hold suyo responde 409. Por eso este turno lo reserva y confirma PACIENTE_B (registrado en 00 - Setup). Sin obra social registrada, se reserva como particular y paga el arancel completo de la teleconsulta.",
       "item": [
         {
           "name": "Abrir disponibilidad de TELEMEDICINA (turno B)",
@@ -966,8 +967,8 @@
             "auth": {
               "type": "basic",
               "basic": [
-                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
-                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+                { "key": "username", "value": "{{pacienteB_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteB_password}}", "type": "string" }
               ]
             },
             "body": {
@@ -1008,8 +1009,8 @@
             "auth": {
               "type": "basic",
               "basic": [
-                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
-                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+                { "key": "username", "value": "{{pacienteB_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteB_password}}", "type": "string" }
               ]
             },
             "url": {
