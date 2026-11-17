@@ -17,7 +17,7 @@ import java.util.logging.Logger;
  * Funcionamiento:
  * - CERRADO: las llamadas pasan. Se cuentan las fallas consecutivas; cualquier
  *   respuesta del sistema externo (aunque sea un rechazo de negocio) las reinicia.
- * - ABIERTO: al llegar al umbral, durante tiempoAbiertoMs las llamadas ni
+ * - ABIERTO: al llegar al umbral, durante el tiempo de apertura las llamadas ni
  *   siquiera salen: falla rapido con la excepcion que arma el llamador (la misma
  *   "no disponible" de siempre, asi que los mappers 503/502 no cambian).
  * - SEMIABIERTO: vencido ese tiempo, pasa UNA llamada de prueba; si sale bien
@@ -25,6 +25,16 @@ import java.util.logging.Logger;
  *
  * Solo cuentan como falla las excepciones del tipo indicado (las de
  * "no disponible"); un DatosInvalidosException, por ejemplo, no abre el circuito.
+ * Un Error tampoco prueba que el sistema este vivo, asi que cuenta como falla.
+ *
+ * Umbral y tiempo de apertura se leen de propiedades de sistema en cada llamada
+ * (prefijo + ".cb.umbral" y prefijo + ".cb.abiertoMs"), como las URL de los
+ * adaptadores: se cambian en caliente con jboss-cli. Un valor invalido usa el
+ * valor por defecto.
+ *
+ * Es thread-safe: cada adaptador es @ApplicationScoped y comparte su breaker
+ * entre todos los pedidos. El estado se lee y se cambia bajo el monitor de la
+ * instancia; la llamada protegida corre afuera, para no serializarlas.
  */
 public class CircuitBreaker {
 
@@ -33,35 +43,35 @@ public class CircuitBreaker {
     private static final Logger LOGGER = Logger.getLogger(CircuitBreaker.class.getName());
 
     private final String nombre;
-    private final int umbralDeFallas;
-    private final long tiempoAbiertoMs;
+    private final String prefijoPropiedad;
+    private final int umbralPorDefecto;
+    private final long abiertoMsPorDefecto;
     private final LongSupplier relojMs;
 
+    // Protegidos por el monitor de la instancia.
     private Estado estado = Estado.CERRADO;
     private int fallasConsecutivas;
     private long abiertoDesdeMs;
     private boolean pruebaEnCurso;
 
-    public CircuitBreaker(String nombre, int umbralDeFallas, long tiempoAbiertoMs) {
-        this(nombre, umbralDeFallas, tiempoAbiertoMs, System::currentTimeMillis);
-    }
-
-    CircuitBreaker(String nombre, int umbralDeFallas, long tiempoAbiertoMs, LongSupplier relojMs) {
+    CircuitBreaker(String nombre, String prefijoPropiedad, int umbralPorDefecto,
+            long abiertoMsPorDefecto, LongSupplier relojMs) {
         this.nombre = nombre;
-        this.umbralDeFallas = umbralDeFallas;
-        this.tiempoAbiertoMs = tiempoAbiertoMs;
+        this.prefijoPropiedad = prefijoPropiedad;
+        this.umbralPorDefecto = umbralPorDefecto;
+        this.abiertoMsPorDefecto = abiertoMsPorDefecto;
         this.relojMs = relojMs;
     }
 
     /**
-     * Crea el breaker leyendo umbral y tiempo abierto de propiedades de sistema
-     * (prefijo + ".cb.umbral" y prefijo + ".cb.abiertoMs"), con valores por defecto.
+     * Crea el breaker de un sistema externo. Umbral y tiempo abierto salen de
+     * las propiedades prefijo + ".cb.umbral" y prefijo + ".cb.abiertoMs", con
+     * estos valores por defecto.
      */
     public static CircuitBreaker deConfiguracion(String nombre, String prefijoPropiedad,
             int umbralPorDefecto, long abiertoMsPorDefecto) {
-        return new CircuitBreaker(nombre,
-                (int) numero(prefijoPropiedad + ".cb.umbral", umbralPorDefecto),
-                numero(prefijoPropiedad + ".cb.abiertoMs", abiertoMsPorDefecto));
+        return new CircuitBreaker(nombre, prefijoPropiedad, umbralPorDefecto, abiertoMsPorDefecto,
+                System::currentTimeMillis);
     }
 
     /**
@@ -73,18 +83,17 @@ public class CircuitBreaker {
     public <T> T ejecutar(Supplier<T> llamada, Class<? extends RuntimeException> falla,
             Supplier<? extends RuntimeException> rechazo) {
         autorizar(rechazo);
+        boolean fallo = true;
         try {
             T resultado = llamada.get();
-            registrarExito();
+            fallo = false;
             return resultado;
         } catch (RuntimeException e) {
-            if (falla.isInstance(e)) {
-                registrarFalla();
-            } else {
-                // El sistema externo contesto (por ejemplo, rechazando el pedido): esta vivo.
-                registrarExito();
-            }
+            // Otra excepcion (por ejemplo, un rechazo de negocio) es una respuesta: el sistema esta vivo.
+            fallo = falla.isInstance(e);
             throw e;
+        } finally {
+            registrar(fallo);
         }
     }
 
@@ -94,7 +103,7 @@ public class CircuitBreaker {
 
     private synchronized void autorizar(Supplier<? extends RuntimeException> rechazo) {
         if (estado == Estado.ABIERTO) {
-            if (relojMs.getAsLong() - abiertoDesdeMs < tiempoAbiertoMs) {
+            if (relojMs.getAsLong() - abiertoDesdeMs < abiertoMs()) {
                 throw rechazo.get();
             }
             estado = Estado.SEMIABIERTO;
@@ -109,32 +118,52 @@ public class CircuitBreaker {
         }
     }
 
-    private synchronized void registrarExito() {
-        if (estado != Estado.CERRADO) {
-            LOGGER.info(() -> "Circuit breaker '" + nombre + "': CERRADO, el sistema externo volvio.");
+    private synchronized void registrar(boolean fallo) {
+        if (!fallo) {
+            if (estado != Estado.CERRADO) {
+                LOGGER.info(() -> "Circuit breaker '" + nombre + "': CERRADO, el sistema externo volvio.");
+            }
+            estado = Estado.CERRADO;
+            fallasConsecutivas = 0;
+            pruebaEnCurso = false;
+            return;
         }
-        estado = Estado.CERRADO;
-        fallasConsecutivas = 0;
-        pruebaEnCurso = false;
-    }
-
-    private synchronized void registrarFalla() {
         fallasConsecutivas++;
-        if (estado == Estado.SEMIABIERTO || fallasConsecutivas >= umbralDeFallas) {
+        // Ya abierto: es una llamada que salio antes de abrirse. No alarga la apertura.
+        if (estado == Estado.SEMIABIERTO
+                || (estado == Estado.CERRADO && fallasConsecutivas >= umbral())) {
             estado = Estado.ABIERTO;
             abiertoDesdeMs = relojMs.getAsLong();
             pruebaEnCurso = false;
-            LOGGER.warning(() -> "Circuit breaker '" + nombre + "': ABIERTO por " + tiempoAbiertoMs
-                    + " ms tras " + fallasConsecutivas + " falla(s) consecutiva(s).");
+            long abiertoMs = abiertoMs();
+            int fallas = fallasConsecutivas;
+            LOGGER.warning(() -> "Circuit breaker '" + nombre + "': ABIERTO por " + abiertoMs
+                    + " ms tras " + fallas + " falla(s) consecutiva(s).");
         }
     }
 
-    private static long numero(String propiedad, long porDefecto) {
-        try {
-            String valor = System.getProperty(propiedad);
-            return valor == null || valor.isBlank() ? porDefecto : Long.parseLong(valor.trim());
-        } catch (NumberFormatException e) {
+    private int umbral() {
+        return (int) numero(prefijoPropiedad + ".cb.umbral", umbralPorDefecto, 1);
+    }
+
+    private long abiertoMs() {
+        return numero(prefijoPropiedad + ".cb.abiertoMs", abiertoMsPorDefecto, 0);
+    }
+
+    private static long numero(String propiedad, long porDefecto, long minimo) {
+        String valor = System.getProperty(propiedad);
+        if (valor == null || valor.isBlank()) {
             return porDefecto;
         }
+        try {
+            long numero = Long.parseLong(valor.trim());
+            if (numero >= minimo && numero <= Integer.MAX_VALUE) {
+                return numero;
+            }
+        } catch (NumberFormatException e) {
+            // cae al aviso de abajo
+        }
+        LOGGER.warning(() -> "Valor invalido para " + propiedad + ": '" + valor + "'. Se usa " + porDefecto + ".");
+        return porDefecto;
     }
 }
