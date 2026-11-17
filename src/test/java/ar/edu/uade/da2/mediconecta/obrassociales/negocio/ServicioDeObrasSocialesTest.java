@@ -31,6 +31,7 @@ import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDAO;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDePrestacion;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 
 /**
  * La fachada del Adapter, sin contenedor ni legado: el port SistemaDeObraSocial
@@ -51,7 +52,7 @@ class ServicioDeObrasSocialesTest {
     @Mock
     private AutorizacionDAO autorizacionDAO;
     @Mock
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     @InjectMocks
     private ServicioDeObrasSociales servicio;

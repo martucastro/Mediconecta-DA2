@@ -3,7 +3,7 @@ package ar.edu.uade.da2.mediconecta.facturacion.presentacion;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import ar.edu.uade.da2.mediconecta.facturacion.negocio.ServicioDeFacturacion;
+import ar.edu.uade.da2.mediconecta.facturacion.negocio.ServicioDeFacturacionLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
 import jakarta.annotation.security.PermitAll;
@@ -52,7 +52,7 @@ public class TurnoConfirmadoFacturacionMDB implements MessageListener {
     private static final Logger LOG = Logger.getLogger(TurnoConfirmadoFacturacionMDB.class.getName());
 
     @Inject
-    private ServicioDeFacturacion servicio;
+    private ServicioDeFacturacionLocal servicio;
 
     @Override
     public void onMessage(Message mensaje) {

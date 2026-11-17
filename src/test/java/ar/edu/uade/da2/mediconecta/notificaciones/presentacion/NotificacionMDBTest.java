@@ -7,7 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import ar.edu.uade.da2.mediconecta.notificaciones.negocio.ServicioDeNotificaciones;
+import ar.edu.uade.da2.mediconecta.notificaciones.negocio.ServicioDeNotificacionesLocal;
 
 import jakarta.jms.MapMessage;
 import jakarta.jms.MessageFormatException;
@@ -27,7 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class NotificacionMDBTest {
 
     @Mock
-    private ServicioDeNotificaciones servicio;
+    private ServicioDeNotificacionesLocal servicio;
 
     @InjectMocks
     private NotificacionMDB mdb;

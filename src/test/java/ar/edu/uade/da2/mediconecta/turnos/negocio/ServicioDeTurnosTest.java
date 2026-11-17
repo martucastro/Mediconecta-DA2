@@ -35,16 +35,17 @@ import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Cobertura;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.CoberturaEnLaReserva;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
 import ar.edu.uade.da2.mediconecta.obrassociales.negocio.Prestacion;
-import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSociales;
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ServicioDeObrasSocialesLocal;
 import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ProveedorDeVideoNoDisponibleException;
 import ar.edu.uade.da2.mediconecta.telemedicina.negocio.SalaAlConfirmar;
-import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ServicioDeTelemedicina;
+import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ServicioDeTelemedicinaLocal;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.EJBAccessException;
 import jakarta.ejb.SessionContext;
@@ -73,7 +74,7 @@ class ServicioDeTurnosTest {
     @Mock
     private ExpiradorDeHolds expirador;
     @Mock
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
     @Mock
     private JMSContext jmsContext;
     @Mock
@@ -245,7 +246,7 @@ class ServicioDeTurnosTest {
     void reservarConElObservadorDeCoberturaDejaElCopagoEnElTurnoRetenido() throws Exception {
         Turno turno = turnoDisponible(12L);
         prepararReserva(turno);
-        ServicioDeObrasSociales obrasSociales = mock(ServicioDeObrasSociales.class);
+        ServicioDeObrasSocialesLocal obrasSociales = mock(ServicioDeObrasSocialesLocal.class);
         when(obrasSociales.cotizarReserva(paciente.getId(), Prestacion.CONSULTA)).thenReturn(
                 new Cobertura(true, 70, new BigDecimal("6000.00"), "AUT-OS-2002-CONSULTA", "ok"));
         eventoReserva.observadoPor(observadorDeCobertura(obrasSociales)::alReservar);
@@ -262,7 +263,7 @@ class ServicioDeTurnosTest {
     void conElLegadoCaidoLaReservaFallaEnteraYElTurnoSigueDisponible() throws Exception {
         Turno turno = turnoDisponible(13L);
         prepararReserva(turno);
-        ServicioDeObrasSociales obrasSociales = mock(ServicioDeObrasSociales.class);
+        ServicioDeObrasSocialesLocal obrasSociales = mock(ServicioDeObrasSocialesLocal.class);
         when(obrasSociales.cotizarReserva(paciente.getId(), Prestacion.CONSULTA))
                 .thenThrow(new ObraSocialNoDisponibleException("no respondió"));
         eventoReserva.observadoPor(observadorDeCobertura(obrasSociales)::alReservar);
@@ -401,7 +402,7 @@ class ServicioDeTurnosTest {
     void confirmarUnTurnoDeTelemedicinaCreaLaSalaAntesDeConfirmar() throws Exception {
         Turno turno = turnoEnHold(60L, ModalidadTurno.TELEMEDICINA);
         prepararConfirmacion(turno);
-        ServicioDeTelemedicina telemedicina = mock(ServicioDeTelemedicina.class);
+        ServicioDeTelemedicinaLocal telemedicina = mock(ServicioDeTelemedicinaLocal.class);
         List<EstadoTurno> estadoAlCrearLaSala = new ArrayList<>();
         when(telemedicina.crearSesion(60L)).thenAnswer(invocacion -> {
             estadoAlCrearLaSala.add(turno.getEstado());
@@ -421,7 +422,7 @@ class ServicioDeTurnosTest {
     void confirmarUnTurnoPresencialNoCreaSalaNiLlamaAlProveedor() throws Exception {
         Turno turno = turnoEnHold(61L, ModalidadTurno.PRESENCIAL);
         prepararConfirmacion(turno);
-        ServicioDeTelemedicina telemedicina = mock(ServicioDeTelemedicina.class);
+        ServicioDeTelemedicinaLocal telemedicina = mock(ServicioDeTelemedicinaLocal.class);
         eventoConfirmacion.observadoPor(observadorDeSala(telemedicina)::alConfirmar);
 
         Turno confirmado = servicio.confirmarTurno(61L);
@@ -436,7 +437,7 @@ class ServicioDeTurnosTest {
         autenticadoComo(paciente);
         when(turnoDAO.buscarParaActualizar(62L)).thenReturn(turno);
         when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
-        ServicioDeTelemedicina telemedicina = mock(ServicioDeTelemedicina.class);
+        ServicioDeTelemedicinaLocal telemedicina = mock(ServicioDeTelemedicinaLocal.class);
         when(telemedicina.crearSesion(62L))
                 .thenThrow(new ProveedorDeVideoNoDisponibleException("timeout"));
         eventoConfirmacion.observadoPor(observadorDeSala(telemedicina)::alConfirmar);
@@ -662,14 +663,14 @@ class ServicioDeTurnosTest {
         return usuario;
     }
 
-    private static CoberturaEnLaReserva observadorDeCobertura(ServicioDeObrasSociales obrasSociales)
+    private static CoberturaEnLaReserva observadorDeCobertura(ServicioDeObrasSocialesLocal obrasSociales)
             throws Exception {
         CoberturaEnLaReserva observador = new CoberturaEnLaReserva();
         inyectar(observador, "obrasSociales", obrasSociales);
         return observador;
     }
 
-    private static SalaAlConfirmar observadorDeSala(ServicioDeTelemedicina telemedicina)
+    private static SalaAlConfirmar observadorDeSala(ServicioDeTelemedicinaLocal telemedicina)
             throws Exception {
         SalaAlConfirmar observador = new SalaAlConfirmar();
         inyectar(observador, "servicioDeTelemedicina", telemedicina);

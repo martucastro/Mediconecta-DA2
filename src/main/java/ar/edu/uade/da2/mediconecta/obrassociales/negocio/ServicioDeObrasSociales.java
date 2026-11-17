@@ -9,7 +9,7 @@ import ar.edu.uade.da2.mediconecta.obrassociales.datos.AfiliacionDePaciente;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDAO;
 import ar.edu.uade.da2.mediconecta.obrassociales.datos.AutorizacionDePrestacion;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
-import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.Stateless;
@@ -32,7 +32,7 @@ import jakarta.inject.Inject;
  */
 @PermitAll
 @Stateless
-public class ServicioDeObrasSociales {
+public class ServicioDeObrasSociales implements ServicioDeObrasSocialesLocal {
 
     private static final Logger LOGGER = Logger.getLogger(ServicioDeObrasSociales.class.getName());
 
@@ -49,7 +49,7 @@ public class ServicioDeObrasSociales {
 
     // Dependencia hacia otro componente, siempre a través de su fachada.
     @Inject
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     /**
      * Consulta la cobertura sin comprometer nada: no pide autorización ni
