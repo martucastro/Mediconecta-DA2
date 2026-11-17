@@ -1,4 +1,9 @@
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap");
+/* Las fuentes viajan dentro del WAR (SCRUM-134): sin internet la app se ve
+   igual. Son las mismas familias que se pedian a Google Fonts, en su version
+   variable: Newsreader con el eje de tamano optico (opsz) e Instrument Sans
+   con el de peso. */
+@import "@fontsource-variable/newsreader/opsz.css";
+@import "@fontsource-variable/instrument-sans/wght.css";
 
 :root {
   --ground: #fbfaf8;
@@ -11,8 +16,8 @@
   --success: #2f6b45;
   --accent: #b4461a;
   --accent-soft: #fbede6;
-  --serif: "Newsreader", Georgia, serif;
-  --sans: "Instrument Sans", system-ui, sans-serif;
+  --serif: "Newsreader Variable", Georgia, serif;
+  --sans: "Instrument Sans Variable", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; }
