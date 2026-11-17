@@ -55,7 +55,7 @@ export default function HistoriaPage() {
   return (
     <>
       <header className="topbar">
-        <Link className="wordmark" to={rutaInicial(sesion.rol) ?? '/'}>
+        <Link className="wordmark" to={rutaInicial(sesion.rol)}>
           <img src={ASSETS.logo} alt="" />
           MediConecta
         </Link>

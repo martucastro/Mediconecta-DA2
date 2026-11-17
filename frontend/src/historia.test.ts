@@ -107,4 +107,10 @@ describe('pacienteDeLaPagina', () => {
     expect(pacienteDeLaPagina('PROFESIONAL', 2, '-1')).toBeNull()
     expect(pacienteDeLaPagina('PROFESIONAL', 2, '0')).toBeNull()
   })
+
+  it('el paciente con un id malformado en la URL ve la suya, no el aviso para profesionales', () => {
+    expect(pacienteDeLaPagina('PACIENTE', 3, 'abc')).toBe(3)
+    expect(pacienteDeLaPagina('PACIENTE', 3, '0')).toBe(3)
+    expect(pacienteDeLaPagina('PACIENTE', 3, '')).toBe(3)
+  })
 })

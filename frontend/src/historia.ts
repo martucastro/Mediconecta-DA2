@@ -43,14 +43,15 @@ export const ETIQUETAS: Record<TipoEntrada, string> = {
 }
 
 /**
- * De que paciente es la historia que se muestra. El paciente ve la suya; si
- * la URL pide otra, se pide igual y el backend responde 403 (la regla vive en
- * ServicioDeHistoriaClinica, no se duplica aca). El profesional necesita que
- * la URL diga cual: llega desde su agenda.
+ * De que paciente es la historia que se muestra. El paciente ve la suya, aun
+ * con un id ilegible en la URL; si la URL pide otra valida, se pide igual y el
+ * backend responde 403 (la regla vive en ServicioDeHistoriaClinica, no se
+ * duplica aca). El profesional necesita que la URL diga cual: llega desde su
+ * agenda.
  */
 export function pacienteDeLaPagina(rol: Rol, idDeLaSesion: number, pedido: string | null): number | null {
-  if (pedido === null) return rol === 'PACIENTE' ? idDeLaSesion : null
-  return /^[1-9]\d*$/.test(pedido) ? Number(pedido) : null
+  if (pedido !== null && /^[1-9]\d*$/.test(pedido)) return Number(pedido)
+  return rol === 'PACIENTE' ? idDeLaSesion : null
 }
 
 /**
