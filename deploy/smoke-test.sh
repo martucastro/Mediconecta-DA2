@@ -11,9 +11,13 @@
 
 set -u
 BASE="${BASE:-http://127.0.0.1:8080/mediconecta/api}"
-ADMIN="admin@mediconecta.com:cambiar123"
-PROF="profesional@mediconecta.com:cambiar123"
-PACI="paciente@mediconecta.com:cambiar123"
+# Mismas variables que lee el seed de usuarios en el primer arranque (README, paso 3).
+ADMIN="admin@mediconecta.com:${MEDICONECTA_ADMIN_PASSWORD:-cambiar123}"
+PROF="profesional@mediconecta.com:${MEDICONECTA_PROFESIONAL_PASSWORD:-cambiar123}"
+PACI="paciente@mediconecta.com:${MEDICONECTA_PACIENTE_PASSWORD:-cambiar123}"
+# Confirmar cobra el copago (SCRUM-93) y el cuerpo es JSON. La pasarela simulada
+# aprueba cualquier token salvo los que empiezan con "rechazar" o "caer".
+PAGO=(-H "Content-Type: application/json" -d '{"tokenMedioDePago":"tok_visa_demo"}')
 
 ok=0; fallos=0
 
@@ -35,6 +39,31 @@ comprobar "credencial incorrecta"             401 "$(codigo -u "admin@mediconect
 comprobar "admin lista usuarios"              200 "$(codigo -u "$ADMIN" "$BASE/usuarios")"
 comprobar "paciente NO lista usuarios"        403 "$(codigo -u "$PACI" "$BASE/usuarios")"
 comprobar "profesional NO lista usuarios"     403 "$(codigo -u "$PROF" "$BASE/usuarios")"
+
+
+echo
+echo "Consulta de usuario por id (SCRUM-102)"
+# Los ids dependen de la base de cada uno: se piden al listado del administrador.
+LISTA=$(curl -s -u "$ADMIN" "$BASE/usuarios")
+id_de() { printf '%s' "$LISTA" | grep -o "\"email\":\"$1\",\"id\":[0-9]*" | grep -o '[0-9]*$'; }
+ID_ADMIN=$(id_de "${ADMIN%%:*}")
+ID_PACI=$(id_de "${PACI%%:*}")
+comprobar "se resolvieron los ids de admin y paciente" "si" "$([ -n "$ID_ADMIN" ] && [ -n "$ID_PACI" ] && echo si || echo no)"
+comprobar "anonimo NO consulta un usuario"            401 "$(codigo "$BASE/usuarios/$ID_PACI")"
+comprobar "credencial incorrecta NO consulta"         401 "$(codigo -u "${PACI%%:*}:mal" "$BASE/usuarios/$ID_PACI")"
+comprobar "paciente consulta su propio usuario"       200 "$(codigo -u "$PACI" "$BASE/usuarios/$ID_PACI")"
+comprobar "paciente NO consulta a otro usuario"       403 "$(codigo -u "$PACI" "$BASE/usuarios/$ID_ADMIN")"
+comprobar "profesional NO consulta a un paciente"     403 "$(codigo -u "$PROF" "$BASE/usuarios/$ID_PACI")"
+comprobar "admin consulta a cualquier usuario"        200 "$(codigo -u "$ADMIN" "$BASE/usuarios/$ID_PACI")"
+comprobar "admin con un id inexistente"               404 "$(codigo -u "$ADMIN" "$BASE/usuarios/999999999")"
+comprobar "paciente con id inexistente tambien 403"   403 "$(codigo -u "$PACI" "$BASE/usuarios/999999999")"
+comprobar "profesionales sigue siendo publico"        200 "$(codigo "$BASE/usuarios/profesionales")"
+comprobar "el login sigue siendo publico"             200 "$(codigo -H "Content-Type: application/json" \
+                                                             -d "{\"email\":\"${PACI%%:*}\",\"contrasena\":\"${PACI#*:}\"}" \
+                                                             "$BASE/usuarios/login")"
+comprobar "el registro sigue siendo publico"          201 "$(codigo -H "Content-Type: application/json" \
+                                                             -d "{\"nombre\":\"Registro publico\",\"email\":\"smoke-reg-$(date +%s)@mediconecta.com\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
+                                                             "$BASE/usuarios")"
 
 echo
 echo "Turnos"
@@ -65,8 +94,12 @@ ID_TELE=$(printf '%s' "$TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 RESERVA_TELE=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID_TELE}" "$BASE/turnos")
 comprobar "telemedicina se cotiza como teleconsulta" "si" "$(printf '%s' "$RESERVA_TELE" | grep -q '"copago":4500.00' && echo si || echo no)"
 comprobar "cancelar libera el turno de telemedicina" 200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID_TELE/cancelar")"
-comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "$BASE/turnos/$ID/confirmar")"
-comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID/confirmar")"
+comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "${PAGO[@]}" "$BASE/turnos/$ID/confirmar")"
+# Copago rechazado: la transaccion de confirmarTurno se revierte entera.
+comprobar "copago con tarjeta rechazada"      409 "$(codigo -u "$PACI" -X PUT -H "Content-Type: application/json" \
+                                                     -d '{"tokenMedioDePago":"rechazar_demo"}' "$BASE/turnos/$ID/confirmar")"
+comprobar "el rechazo deja el turno EN_HOLD"  "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | tr '{' '\n' | grep "\"id\":$ID[,}]" | grep -q EN_HOLD && echo si || echo no)"
+comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "${PAGO[@]}" "$BASE/turnos/$ID/confirmar")"
 comprobar "anonimo NO ve notificaciones"      401 "$(codigo "$BASE/notificaciones/mias")"
 comprobar "profesional NO ve notificaciones"  403 "$(codigo -u "$PROF" "$BASE/notificaciones/mias")"
 # La notificacion la crea un consumidor JMS: llega un instante despues de confirmar.
@@ -129,7 +162,7 @@ CONF_TELE=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
 IDC=$(printf '%s' "$CONF_TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 curl -s -o /dev/null -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$IDC}" "$BASE/turnos"
 comprobar "reservar NO crea la sala"          404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$IDC")"
-comprobar "confirmar telemedicina"            200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$IDC/confirmar")"
+comprobar "confirmar telemedicina"            200 "$(codigo -u "$PACI" -X PUT "${PAGO[@]}" "$BASE/turnos/$IDC/confirmar")"
 comprobar "al confirmar el paciente tiene enlace" "si" "$(curl -s -u "$PACI" "$BASE/telemedicina/turno/$IDC" | grep -q '"rol":"PACIENTE"' && echo si || echo no)"
 comprobar "al confirmar el profesional tiene enlace" "si" "$(curl -s -u "$PROF" "$BASE/telemedicina/turno/$IDC" | grep -q '"rol":"PROFESIONAL"' && echo si || echo no)"
 comprobar "confirmar un presencial no crea sala" 404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$ID")"

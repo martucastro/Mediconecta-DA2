@@ -44,6 +44,10 @@ public class ServicioDePagos implements ServicioDePagosLocal {
 
     private static final int MAX_MONEDA = 3;
 
+    // Un token real de la pasarela mide decenas de caracteres. Sin tope, uno de
+    // 200 KB se aceptaba y se mandaba a cobrar.
+    private static final int MAX_TOKEN = 255;
+
     @Inject
     private PagoDAO pagoDAO;
 
@@ -95,6 +99,14 @@ public class ServicioDePagos implements ServicioDePagosLocal {
 
         pago.setEstado(resultado.getEstado());
         pago.setIdTransaccionExterna(resultado.getIdTransaccionExterna());
+        // Un rechazo es un resultado conocido, pero CobroAlConfirmar lo
+        // convierte en 409 y la confirmacion se revierte: con actualizar() el
+        // intento quedaba PENDIENTE para siempre. Se guarda aparte. Si la
+        // pasarela no respondio (excepcion arriba), el resultado es desconocido
+        // y el intento queda PENDIENTE a proposito.
+        if (resultado.getEstado() == EstadoPago.RECHAZADO) {
+            return pagoDAO.actualizarEnNuevaTransaccion(pago);
+        }
         return pagoDAO.actualizar(pago);
     }
 
@@ -139,6 +151,39 @@ public class ServicioDePagos implements ServicioDePagosLocal {
                             + " está en estado " + pago.getEstado() + ".");
         }
 
+        return reembolsarEnPasarela(pago);
+    }
+
+    /**
+     * Devuelve el copago cobrado de un turno que el paciente cancela (SCRUM-124).
+     * Solo lo llama ReembolsoAlCancelar, dentro de la transaccion de
+     * cancelarTurno: no hay endpoint REST, asi que el reembolso suelto sigue
+     * siendo solo del ADMINISTRADOR. Hereda el @RolesAllowed de la clase.
+     *
+     * Pasarela caida: PasarelaNoDisponibleException (rollback=true, 502).
+     * Pasarela que no confirma el reembolso: ConflictoDeNegocioException (409).
+     * En ambos casos la cancelacion entera se revierte. Sin pago APROBADO
+     * (copago 0 o sin cotizar) no hay nada que devolver.
+     */
+    @Override
+    @TransactionAttribute(TransactionAttributeType.REQUIRED)
+    public void reembolsarCopagoDelTurno(Long turnoId) {
+        verificarQueElTurnoEsDelCaller(turnoId);
+        for (Pago pago : pagoDAO.listarPorTurno(turnoId)) {
+            if (pago.getEstado() != EstadoPago.APROBADO) {
+                continue;
+            }
+            ResultadoPasarela resultado = pasarela.reembolsar(pago.getIdTransaccionExterna());
+            if (resultado.getEstado() != EstadoPago.REEMBOLSADO) {
+                throw new ConflictoDeNegocioException("La pasarela no confirmo el reembolso del pago "
+                        + pago.getId() + " (estado " + resultado.getEstado() + ").");
+            }
+            pago.setEstado(resultado.getEstado());
+            pagoDAO.actualizar(pago);
+        }
+    }
+
+    private Pago reembolsarEnPasarela(Pago pago) {
         ResultadoPasarela resultado = pasarela.reembolsar(pago.getIdTransaccionExterna());
         pago.setEstado(resultado.getEstado());
         return pagoDAO.actualizar(pago);
@@ -163,6 +208,10 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         }
         if (datos.getTokenMedioDePago() == null || datos.getTokenMedioDePago().isBlank()) {
             throw new DatosInvalidosException("El token del medio de pago es obligatorio.");
+        }
+        if (datos.getTokenMedioDePago().length() > MAX_TOKEN) {
+            throw new DatosInvalidosException(
+                    "El token del medio de pago admite hasta " + MAX_TOKEN + " caracteres.");
         }
     }
 

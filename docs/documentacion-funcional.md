@@ -21,19 +21,19 @@ Una historia "Implementada" tiene endpoint y rol funcionando de punta a punta. "
 | Paciente | Confirmar un turno reservado | Implementada | `PUT /api/turnos/{id}/confirmar` |
 | Paciente | Cancelar un turno | Implementada | `PUT /api/turnos/{id}/cancelar` |
 | Paciente | Consultar mi propia historia clínica | Implementada | `GET /api/historias/paciente/{pacienteId}` y `/entradas` |
-| Paciente | Pagar el copago de un turno | Implementada | `POST /api/pagos` |
+| Paciente | Pagar el copago de un turno | Implementada | — (se cobra dentro de `PUT /api/turnos/{id}/confirmar`) |
 | Paciente | Consultar el estado de mi pago | Implementada | `GET /api/pagos/{id}` y `GET /api/pagos?turnoId=` |
 | Paciente | Ver que mi cobertura se valide automáticamente al reservar | Implementada (SCRUM-91, PR #19) | — (`reservarTurno`, evento `TurnoEnReserva`) |
 | Paciente | Ver sólo mis propios turnos, sin conocer sus id | Implementada (PR #20) | `GET /api/turnos/mios` |
 | Paciente | Recibir una notificación cuando se confirma mi turno | Implementada (PR #15) | segundo suscriptor del tópico `TurnoConfirmado`; `GET /api/notificaciones/mias` |
-| Paciente | Que se me cobre el copago automáticamente al confirmar el turno | Planificada (SCRUM-93) | — (`TurnoEnConfirmacion`, `PuntosDeExtension.COBRO_COPAGO`) |
+| Paciente | Que se me cobre el copago automáticamente al confirmar el turno | Implementada (SCRUM-93) | — (`CobroAlConfirmar`, dentro de `PUT /api/turnos/{id}/confirmar`) |
 | Profesional de salud | Iniciar sesión | Implementada | `POST /api/usuarios/login` |
 | Profesional de salud | Abrir una franja horaria disponible | Implementada | `POST /api/turnos/disponibilidad` |
 | Profesional de salud | Ver mi propia agenda de disponibilidad | Implementada | `GET /api/turnos?profesionalId=` |
 | Profesional de salud | Crear la historia clínica de un paciente | Implementada | `POST /api/historias/paciente/{pacienteId}` |
 | Profesional de salud | Agregar una entrada a una historia clínica | Implementada | `POST /api/historias/paciente/{pacienteId}/entradas` |
 | Profesional de salud | Registrar una consulta (diagnóstico y recetas) | Implementada | `POST /api/historias/paciente/{pacienteId}/consultas` |
-| Profesional de salud | Consultar la historia clínica de cualquier paciente que atiendo | Implementada | `GET /api/historias/paciente/{pacienteId}` y `/entradas` |
+| Profesional de salud | Consultar la historia clínica de cualquier paciente | Implementada | `GET /api/historias/paciente/{pacienteId}` y `/entradas` |
 | Administrador de clínica | Iniciar sesión | Implementada | `POST /api/usuarios/login` |
 | Administrador de clínica | Listar todos los usuarios registrados | Implementada | `GET /api/usuarios` |
 | Administrador de clínica | Dar de alta profesionales y otros administradores | Implementada | `POST /api/usuarios` |
@@ -131,11 +131,10 @@ Una historia "Implementada" tiene endpoint y rol funcionando de punta a punta. "
 **Como** paciente **quiero** que se registre el cobro de mi copago contra la pasarela de pago **para** completar el pago de mi atención.
 
 - El pago se persiste primero en una transacción propia (`PagoDAO.guardarEnNuevaTransaccion`) y después se envía a la pasarela externa; si la pasarela no responde, el pago queda registrado igual, con el estado que corresponda, no se pierde.
-- Solo `PACIENTE` o `ADMINISTRADOR` pueden iniciar un cobro; un `PROFESIONAL` autenticado recibe `403` a nivel de negocio aunque `web.xml` permita la llamada a nivel grueso.
-- Hoy el cobro se dispara con una llamada explícita a este endpoint. El disparo automático al confirmar el turno todavía no existe (ver historia "Que se me cobre el copago automáticamente al confirmar el turno").
+- No hay un endpoint de cobro: el copago se cobra solo dentro de la confirmación del turno (ver historia "Que se me cobre el copago automáticamente al confirmar el turno").
 
 **Estado:** Implementada.
-**Endpoint:** `POST /api/pagos`.
+**Endpoint:** no expone un endpoint propio; está integrado dentro de `PUT /api/turnos/{id}/confirmar`.
 
 ### Consultar el estado de mi pago
 
@@ -181,10 +180,10 @@ Una historia "Implementada" tiene endpoint y rol funcionando de punta a punta. "
 
 **Como** paciente **quiero** que el copago se cobre solo, al confirmar el turno **para** no tener que llamar a un endpoint de pago por separado.
 
-- Existe el punto de extensión (`PuntosDeExtension.COBRO_COPAGO`, prioridad 100, dentro del evento `TurnoEnConfirmacion`), pero no hay ningún observador `@Observes` implementado todavía: el propio código deja el comentario "Pendiente" en `ServicioDeTurnos` y en `TurnoEnConfirmacion`.
+- `CobroAlConfirmar` observa `TurnoEnConfirmacion` con prioridad `PuntosDeExtension.COBRO_COPAGO` y cobra `turno.getCopago()` con el `tokenMedioDePago` del cuerpo del `PUT`; un turno sin copago se confirma sin cobrar. Si la pasarela no responde (`502`) o rechaza el cobro (`409`), la confirmación entera se revierte y el turno sigue `EN_HOLD`.
 
-**Estado:** Planificada (SCRUM-93). Sin código.
-**Endpoint:** no aplica todavía.
+**Estado:** Implementada (SCRUM-93).
+**Endpoint:** no expone un endpoint propio; está integrada dentro de `PUT /api/turnos/{id}/confirmar`.
 
 ## Profesional de salud
 
@@ -243,7 +242,7 @@ Una historia "Implementada" tiene endpoint y rol funcionando de punta a punta. "
 **Estado:** Implementada.
 **Endpoint:** `POST /api/historias/paciente/{pacienteId}/consultas`.
 
-### Consultar la historia clínica de cualquier paciente que atiendo
+### Consultar la historia clínica de cualquier paciente
 
 **Como** profesional de salud **quiero** leer la historia clínica de cualquier paciente **para** atenderlo con su historial completo.
 

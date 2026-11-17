@@ -2,6 +2,8 @@ package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
@@ -66,6 +68,9 @@ public class ServicioDeTurnos {
     @Inject
     private Event<TurnoEnConfirmacion> eventoConfirmacion;
 
+    @Inject
+    private Event<TurnoEnCancelacion> eventoCancelacion;
+
     // JMSContext inyectado por el contenedor: participa de la misma transaccion
     // JTA que confirmarTurno (ver publicarTurnoConfirmado). No conoce el nombre
     // de ningun consumidor: publica en un topico y listo.
@@ -123,7 +128,7 @@ public class ServicioDeTurnos {
 
     /**
      * Turnos del usuario autenticado: lo que necesita su home (proximo turno)
-     * o su agenda (confirmados y en hold).
+     * o su agenda (en hold, confirmados y los confirmados que cancelo).
      *
      * El id nunca llega por parametro, siempre sale del caller autenticado:
      * si viniera del cliente, un paciente podria pedir los turnos de otro
@@ -133,7 +138,7 @@ public class ServicioDeTurnos {
      * sobre cualquier agenda.
      *
      * El filtro de fecha solo aplica al profesional (agenda del dia); para un
-     * paciente se ignora, porque sus turnos EN_HOLD/CONFIRMADO ya son pocos.
+     * paciente se ignora, porque sus turnos ya son pocos.
      */
     @RolesAllowed({ ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL })
     public List<Turno> misTurnos(LocalDate fecha) {
@@ -165,6 +170,12 @@ public class ServicioDeTurnos {
         if (fechaHora.isBefore(LocalDateTime.now())) {
             throw new DatosInvalidosException("No se puede abrir una franja en el pasado");
         }
+        // Tope razonable de agenda. Sin el, una fecha absurda
+        // (+999999-12-31) llegaba a PostgreSQL y salia 500 (timestamp out of range).
+        if (fechaHora.isAfter(LocalDateTime.now().plusYears(2))) {
+            throw new DatosInvalidosException(
+                    "No se puede abrir una franja a más de dos años de hoy");
+        }
         ModalidadTurno modalidadEfectiva = modalidad != null ? modalidad : ModalidadTurno.PRESENCIAL;
         String consultorioEfectivo = consultorio != null && !consultorio.isBlank()
                 ? consultorio.trim() : null;
@@ -175,6 +186,21 @@ public class ServicioDeTurnos {
             throw new DatosInvalidosException("El consultorio admite hasta 60 caracteres");
         }
         Usuario profesional = usuarioAutenticado();
+        // Una franja por horario (SCRUM-125). Se valida aca y no con una
+        // restriccion unica en la base: las bases ya creadas pueden tener
+        // duplicados y hbm2ddl update fallaria al agregarla.
+        // ponytail: dos pedidos simultaneos aun pueden colarse; restriccion
+        // unica parcial si alguna vez hace falta.
+        // Se compara al minuto: 10:00:00 y 10:00:30 son la misma franja.
+        LocalDateTime minuto = fechaHora.truncatedTo(ChronoUnit.MINUTES);
+        boolean ocupada = turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate())
+                .stream()
+                .anyMatch(t -> t.getEstado() != EstadoTurno.CANCELADO
+                        && t.getFechaHora().truncatedTo(ChronoUnit.MINUTES).equals(minuto));
+        if (ocupada) {
+            throw new ConflictoDeNegocioException("El profesional ya tiene una franja abierta el "
+                    + FECHA_HORA_PARA_PERSONAS.format(fechaHora));
+        }
         Turno turno = new Turno(profesional, fechaHora, modalidadEfectiva, consultorioEfectivo);
         turnoDAO.guardar(turno);
         return turno;
@@ -201,7 +227,11 @@ public class ServicioDeTurnos {
         }
         if (turno.getEstado() != EstadoTurno.DISPONIBLE) {
             throw new ConflictoDeNegocioException(
-                    "El turno ya no esta disponible: esta " + turno.getEstado());
+                    "El turno ya no está disponible: está " + enPalabras(turno.getEstado()));
+        }
+        // La agenda todavia lista franjas DISPONIBLE ya pasadas; reservarlas no.
+        if (turno.getFechaHora().isBefore(LocalDateTime.now())) {
+            throw new ConflictoDeNegocioException("El turno ya pasó: no se puede reservar");
         }
 
         turno.setPaciente(paciente);
@@ -227,6 +257,20 @@ public class ServicioDeTurnos {
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno confirmarTurno(Long turnoId) {
+        return confirmarTurno(turnoId, null);
+    }
+
+    /**
+     * Confirma el hold y, si el turno tiene copago, lo cobra con el token del
+     * medio de pago que viaja en el cuerpo del PUT (ver CobroAlConfirmar).
+     *
+     * El token no se persiste ni se mira aca: solo se adjunta al evento para que
+     * el observador del cobro lo use durante esta misma transaccion. Un turno sin
+     * copago (cobertura total o aun sin cotizar) se confirma sin token.
+     */
+    @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
+    @TransactionAttribute(TransactionAttributeType.REQUIRED)
+    public Turno confirmarTurno(Long turnoId, String tokenMedioDePago) {
         if (turnoId == null) {
             throw new DatosInvalidosException("El id del turno es obligatorio");
         }
@@ -234,14 +278,24 @@ public class ServicioDeTurnos {
         if (turno == null) {
             throw new DatosInvalidosException("No existe el turno " + turnoId);
         }
+        verificarQueElHoldEsDelCaller(turno);
         if (turno.getEstado() != EstadoTurno.EN_HOLD) {
             throw new ConflictoDeNegocioException(
-                    "El turno no tiene un hold activo: esta " + turno.getEstado());
+                    "El turno no tiene un hold activo: está " + enPalabras(turno.getEstado()));
         }
-        verificarQueElHoldEsDelCaller(turno);
+        // El temporizador de ExpiradorDeHolds no es persistente: tras un
+        // reinicio un hold vencido sigue EN_HOLD hasta el proximo barrido
+        // (hasta 60 s). Sin este chequeo se podia confirmar en ese hueco.
+        if (turno.getInicioHold() != null && turno.getInicioHold()
+                .plus(ExpiradorDeHolds.DURACION_HOLD_MS, ChronoUnit.MILLIS)
+                .isBefore(LocalDateTime.now())) {
+            throw new ConflictoDeNegocioException("El turno no tiene un hold activo: el hold venció");
+        }
 
         // PUNTO DE EXTENSION (confirmacion). Observadores, en este orden:
-        //   1. COBRO_COPAGO (SCRUM-93): cobra el copago. Pendiente.
+        //   1. COBRO_COPAGO (SCRUM-93): cobra el copago si el turno lo tiene
+        //      (pagos.negocio.CobroAlConfirmar). Si la pasarela no responde o
+        //      rechaza el cobro, la confirmacion entera falla.
         //   2. SALA_DE_VIDEO (SCRUM-95): crea la sala si es TELEMEDICINA
         //      (telemedicina.negocio.SalaAlConfirmar). Si el proveedor de video
         //      no responde, la confirmacion entera falla.
@@ -251,7 +305,7 @@ public class ServicioDeTurnos {
         // temporizador vivo y el paciente puede reintentar mientras dure el
         // hold. La sala se crea aca y nunca en reservarTurno: un hold que vence
         // no tiene que dejar salas colgadas.
-        eventoConfirmacion.fire(new TurnoEnConfirmacion(turno));
+        eventoConfirmacion.fire(new TurnoEnConfirmacion(turno, tokenMedioDePago));
 
         turno.setEstado(EstadoTurno.CONFIRMADO);
         expirador.cancelar(turnoId);
@@ -270,14 +324,32 @@ public class ServicioDeTurnos {
         if (turno == null) {
             throw new DatosInvalidosException("No existe el turno " + turnoId);
         }
-        if (turno.getEstado() == EstadoTurno.DISPONIBLE) {
-            throw new ConflictoDeNegocioException(
-                    "El turno no esta reservado, no hay nada que cancelar");
-        }
         verificarQueElHoldEsDelCaller(turno);
+        if (turno.getEstado() == EstadoTurno.DISPONIBLE
+                || turno.getEstado() == EstadoTurno.CANCELADO) {
+            throw new ConflictoDeNegocioException(
+                    "El turno no está reservado, no hay nada que cancelar");
+        }
 
-        turno.setEstado(EstadoTurno.CANCELADO);
-        turno.liberar();
+        if (turno.getEstado() == EstadoTurno.CONFIRMADO) {
+            // Deshace lo que dejo la confirmacion: reembolso del copago y
+            // anulacion del reclamo (SCRUM-124). Antes de cambiar el estado;
+            // si alguno falla, la cancelacion entera se revierte y el turno
+            // sigue CONFIRMADO.
+            eventoCancelacion.fire(new TurnoEnCancelacion(turno));
+        }
+
+        // Liberar un hold devuelve el turno a la agenda, igual que cuando vence
+        // (ExpiradorDeHolds). Un turno confirmado queda CANCELADO y conserva al
+        // paciente: si lo soltara, el paciente perdia el turno de /mios y su
+        // pago REEMBOLSADO le daba 403. La franja no vuelve a la agenda: el
+        // profesional abre otra (abrirDisponibilidad ignora las CANCELADO).
+        if (turno.getEstado() == EstadoTurno.EN_HOLD) {
+            turno.setEstado(EstadoTurno.DISPONIBLE);
+            turno.liberar();
+        } else {
+            turno.setEstado(EstadoTurno.CANCELADO);
+        }
         expirador.cancelar(turnoId);
         return turnoDAO.actualizar(turno);
     }
@@ -320,6 +392,20 @@ public class ServicioDeTurnos {
         }
     }
 
+    // Los mensajes de error llegan tal cual a la pantalla: fechas y estados se
+    // escriben como los lee una persona, no en ISO-8601 ni con el nombre del enum.
+    private static final DateTimeFormatter FECHA_HORA_PARA_PERSONAS =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+    private static String enPalabras(EstadoTurno estado) {
+        return switch (estado) {
+            case DISPONIBLE -> "disponible";
+            case EN_HOLD -> "reservado";
+            case CONFIRMADO -> "confirmado";
+            case CANCELADO -> "cancelado";
+        };
+    }
+
     private Usuario usuarioAutenticado() {
         String email = contexto.getCallerPrincipal().getName();
         Usuario usuario = servicioDeUsuarios.obtenerPorEmail(email);
@@ -335,13 +421,20 @@ public class ServicioDeTurnos {
      * No se puede expresar con @RolesAllowed porque esa anotacion no ve los
      * argumentos del metodo: sabe que el caller es PACIENTE, no que este turno
      * sea suyo. Mismo criterio que usa ServicioDeHistoriaClinica.
+     *
+     * Va antes de mirar el estado: si no, un 409 "esta CONFIRMADO" le contaba
+     * a otro paciente en que estado esta un turno ajeno. Un turno sin paciente
+     * (libre, o un hold que ya vencio) no es de nadie: pasa, y el chequeo de
+     * estado que sigue responde 409, que es lo que HoldPage muestra como
+     * "reserva vencida".
      */
     private void verificarQueElHoldEsDelCaller(Turno turno) {
-        if (contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)) {
+        if (turno.getPaciente() == null
+                || contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)) {
             return;
         }
         Usuario caller = usuarioAutenticado();
-        if (turno.getPaciente() == null || !caller.getId().equals(turno.getPaciente().getId())) {
+        if (!caller.getId().equals(turno.getPaciente().getId())) {
             throw new EJBAccessException("El turno fue reservado por otro paciente.");
         }
     }

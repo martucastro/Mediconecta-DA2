@@ -5,6 +5,24 @@
     "description": "Secuencia de demo verificada contra el codigo (UsuariosResource/ServicioDeUsuarios, TurnosResource/ServicioDeTurnos, HistoriaClinicaResource/ServicioDeHistoriaClinica). Correr las carpetas en orden 00 -> 01 -> 02 -> 03, y despues de ~5 minutos sin confirmar el turno del paso 02, correr 04 para ver la liberacion automatica del hold.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// {{franja}}: fecha y hora futura al azar (entre 30 y 630 dias desde hoy, a cualquier minuto)",
+          "// para abrir franjas. Cambia en cada request, asi que correr la coleccion de nuevo",
+          "// sobre la misma base no choca con las franjas ya abiertas (409).",
+          "var dias = 30 + Math.floor(Math.random() * 600);",
+          "var minutos = Math.floor(Math.random() * 24 * 60);",
+          "var d = new Date(Date.now() + dias * 864e5);",
+          "d.setUTCHours(0, minutos, 0, 0);",
+          "pm.variables.set('franja', d.toISOString().slice(0, 16) + ':00');"
+        ]
+      }
+    }
+  ],
   "variable": [
     { "key": "base_url", "value": "http://localhost:8080/api" },
     { "key": "soap_url", "value": "http://localhost:8080/mediconecta/legado/obrasocial" }
@@ -21,9 +39,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('201 Created', function () {",
-                  "    pm.expect([200,201]).to.include(pm.response.code);",
-                  "});"
+                  "if (pm.response.code === 409) {",
+                  "    // Corrida anterior sobre la misma base: Paciente B ya existe.",
+                  "    pm.test('409: Paciente B ya existia', function () {",
+                  "        pm.expect(pm.response.json().error).to.include('Ya existe un usuario');",
+                  "    });",
+                  "} else {",
+                  "    pm.test('201 Created', function () {",
+                  "        pm.expect([200,201]).to.include(pm.response.code);",
+                  "    });",
+                  "}"
                 ]
               }
             }
@@ -215,6 +240,247 @@
             },
             "description": "Endpoint publico (sin auth), SCRUM-81. Devuelve solo {id, nombre} de usuarios con rol PROFESIONAL, para que el paciente elija con quien reservar antes de loguearse."
           }
+        },
+        {
+          "name": "Resolver ids de ADMINISTRADOR y PACIENTE A (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var admin = jsonData.find(function (u) { return u.email === pm.environment.get('admin_email'); });",
+                  "var pacienteA = jsonData.find(function (u) { return u.email === pm.environment.get('pacienteA_email'); });",
+                  "var profesional = jsonData.find(function (u) { return u.email === pm.environment.get('profesional_email'); });",
+                  "if (profesional) {",
+                  "    pm.environment.set('profesional_id', profesional.id);",
+                  "}",
+                  "if (admin && pacienteA) {",
+                  "    pm.environment.set('admin_id', admin.id);",
+                  "    pm.environment.set('pacienteA_id', pacienteA.id);",
+                  "} else {",
+                  "    console.warn('No se encontraron admin o paciente A en el listado, completar admin_id y pacienteA_id a mano.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Prepara las requests de consulta por id: guarda admin_id y pacienteA_id, que dependen de la base de cada uno."
+          }
+        },
+        {
+          "name": "Consulta por id - anonimo (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "SCRUM-102. Antes devolvia email y rol sin pedir credenciales; ahora web.xml exige estar autenticado."
+          }
+        },
+        {
+          "name": "Consulta por id - PACIENTE su propio usuario (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('devuelve su propio usuario y no expone la contrasena', function () {",
+                  "    var usuario = pm.response.json();",
+                  "    pm.expect(usuario.email).to.eql(pm.environment.get('pacienteA_email'));",
+                  "    pm.expect(usuario).to.not.have.property('contrasenaHash');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "ServicioDeUsuarios.consultarUsuario deja pasar al paciente cuando el id pedido es el suyo."
+          }
+        },
+        {
+          "name": "Consulta por id - PACIENTE otro usuario (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{admin_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{admin_id}}"]
+            },
+            "description": "Control de pertenencia programatico: @RolesAllowed solo dice que es PACIENTE, no que el id sea el suyo. Lo resuelve ServicioDeUsuarios.consultarUsuario."
+          }
+        },
+        {
+          "name": "Consulta por id - ADMINISTRADOR (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "El administrador puede consultar a cualquier usuario."
+          }
+        },
+        {
+          "name": "Consulta por id - ADMINISTRADOR, id inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/999999999",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "999999999"]
+            },
+            "description": "Solo el administrador distingue un id inexistente (404). Un paciente recibe 403 exista o no el id, para no revelar que ids estan ocupados."
+          }
+        },
+        {
+          "name": "Login sigue siendo publico (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{pacienteA_email}}\",\n  \"contrasena\": \"{{pacienteA_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/login",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "login"]
+            },
+            "description": "SCRUM-102 no debe cerrar POST /api/usuarios/login: el constraint de web.xml es solo para GET."
+          }
         }
       ]
     },
@@ -250,7 +516,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-20T10:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",
@@ -276,8 +542,9 @@
                   "    pm.expect(jsonData.modalidad).to.eql('PRESENCIAL');",
                   "    pm.expect(jsonData.consultorio).to.eql('Consultorio 3');",
                   "});",
+                  "pm.collectionVariables.set('turno_fecha', pm.variables.get('franja').slice(0, 10));",
                   "if (jsonData && jsonData.id) {",
-                  "    pm.collectionVariables.set('turno_id', jsonData.id);",
+                  "    pm.environment.set('turno_id', jsonData.id);",
                   "    console.log('turno_id guardado:', jsonData.id);",
                   "} else {",
                   "    console.warn('No se encontro campo id en la respuesta, completar turno_id a mano.');",
@@ -300,7 +567,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-20T10:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",
@@ -323,7 +590,7 @@
                   "});",
                   "pm.test('incluye la franja recien abierta', function () {",
                   "    var body = pm.response.json();",
-                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var turnoId = pm.variables.get('turno_id');",
                   "    var propio = body.find(function (t) { return String(t.id) === String(turnoId); });",
                   "    pm.expect(propio, 'franja propia en la agenda del dia').to.exist;",
                   "});"
@@ -342,11 +609,11 @@
               ]
             },
             "url": {
-              "raw": "{{base_url}}/turnos/mios?fecha=2027-03-20",
+              "raw": "{{base_url}}/turnos/mios?fecha={{turno_fecha}}",
               "host": ["{{base_url}}"],
               "path": ["turnos", "mios"],
               "query": [
-                { "key": "fecha", "value": "2027-03-20" }
+                { "key": "fecha", "value": "{{turno_fecha}}" }
               ]
             },
             "description": "A diferencia de la vista del paciente, el profesional ve TODOS los estados de su propia agenda (DISPONIBLE incluido). ?fecha=YYYY-MM-DD es opcional; sin el parametro devuelve toda la agenda del profesional."
@@ -405,7 +672,7 @@
                   "});",
                   "pm.test('incluye el turno reservado, en EN_HOLD', function () {",
                   "    var body = pm.response.json();",
-                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var turnoId = pm.variables.get('turno_id');",
                   "    var propio = body.find(function (t) { return String(t.id) === String(turnoId); });",
                   "    pm.expect(propio, 'turno propio en la respuesta').to.exist;",
                   "    pm.expect(propio.estado).to.eql('EN_HOLD');",
@@ -445,7 +712,7 @@
                   "});",
                   "pm.test('no incluye el turno retenido por PACIENTE_A', function () {",
                   "    var body = pm.response.json();",
-                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var turnoId = pm.variables.get('turno_id');",
                   "    var ajeno = body.find(function (t) { return String(t.id) === String(turnoId); });",
                   "    pm.expect(ajeno, 'turno de otro paciente').to.be.undefined;",
                   "});"
@@ -501,7 +768,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -534,7 +807,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -628,7 +907,7 @@
                   "    pm.expect(jsonData.modalidad).to.eql('TELEMEDICINA');",
                   "});",
                   "if (jsonData && jsonData.id) {",
-                  "    pm.collectionVariables.set('turno_id_b', jsonData.id);",
+                  "    pm.environment.set('turno_id_b', jsonData.id);",
                   "}"
                 ]
               }
@@ -648,7 +927,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-20T11:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",
@@ -699,7 +978,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -734,7 +1019,7 @@
                   "var email = pm.environment.get('pacienteA_email');",
                   "var user = jsonData.find(function (u) { return u.email === email; });",
                   "if (user) {",
-                  "    pm.collectionVariables.set('pacienteA_id', user.id);",
+                  "    pm.environment.set('pacienteA_id', user.id);",
                   "    console.log('pacienteA_id guardado:', user.id);",
                   "} else {",
                   "    console.warn('No se encontro el paciente A en el listado, completar pacienteA_id a mano.');",
@@ -769,9 +1054,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('201 Created', function () {",
-                  "    pm.expect([200,201]).to.include(pm.response.code);",
-                  "});"
+                  "if (pm.response.code === 409) {",
+                  "    // Corrida anterior sobre la misma base: la historia clinica ya existe.",
+                  "    pm.test('409: la historia clinica ya existia', function () {",
+                  "        pm.expect(pm.response.json().error).to.include('ya tiene una historia');",
+                  "    });",
+                  "} else {",
+                  "    pm.test('201 Created', function () {",
+                  "        pm.expect([200,201]).to.include(pm.response.code);",
+                  "    });",
+                  "}"
                 ]
               }
             }
@@ -949,11 +1241,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/turnos?profesionalId=2",
+              "raw": "{{base_url}}/turnos?profesionalId={{profesional_id}}",
               "host": ["{{base_url}}"],
               "path": ["turnos"],
               "query": [
-                { "key": "profesionalId", "value": "2" }
+                { "key": "profesionalId", "value": "{{profesional_id}}" }
               ]
             },
             "description": "TurnosResource ahora expone GET /turnos/mios (ver carpeta 02), asi que ya no hace falta DBeaver para verificar el cierre del hold: la request de abajo, corrida antes y despues de los ~5 minutos, alcanza. La consulta a DBeaver queda como alternativa para quien prefiera mirar la fila directamente:\n\nSELECT id, paciente_id, profesional_id, estado, iniciohold FROM turnos WHERE id = {{turno_id}};\n\nDespues de ~5 minutos sin confirmar (ExpiradorDeHolds/@Timeout, DURACION_HOLD_MS=5min), estado deberia volver a DISPONIBLE y paciente_id/iniciohold a null, sin ninguna request de por medio. El seed crea admin=1, profesional=2, paciente=3, asi que el profesional de prueba es el 2."
@@ -970,11 +1262,15 @@
                   "pm.test('200 OK', function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
-                  "pm.test('el turno vencido ya no esta EN_HOLD para el paciente', function () {",
+                  "pm.test('el turno ya no esta EN_HOLD para el paciente', function () {",
                   "    var body = pm.response.json();",
-                  "    var turnoId = pm.collectionVariables.get('turno_id');",
-                  "    var sigueApareciendo = body.some(function (t) { return String(t.id) === String(turnoId); });",
-                  "    pm.expect(sigueApareciendo, 'el turno vencido ya no deberia listarse como propio').to.be.false;",
+                  "    var turnoId = pm.variables.get('turno_id');",
+                  "    var propio = body.find(function (t) { return String(t.id) === String(turnoId); });",
+                  "    // Esperando ~5 min sin confirmar, el hold vence y el turno deja de ser del paciente.",
+                  "    // Corriendo la coleccion entera de un tiron, 02 ya lo confirmo: sigue siendo suyo, CONFIRMADO.",
+                  "    if (propio) {",
+                  "        pm.expect(propio.estado, 'confirmado en 02').to.eql('CONFIRMADO');",
+                  "    }",
                   "});"
                 ]
               }
@@ -1482,7 +1778,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-21T10:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
             }
           }
         },
@@ -1969,7 +2265,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-21T11:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             }
           }
         },
@@ -2071,7 +2367,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-21T12:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
             }
           }
         },
@@ -2195,7 +2491,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -2393,7 +2695,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
