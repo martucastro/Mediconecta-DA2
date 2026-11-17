@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aDate, claveDelDia, formatearDiaLargo, formatearHora, horaSugerida, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
+import { aDate, claveDelDia, formatearDiaLargo, formatearFechaCorta, formatearHora, horaSugerida, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
 
 describe('parsearFechaHora', () => {
   it('lee un LocalDateTime con segundos como hora local', () => {
@@ -113,5 +113,11 @@ describe('horaSugerida', () => {
 
   it('no pasa de las 23:00 aunque ya sea de noche', () => {
     expect(horaSugerida('2026-11-18', new Date(2026, 10, 18, 23, 10))).toBe('23:00')
+  })
+})
+
+describe('formatearFechaCorta', () => {
+  it('muestra dia, mes y anio con dos digitos', () => {
+    expect(formatearFechaCorta(parsearFechaHora('2026-03-05T09:00:00')!)).toBe('05/03/2026')
   })
 })

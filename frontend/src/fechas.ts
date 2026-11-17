@@ -105,6 +105,11 @@ export function formatearHora(f: FechaHoraLocal): string {
   return `${dosDigitos(f.hora)}:${dosDigitos(f.minuto)}`
 }
 
+/** "18/09/2026" */
+export function formatearFechaCorta(f: FechaHoraLocal): string {
+  return `${dosDigitos(f.dia)}/${dosDigitos(f.mes)}/${f.anio}`
+}
+
 /** "jueves 18 de septiembre" */
 export function formatearDiaLargo(f: FechaHoraLocal): string {
   return `${DIAS[aDate(f).getDay()]} ${f.dia} de ${MESES[f.mes - 1]}`
