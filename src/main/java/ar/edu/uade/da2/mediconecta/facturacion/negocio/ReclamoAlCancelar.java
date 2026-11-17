@@ -18,7 +18,7 @@ import jakarta.transaction.Transactional.TxType;
 public class ReclamoAlCancelar {
 
     @Inject
-    private ServicioDeFacturacion servicioDeFacturacion;
+    private ServicioDeFacturacionLocal servicioDeFacturacion;
 
     @Transactional(TxType.MANDATORY)
     public void alCancelar(

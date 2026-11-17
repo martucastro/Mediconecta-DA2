@@ -34,7 +34,7 @@ import ar.edu.uade.da2.mediconecta.facturacion.datos.ReclamoDAO;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
-import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import jakarta.jms.JMSContext;
 import jakarta.jms.JMSProducer;
@@ -52,7 +52,7 @@ class ServicioDeFacturacionTest {
     @Mock
     private ReclamoDAO reclamoDAO;
     @Mock
-    private ServicioDeTurnos servicioDeTurnos;
+    private ServicioDeTurnosLocal servicioDeTurnos;
     @Mock
     private CanalDeReclamos canal;
     @Mock

@@ -28,7 +28,7 @@ import jakarta.transaction.Transactional;
 class SalaAlCancelarTest {
 
     @Mock
-    private ServicioDeTelemedicina servicioDeTelemedicina;
+    private ServicioDeTelemedicinaLocal servicioDeTelemedicina;
 
     @InjectMocks
     private SalaAlCancelar observador;

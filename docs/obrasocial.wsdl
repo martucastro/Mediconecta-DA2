@@ -1,19 +1,12 @@
 <?xml version='1.0' encoding='UTF-8'?><wsdl:definitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:tns="http://legado.obrasocial.example/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:ns1="http://schemas.xmlsoap.org/soap/http" name="ObraSocialLegadoService" targetNamespace="http://legado.obrasocial.example/">
   <wsdl:types>
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://legado.obrasocial.example/" elementFormDefault="unqualified" targetNamespace="http://legado.obrasocial.example/" version="1.0">
-
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://legado.obrasocial.example/" attributeFormDefault="unqualified" elementFormDefault="unqualified" targetNamespace="http://legado.obrasocial.example/" version="1.0">
   <xs:element name="autorizarPrestacion" type="tns:autorizarPrestacion"/>
-
   <xs:element name="autorizarPrestacionResponse" type="tns:autorizarPrestacionResponse"/>
-
   <xs:element name="presentarReclamo" type="tns:presentarReclamo"/>
-
   <xs:element name="presentarReclamoResponse" type="tns:presentarReclamoResponse"/>
-
   <xs:element name="validarCobertura" type="tns:validarCobertura"/>
-
   <xs:element name="validarCoberturaResponse" type="tns:validarCoberturaResponse"/>
-
   <xs:complexType name="validarCobertura">
     <xs:sequence>
       <xs:element minOccurs="0" name="dni" type="xs:string"/>
@@ -21,13 +14,11 @@
       <xs:element minOccurs="0" name="codigoPrestacion" type="xs:string"/>
     </xs:sequence>
   </xs:complexType>
-
   <xs:complexType name="validarCoberturaResponse">
     <xs:sequence>
       <xs:element minOccurs="0" name="respuesta" type="tns:respuestaCobertura"/>
     </xs:sequence>
   </xs:complexType>
-
   <xs:complexType name="respuestaCobertura">
     <xs:sequence>
       <xs:element name="autorizado" type="xs:boolean"/>
@@ -39,7 +30,6 @@
       <xs:element minOccurs="0" name="mensaje" type="xs:string"/>
     </xs:sequence>
   </xs:complexType>
-
   <xs:complexType name="presentarReclamo">
     <xs:sequence>
       <xs:element minOccurs="0" name="dni" type="xs:string"/>
@@ -47,20 +37,17 @@
       <xs:element minOccurs="0" name="numeroAutorizacion" type="xs:string"/>
     </xs:sequence>
   </xs:complexType>
-
   <xs:complexType name="presentarReclamoResponse">
     <xs:sequence>
       <xs:element minOccurs="0" name="respuesta" type="tns:respuestaReclamo"/>
     </xs:sequence>
   </xs:complexType>
-
   <xs:complexType name="respuestaReclamo">
     <xs:sequence>
       <xs:element minOccurs="0" name="numeroPresentacion" type="xs:string"/>
       <xs:element minOccurs="0" name="montoReconocido" type="xs:decimal"/>
     </xs:sequence>
   </xs:complexType>
-
   <xs:complexType name="autorizarPrestacion">
     <xs:sequence>
       <xs:element minOccurs="0" name="dni" type="xs:string"/>
@@ -68,13 +55,17 @@
       <xs:element minOccurs="0" name="codigoPrestacion" type="xs:string"/>
     </xs:sequence>
   </xs:complexType>
-
   <xs:complexType name="autorizarPrestacionResponse">
     <xs:sequence>
       <xs:element minOccurs="0" name="respuesta" type="tns:respuestaCobertura"/>
     </xs:sequence>
   </xs:complexType>
-
+  <xs:element name="PedidoInvalido" type="tns:PedidoInvalido"/>
+  <xs:complexType name="PedidoInvalido">
+    <xs:sequence>
+      <xs:element minOccurs="0" name="message" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
 </xs:schema>
   </wsdl:types>
   <wsdl:message name="validarCobertura">
@@ -93,6 +84,10 @@
     <wsdl:part element="tns:autorizarPrestacionResponse" name="parameters">
     </wsdl:part>
   </wsdl:message>
+  <wsdl:message name="PedidoInvalidoException">
+    <wsdl:part element="tns:PedidoInvalido" name="PedidoInvalidoException">
+    </wsdl:part>
+  </wsdl:message>
   <wsdl:message name="presentarReclamo">
     <wsdl:part element="tns:presentarReclamo" name="parameters">
     </wsdl:part>
@@ -107,18 +102,24 @@
     </wsdl:input>
       <wsdl:output message="tns:validarCoberturaResponse" name="validarCoberturaResponse">
     </wsdl:output>
+      <wsdl:fault message="tns:PedidoInvalidoException" name="PedidoInvalidoException">
+    </wsdl:fault>
     </wsdl:operation>
     <wsdl:operation name="presentarReclamo">
       <wsdl:input message="tns:presentarReclamo" name="presentarReclamo">
     </wsdl:input>
       <wsdl:output message="tns:presentarReclamoResponse" name="presentarReclamoResponse">
     </wsdl:output>
+      <wsdl:fault message="tns:PedidoInvalidoException" name="PedidoInvalidoException">
+    </wsdl:fault>
     </wsdl:operation>
     <wsdl:operation name="autorizarPrestacion">
       <wsdl:input message="tns:autorizarPrestacion" name="autorizarPrestacion">
     </wsdl:input>
       <wsdl:output message="tns:autorizarPrestacionResponse" name="autorizarPrestacionResponse">
     </wsdl:output>
+      <wsdl:fault message="tns:PedidoInvalidoException" name="PedidoInvalidoException">
+    </wsdl:fault>
     </wsdl:operation>
   </wsdl:portType>
   <wsdl:binding name="ObraSocialLegadoServiceSoapBinding" type="tns:ObraSocialLegado">
@@ -131,6 +132,9 @@
       <wsdl:output name="validarCoberturaResponse">
         <soap:body use="literal"/>
       </wsdl:output>
+      <wsdl:fault name="PedidoInvalidoException">
+        <soap:fault name="PedidoInvalidoException" use="literal"/>
+      </wsdl:fault>
     </wsdl:operation>
     <wsdl:operation name="presentarReclamo">
       <soap:operation soapAction="" style="document"/>
@@ -140,6 +144,9 @@
       <wsdl:output name="presentarReclamoResponse">
         <soap:body use="literal"/>
       </wsdl:output>
+      <wsdl:fault name="PedidoInvalidoException">
+        <soap:fault name="PedidoInvalidoException" use="literal"/>
+      </wsdl:fault>
     </wsdl:operation>
     <wsdl:operation name="autorizarPrestacion">
       <soap:operation soapAction="" style="document"/>
@@ -149,6 +156,9 @@
       <wsdl:output name="autorizarPrestacionResponse">
         <soap:body use="literal"/>
       </wsdl:output>
+      <wsdl:fault name="PedidoInvalidoException">
+        <soap:fault name="PedidoInvalidoException" use="literal"/>
+      </wsdl:fault>
     </wsdl:operation>
   </wsdl:binding>
   <wsdl:service name="ObraSocialLegadoService">

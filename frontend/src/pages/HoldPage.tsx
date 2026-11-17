@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
+import { aDate, formatearHora, parsearFechaHora } from '../fechas'
+import { DURACION_HOLD_MS, vencimientoDelHold } from '../proximoTurno'
 import { leerTurnoEnHold, limpiarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
 import UnirseAConsulta from './UnirseAConsulta'
-
-// Mismo valor que ExpiradorDeHolds.DURACION_HOLD_MS en el backend. El backend
-// es quien decide de verdad: si el hold ya vencio, confirmar responde 409.
-const DURACION_HOLD_MS = 5 * 60 * 1000
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
@@ -35,22 +33,14 @@ function dosDigitos(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-// inicioHold es un LocalDateTime del servidor: hora local sin zona horaria y
-// con hasta nanosegundos. Se recorta a milisegundos, que es lo que Date acepta
-// en todos los navegadores, y se interpreta como hora local (servidor y
-// navegador estan en la misma zona en el entorno del TP).
-function vencimientoDelHold(inicioHold: string): number {
-  const inicio = new Date(inicioHold.replace(/(\.\d{3})\d+/, '$1'))
-  return inicio.getTime() + DURACION_HOLD_MS
-}
-
 function segundosRestantes(vence: number): number {
   return Math.max(0, Math.ceil((vence - Date.now()) / 1000))
 }
 
 function formatearFecha(fechaHora: string): string {
-  const fecha = new Date(fechaHora)
-  return `${DIAS[fecha.getDay()]} ${dosDigitos(fecha.getDate())}/${dosDigitos(fecha.getMonth() + 1)} · ${dosDigitos(fecha.getHours())}:${dosDigitos(fecha.getMinutes())} hs`
+  const f = parsearFechaHora(fechaHora)
+  if (!f) return '—'
+  return `${DIAS[aDate(f).getDay()]} ${dosDigitos(f.dia)}/${dosDigitos(f.mes)} · ${formatearHora(f)} hs`
 }
 
 function formatearCuenta(segundos: number): string {
@@ -74,7 +64,8 @@ export default function HoldPage() {
   // El turno lo guarda la pantalla de disponibilidad al reservar (SCRUM-84):
   // no hay un GET de un turno individual.
   const [turno] = useState<TurnoDTO | null>(() => leerTurnoEnHold())
-  const [vence] = useState(() => (turno?.inicioHold ? vencimientoDelHold(turno.inicioHold) : 0))
+  // El backend es quien decide de verdad: si el hold ya vencio, confirmar responde 409.
+  const [vence] = useState(() => (turno ? vencimientoDelHold(turno) ?? 0 : 0))
   const [restante, setRestante] = useState(() => segundosRestantes(vence))
   const [estado, setEstado] = useState<Estado>(() => (segundosRestantes(vence) > 0 ? 'reservado' : 'vencido'))
   const [error, setError] = useState('')
@@ -182,6 +173,7 @@ export default function HoldPage() {
           MediConecta
         </Link>
         <Link className="m" to="/disponibilidad" style={{ fontWeight: 500 }}>← Turno</Link>
+        <Link className="d" to="/notificaciones">Notificaciones</Link>
         <img className="avatar d" src={ASSETS.avatar} alt="" />
         <img className="m" src={ASSETS.logo} alt="MediConecta" style={{ width: 18, height: 18 }} />
       </header>

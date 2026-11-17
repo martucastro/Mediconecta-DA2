@@ -1639,6 +1639,9 @@
                   "pm.test('publica las dos operaciones', () => {",
                   "    pm.expect(pm.response.text()).to.include('validarCobertura');",
                   "    pm.expect(pm.response.text()).to.include('autorizarPrestacion');",
+                  "});",
+                  "pm.test('declara el fault PedidoInvalido (SCRUM-129)', () => {",
+                  "    pm.expect(pm.response.text()).to.include('<wsdl:fault message=\"tns:PedidoInvalidoException\"');",
                   "});"
                 ]
               }
@@ -1920,6 +1923,10 @@
                   "    pm.response.to.have.status(500);",
                   "    pm.expect(pm.response.text()).to.include('Fault');",
                   "    pm.expect(pm.response.text()).to.include('OS-9999');",
+                  "});",
+                  "pm.test('codigo Client con el detalle PedidoInvalido (SCRUM-129)', () => {",
+                  "    pm.expect(pm.response.text()).to.match(/<faultcode[^>]*>[^<]*Client</);",
+                  "    pm.expect(pm.response.text()).to.include('PedidoInvalido');",
                   "});"
                 ]
               }
@@ -4803,6 +4810,174 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "09 - ServicioDeObrasSociales (afiliaciones)",
+      "description": "Capa de presentacion del componente de obras sociales. Requiere pacienteA_id (lo resuelve la carpeta 01). Se registran los mismos datos del seed (plan medio, OS-2002), asi que el copago del 70% de la carpeta 02 no cambia.",
+      "item": [
+        {
+          "name": "Registrar afiliacion de PACIENTE_A - ADMINISTRADOR (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var afiliacion = pm.response.json();",
+                  "pm.test('devuelve la afiliacion registrada', function () {",
+                  "    pm.expect(afiliacion.pacienteId).to.eql(Number(pm.environment.get('pacienteA_id')));",
+                  "    pm.expect(afiliacion.numeroAfiliado).to.eql('OS-2002');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/afiliaciones",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "afiliaciones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pacienteId\": {{pacienteA_id}},\n  \"dni\": \"30333444\",\n  \"numeroAfiliado\": \"OS-2002\"\n}"
+            },
+            "description": "@RolesAllowed(ADMINISTRADOR) sobre ServicioDeObrasSociales.registrarAfiliacion. Alta o correccion: responde 200 en los dos casos."
+          }
+        },
+        {
+          "name": "PACIENTE_A ve su afiliacion (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('es la suya', function () {",
+                  "    pm.expect(pm.response.json().numeroAfiliado).to.eql('OS-2002');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/afiliaciones/mia",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "afiliaciones",
+                "mia"
+              ]
+            },
+            "description": "El paciente sale del usuario autenticado, nunca de un parametro. Sin obra social registrada responde 404 con {\"error\": ...}."
+          }
+        },
+        {
+          "name": "Registrar afiliacion - PACIENTE (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/afiliaciones",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "afiliaciones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pacienteId\": {{pacienteA_id}},\n  \"dni\": \"30333444\",\n  \"numeroAfiliado\": \"OS-2002\"\n}"
+            },
+            "description": "Solo el ADMINISTRADOR registra afiliaciones: el paciente autenticado recibe 403 desde la fachada."
+          }
         }
       ]
     }

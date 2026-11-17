@@ -81,6 +81,16 @@ comprobar "admin lista usuarios"              200 "$(codigo -u "$ADMIN" "$BASE/u
 comprobar "paciente NO lista usuarios"        403 "$(codigo -u "$PACI" "$BASE/usuarios")"
 comprobar "profesional NO lista usuarios"     403 "$(codigo -u "$PROF" "$BASE/usuarios")"
 
+echo
+echo "Rutas del frontend (SCRUM-134)"
+# Las pantallas se sirven con index.html y 200 (filtro RutasDelFrontend); la
+# API y los archivos que no existen siguen respondiendo 404.
+APP="${BASE%/api}"
+comprobar "recargar una pantalla da 200"      200 "$(codigo "$APP/home")"
+comprobar "el panel del administrador da 200" 200 "$(codigo "$APP/admin")"
+comprobar "un archivo inexistente sigue en 404" 404 "$(codigo "$APP/assets/no-existe.js")"
+comprobar "una ruta de la API inexistente, 404" 404 "$(codigo "$BASE/no-existe")"
+
 
 echo
 echo "Consulta de usuario por id (SCRUM-102)"
@@ -144,6 +154,18 @@ comprobar "copago con tarjeta rechazada"      409 "$(codigo -u "$PACI" -X PUT -H
                                                      -d '{"tokenMedioDePago":"rechazar_demo"}' "$BASE/turnos/$ID/confirmar")"
 comprobar "el rechazo deja el turno EN_HOLD"  "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | tr '{' '\n' | grep "\"id\":$ID[,}]" | grep -q EN_HOLD && echo si || echo no)"
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "${PAGO[@]}" "$BASE/turnos/$ID/confirmar")"
+comprobar "anonimo NO ve notificaciones"      401 "$(codigo "$BASE/notificaciones/mias")"
+comprobar "profesional NO ve notificaciones"  403 "$(codigo -u "$PROF" "$BASE/notificaciones/mias")"
+# La notificacion la crea un consumidor JMS: llega un instante despues de confirmar.
+NOTIFICADO=no
+for i in 1 2 3 4 5; do
+  if curl -s -u "$PACI" "$BASE/notificaciones/mias" | grep -q "\"turnoId\":$ID[,}]"; then
+    NOTIFICADO=si
+    break
+  fi
+  sleep 1
+done
+comprobar "el paciente ve la notificacion del turno" "si" "$NOTIFICADO"
 
 echo
 echo "Pagos (copago de la confirmacion)"
@@ -169,6 +191,17 @@ curl -s -o /dev/null -H "Content-Type: application/json" \
      -d "{\"nombre\":\"Otro paciente\",\"email\":\"${OTRO_PACI%%:*}\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
      "$BASE/usuarios"
 comprobar "otro paciente NO ve ese turno"     "si" "$(curl -s -u "$OTRO_PACI" "$BASE/turnos/mios" | grep -q "\"id\":$ID[,}]" && echo no || echo si)"
+
+echo
+echo "Afiliaciones a la obra social (ServicioDeObrasSociales)"
+# Se registran los mismos datos del seed (plan medio): el copago del 70% que
+# verifica el bloque de turnos no cambia.
+AFILIACION=(-H "Content-Type: application/json" -d "{\"pacienteId\":$ID_PACI,\"dni\":\"30333444\",\"numeroAfiliado\":\"OS-2002\"}")
+comprobar "admin registra una afiliacion"     200 "$(codigo -u "$ADMIN" "${AFILIACION[@]}" "$BASE/afiliaciones")"
+comprobar "paciente NO registra afiliaciones" 403 "$(codigo -u "$PACI" "${AFILIACION[@]}" "$BASE/afiliaciones")"
+comprobar "anonimo NO ve una afiliacion"      401 "$(codigo "$BASE/afiliaciones/mia")"
+comprobar "el paciente ve su afiliacion"      "si" "$(curl -s -u "$PACI" "$BASE/afiliaciones/mia" | grep -q '"numeroAfiliado":"OS-2002"' && echo si || echo no)"
+comprobar "un paciente sin obra social da 404" 404 "$(codigo -u "$OTRO_PACI" "$BASE/afiliaciones/mia")"
 
 echo
 echo "Telemedicina (proveedor de video simulado y componente)"
@@ -276,6 +309,11 @@ comprobar "afiliado inexistente da SOAP Fault" "si" \
 # del legado (faultcode Server) por este codigo.
 comprobar "ese Fault tiene codigo Client" "si" \
   "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -Eq '<faultcode[^>]*>[^<]*Client</faultcode>' && echo si || echo no)"
+# SCRUM-129: el fault esta declarado en el contrato y viaja con su detalle.
+comprobar "el WSDL declara el fault PedidoInvalido" "si" \
+  "$(curl -s "$SOAP?wsdl" | grep -q '<wsdl:fault message="tns:PedidoInvalidoException"' && echo si || echo no)"
+comprobar "el Fault trae el detalle PedidoInvalido" "si" \
+  "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -q 'PedidoInvalido' && echo si || echo no)"
 # presentarReclamo (SCRUM-97 T4): presenta una autorizacion ya emitida, no
 # evalua cobertura de nuevo.
 R=$(soapReclamo 30333444 OS-2002 AUT-OS-2002-CONSULTA)

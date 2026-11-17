@@ -1,0 +1,31 @@
+{
+  "name": "mediconecta-recordatorios",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ServicioDeRecordatorios: suscriptor Node.js (NestJS) del topico TurnoConfirmado de MediConecta",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "test": "jest"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "rootDir": "src"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.2.10",
+    "@nestjs/core": "11.2.10",
+    "@nestjs/platform-express": "11.2.10",
+    "reflect-metadata": "0.2.2",
+    "rhea": "3.0.5",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "@types/node": "24.19.2",
+    "jest": "30.5.2",
+    "ts-jest": "29.4.15",
+    "typescript": "5.9.3"
+  }
+}

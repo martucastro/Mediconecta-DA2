@@ -201,20 +201,29 @@
     </security-constraint>
 
     <!--
-      Fallback del frontend: cualquier URL que no corresponda a un archivo ni a
-      la API devuelve index.html. El frontend es una SPA y sus rutas (por
-      ejemplo /mediconecta/agenda) no existen como archivos en el servidor:
-      sin esto, refrescar el navegador en una pantalla daria el 404 del
-      contenedor. Una URL que tampoco sea una pantalla la resuelve el router
-      del frontend con su propia pagina 404.
-
-      Los 404 de la API no pasan por aca: JAX-RS escribe la respuesta
-      directamente, asi que el cliente sigue recibiendo su mensaje de error y
-      no el HTML de la aplicacion.
+      Operacion sensible 9: las afiliaciones a la obra social (DNI y numero de
+      afiliado). Ninguna operacion es anonima. Que registrar sea solo del
+      ADMINISTRADOR y que GET /mia sea solo del PACIENTE lo decide @RolesAllowed
+      sobre ServicioDeObrasSociales; aca solo se exige estar autenticado, asi un
+      rol equivocado recibe 403 desde el componente y un anonimo recibe 401.
     -->
-    <error-page>
-        <error-code>404</error-code>
-        <location>/index.html</location>
-    </error-page>
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Afiliaciones a la obra social</web-resource-name>
+            <url-pattern>/api/afiliaciones/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
+      Las pantallas del frontend (/home, /agenda, /admin...) no existen como
+      archivos: las sirve con index.html y status 200 el filtro
+      web.RutasDelFrontend (SCRUM-134). Antes lo hacia una error-page de 404,
+      que respondia la pantalla correcta pero con status 404.
+    -->
 
 </web-app>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DURACION_HOLD_MS, holdVigente, proximoConfirmado } from './proximoTurno'
+import { confirmadosPorVenir, DURACION_HOLD_MS, holdVigente } from './proximoTurno'
 import { type EstadoTurno, type TurnoDTO } from './turnoEnHold'
 
 // "Ahora" fijo y en hora local, para que el resultado no dependa del reloj ni
@@ -10,7 +10,7 @@ function turno(id: number, estado: EstadoTurno, fechaHora: string, inicioHold?: 
   return { id, estado, fechaHora, inicioHold }
 }
 
-describe('proximoConfirmado', () => {
+describe('confirmadosPorVenir: el primero es el proximo', () => {
   it('elige el confirmado mas cercano aunque la respuesta venga desordenada', () => {
     const turnos = [
       turno(1, 'CONFIRMADO', '2026-11-20T10:00:00'),
@@ -18,7 +18,7 @@ describe('proximoConfirmado', () => {
       turno(3, 'CONFIRMADO', '2026-11-15T16:00:00'),
     ]
 
-    expect(proximoConfirmado(turnos, AHORA)?.id).toBe(2)
+    expect(confirmadosPorVenir(turnos, AHORA)[0]?.id).toBe(2)
   })
 
   it('descarta los confirmados que ya pasaron', () => {
@@ -28,7 +28,7 @@ describe('proximoConfirmado', () => {
       turno(3, 'CONFIRMADO', '2026-11-12T08:00:00'),
     ]
 
-    expect(proximoConfirmado(turnos, AHORA)?.id).toBe(3)
+    expect(confirmadosPorVenir(turnos, AHORA)[0]?.id).toBe(3)
   })
 
   it('no confunde un hold con un turno confirmado', () => {
@@ -37,18 +37,35 @@ describe('proximoConfirmado', () => {
       turno(2, 'CONFIRMADO', '2026-11-14T08:00:00'),
     ]
 
-    expect(proximoConfirmado(turnos, AHORA)?.id).toBe(2)
+    expect(confirmadosPorVenir(turnos, AHORA)[0]?.id).toBe(2)
   })
 
   it('ignora un turno con la fecha ilegible en vez de romper', () => {
     const turnos = [turno(1, 'CONFIRMADO', 'basura'), turno(2, 'CONFIRMADO', '2026-11-14T08:00:00')]
 
-    expect(proximoConfirmado(turnos, AHORA)?.id).toBe(2)
+    expect(confirmadosPorVenir(turnos, AHORA)[0]?.id).toBe(2)
   })
 
-  it('devuelve null sin turnos confirmados por venir', () => {
-    expect(proximoConfirmado([], AHORA)).toBeNull()
-    expect(proximoConfirmado([turno(1, 'CONFIRMADO', '2026-11-01T10:00:00')], AHORA)).toBeNull()
+  it('no devuelve nada sin turnos confirmados por venir', () => {
+    expect(confirmadosPorVenir([turno(1, 'CONFIRMADO', '2026-11-01T10:00:00')], AHORA)).toEqual([])
+  })
+})
+
+describe('confirmadosPorVenir', () => {
+  it('lista todos los confirmados que no empezaron, del mas cercano al mas lejano', () => {
+    const turnos = [
+      turno(1, 'CONFIRMADO', '2026-11-20T10:00:00'),
+      turno(2, 'CONFIRMADO', '2026-11-10T09:00:00'),
+      turno(3, 'EN_HOLD', '2026-11-12T08:00:00', '2026-11-11T11:58:00'),
+      turno(4, 'CONFIRMADO', '2026-11-13T09:00:00'),
+      turno(5, 'CONFIRMADO', 'basura'),
+    ]
+
+    expect(confirmadosPorVenir(turnos, AHORA).map((t) => t.id)).toEqual([4, 1])
+  })
+
+  it('devuelve una lista vacia sin confirmados por venir', () => {
+    expect(confirmadosPorVenir([], AHORA)).toEqual([])
   })
 })
 

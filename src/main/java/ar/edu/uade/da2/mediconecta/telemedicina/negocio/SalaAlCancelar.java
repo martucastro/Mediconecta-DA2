@@ -24,7 +24,7 @@ import jakarta.transaction.Transactional.TxType;
 public class SalaAlCancelar {
 
     @Inject
-    private ServicioDeTelemedicina servicioDeTelemedicina;
+    private ServicioDeTelemedicinaLocal servicioDeTelemedicina;
 
     @Transactional(TxType.MANDATORY)
     public void alCancelar(

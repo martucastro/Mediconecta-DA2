@@ -9,7 +9,7 @@ import ar.edu.uade.da2.mediconecta.facturacion.datos.Reclamo;
 import ar.edu.uade.da2.mediconecta.facturacion.datos.ReclamoDAO;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
-import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 
 import jakarta.annotation.Resource;
@@ -36,7 +36,7 @@ import jakarta.jms.Queue;
  */
 @Stateless
 @PermitAll
-public class ServicioDeFacturacion {
+public class ServicioDeFacturacion implements ServicioDeFacturacionLocal {
 
     private static final Logger LOGGER = Logger.getLogger(ServicioDeFacturacion.class.getName());
 
@@ -49,7 +49,7 @@ public class ServicioDeFacturacion {
     private ReclamoDAO reclamoDAO;
 
     @Inject
-    private ServicioDeTurnos servicioDeTurnos;
+    private ServicioDeTurnosLocal servicioDeTurnos;
 
     @Inject
     private CanalDeReclamos canal;
