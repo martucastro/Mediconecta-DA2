@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
-import { soloFuturos } from '../fechas'
+import { aDate, claveDelDia, formatearHora, inicioDelDia, parsearFechaHora, soloFuturos } from '../fechas'
 import { paginar } from '../paginado'
 import Paginador from './Paginador'
 import { guardarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
@@ -20,20 +20,6 @@ const MESES = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ]
 
-function dosDigitos(n: number): string {
-  return String(n).padStart(2, '0')
-}
-
-// Clave de agrupacion por dia en horario local (no toISOString: eso pasa a
-// UTC y correria la fecha si el navegador no esta en GMT-3).
-function claveDelDia(fecha: Date): string {
-  return `${fecha.getFullYear()}-${dosDigitos(fecha.getMonth() + 1)}-${dosDigitos(fecha.getDate())}`
-}
-
-function fechaDesdeClave(clave: string): Date {
-  return new Date(`${clave}T00:00:00`)
-}
-
 function etiquetaCorta(fecha: Date): { abreviatura: string; numero: number } {
   return { abreviatura: DIAS_ABREV[fecha.getDay()], numero: fecha.getDate() }
 }
@@ -42,9 +28,10 @@ function etiquetaLarga(fecha: Date): string {
   return `${DIAS_LARGO[fecha.getDay()]} ${fecha.getDate()} de ${MESES[fecha.getMonth()]}`
 }
 
-function formatearHora(fechaHora: string): string {
-  const fecha = new Date(fechaHora)
-  return `${dosDigitos(fecha.getHours())}:${dosDigitos(fecha.getMinutes())}`
+// Todos los turnos de esta pantalla ya pasaron por soloFuturos: tienen una
+// fecha legible, de ahi los "!" aca y en agruparPorDia.
+function horaDelTurno(turno: TurnoDTO): string {
+  return formatearHora(parsearFechaHora(turno.fechaHora)!)
 }
 
 /**
@@ -56,7 +43,7 @@ function agruparPorDia(turnos: TurnoDTO[]): Map<string, TurnoDTO[]> {
   const grupos = new Map<string, TurnoDTO[]>()
   const ordenados = [...turnos].sort((a, b) => a.fechaHora.localeCompare(b.fechaHora))
   for (const turno of ordenados) {
-    const clave = claveDelDia(new Date(turno.fechaHora))
+    const clave = claveDelDia(aDate(parsearFechaHora(turno.fechaHora)!))
     const grupo = grupos.get(clave)
     if (grupo) grupo.push(turno)
     else grupos.set(clave, [turno])
@@ -239,7 +226,7 @@ export default function DisponibilidadPage() {
               <h2 className="h2">Elegí un horario</h2>
               <div className="days" data-single-select>
                 {dias.map((clave) => {
-                  const { abreviatura, numero } = etiquetaCorta(fechaDesdeClave(clave))
+                  const { abreviatura, numero } = etiquetaCorta(inicioDelDia(clave))
                   return (
                     <button
                       key={clave}
@@ -261,7 +248,7 @@ export default function DisponibilidadPage() {
 
             <section className="stack" style={{ gap: 14 }}>
               <p className="muted" style={{ fontWeight: 500 }}>
-                {diaSeleccionado && etiquetaLarga(fechaDesdeClave(diaSeleccionado))} · {turnosDelDia.length} {turnosDelDia.length === 1 ? 'turno disponible' : 'turnos disponibles'}
+                {diaSeleccionado && etiquetaLarga(inicioDelDia(diaSeleccionado))} · {turnosDelDia.length} {turnosDelDia.length === 1 ? 'turno disponible' : 'turnos disponibles'}
               </p>
               <div className="slots" data-single-select>
                 {horarios.items.map((turno) => (
@@ -272,7 +259,7 @@ export default function DisponibilidadPage() {
                     aria-pressed={turno.id === turnoSeleccionado?.id}
                     onClick={() => setTurnoSeleccionado(turno)}
                   >
-                    {formatearHora(turno.fechaHora)}
+                    {horaDelTurno(turno)}
                     <small className="slot-modalidad">
                       {turno.modalidad === 'TELEMEDICINA' ? 'Telemedicina' : 'Presencial'}
                     </small>
@@ -297,7 +284,7 @@ export default function DisponibilidadPage() {
               {reservando
                 ? 'Reservando…'
                 : turnoSeleccionado
-                  ? `Reservar ${formatearHora(turnoSeleccionado.fechaHora)} hs`
+                  ? `Reservar ${horaDelTurno(turnoSeleccionado)} hs`
                   : 'Elegí un horario'}
             </button>
           </>

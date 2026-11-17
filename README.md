@@ -114,6 +114,19 @@ set MEDICONECTA_PROFESIONAL_PASSWORD=cambiar123
 set MEDICONECTA_PACIENTE_PASSWORD=cambiar123
 ```
 
+En la misma consola, fijá la zona horaria de la JVM. Las fechas viajan como
+`LocalDateTime`, sin zona: el backend decide qué es "ahora" (el vencimiento del
+hold, una franja en el pasado) con la zona de la JVM, y el navegador muestra las
+horas en la suya. Si WildFly corre en UTC (un contenedor, una VM en la nube),
+todo se corre tres horas. Va en `JAVA_TOOL_OPTIONS` y no en `JAVA_OPTS`: si
+`JAVA_OPTS` está definida, `standalone.conf` deja de aplicar sus valores de
+memoria por defecto.
+
+```bash
+export JAVA_TOOL_OPTIONS=-Duser.timezone=America/Argentina/Buenos_Aires   # Linux y macOS
+set JAVA_TOOL_OPTIONS=-Duser.timezone=America/Argentina/Buenos_Aires      # Windows (cmd)
+```
+
 Arrancá el servidor **con el perfil full (`standalone-full.xml`), es un
 requisito**: es el que incluye el subsistema de mensajería (`messaging-activemq`)
 donde el script de configuración crea el tópico y la cola JMS. Con
