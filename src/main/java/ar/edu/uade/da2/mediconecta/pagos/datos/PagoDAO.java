@@ -68,6 +68,17 @@ public class PagoDAO {
         pago.setIdTransaccionExterna(idTransaccionExterna);
     }
 
+    /**
+     * Manda a la base los cambios pendientes de la transacción en curso. El
+     * contexto de persistencia es uno por transacción JTA, así que incluye lo
+     * que escribieron otros componentes en ella (el turno, el reclamo, la
+     * sala): ServicioDePagos lo usa antes de una llamada a la pasarela que el
+     * rollback no deshace, para que un error de base salga antes y no después.
+     */
+    public void sincronizar() {
+        em.flush();
+    }
+
     public Pago actualizar(Pago pago) {
         return em.merge(pago);
     }

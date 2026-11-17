@@ -226,6 +226,12 @@ class ServicioDeTurnosTest {
     }
 
     @Test
+    void alCancelarElReembolsoVaDespuesDeTodoLoQueSeEscribeEnLaBase() {
+        assertTrue(PuntosDeExtension.ANULACION_RECLAMO < PuntosDeExtension.CIERRE_SALA);
+        assertTrue(PuntosDeExtension.CIERRE_SALA < PuntosDeExtension.REEMBOLSO_COPAGO);
+    }
+
+    @Test
     void reservarAvisaConElPacienteYaAsignadoYAntesDeRetener() {
         Turno turno = turnoDisponible(10L);
         prepararReserva(turno);
@@ -525,9 +531,17 @@ class ServicioDeTurnosTest {
         when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
         when(turnoDAO.actualizar(turno)).thenReturn(turno);
 
-        eventoCancelacion.observadoPor(e -> assertEquals(paciente, e.getTurno().getPaciente()));
+        List<String> visto = new ArrayList<>();
+        eventoCancelacion.observadoPor(e -> visto.add(
+                e.getTurno().getPaciente().getEmail() + "/" + e.getTurno().getEstado()));
 
         Turno cancelado = servicio.cancelarTurno(42L);
+
+        // SCRUM-128: los pasos de la cancelacion ven el turno ya CANCELADO.
+        // ServicioDePagos manda todo a la base antes de reembolsar, asi que una
+        // falla al escribir el turno sale antes de la llamada a la pasarela y
+        // no despues, con el dinero ya devuelto.
+        assertEquals(List.of("paciente@mediconecta.com/CANCELADO"), visto);
 
         assertEquals(EstadoTurno.CANCELADO, cancelado.getEstado());
         // Conserva al paciente: sigue viendo el turno en /mios y su pago
@@ -542,7 +556,7 @@ class ServicioDeTurnosTest {
     }
 
     @Test
-    void siLaCompensacionFallaElTurnoSigueConfirmado() {
+    void siLaCompensacionFallaLaCancelacionEnteraSeRevierte() {
         Turno turno = turnoEnHoldConCobertura(43L);
         turno.setEstado(EstadoTurno.CONFIRMADO);
         prepararReserva(turno);
@@ -551,11 +565,16 @@ class ServicioDeTurnosTest {
             throw new ConflictoDeNegocioException("Pasarela caida al reembolsar");
         });
 
-        assertThrows(ConflictoDeNegocioException.class, () -> servicio.cancelarTurno(43L));
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.cancelarTurno(43L));
 
-        assertEquals(EstadoTurno.CONFIRMADO, turno.getEstado());
+        // El turno ya estaba CANCELADO en memoria (los pasos lo ven asi), pero
+        // la excepcion sale con rollback=true: el contenedor revierte la fila
+        // y el turno sigue CONFIRMADO en la base. Conserva al paciente.
+        assertTrue(e.getClass().getAnnotation(jakarta.ejb.ApplicationException.class).rollback());
         assertEquals(paciente, turno.getPaciente());
         verify(turnoDAO, never()).actualizar(any());
+        verify(expirador, never()).cancelar(43L);
     }
 
     @Test

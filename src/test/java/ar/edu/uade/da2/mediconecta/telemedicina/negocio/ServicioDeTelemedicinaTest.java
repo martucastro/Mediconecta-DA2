@@ -318,6 +318,43 @@ class ServicioDeTelemedicinaTest {
         assertThrows(EJBAccessException.class, () -> servicio.obtenerEnlace(27L));
     }
 
+    // ---- cancelarSesion (SCRUM-132) ------------------------------------------
+
+    @Test
+    void cancelarElTurnoDejaLaSalaCancelada() {
+        // Antes la sesion quedaba CREADA para siempre aunque el turno se cancelara.
+        Turno turno = turno(28L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CANCELADO, paciente);
+        SesionVideo sesion = sesion(28L, paciente);
+        autenticadoComo(paciente);
+        when(servicioDeTurnos.obtenerTurno(28L)).thenReturn(turno);
+        when(sesionDAO.buscarPorTurno(28L)).thenReturn(sesion);
+
+        servicio.cancelarSesion(28L);
+
+        assertEquals(EstadoSesionVideo.CANCELADA, sesion.getEstado());
+    }
+
+    @Test
+    void cancelarUnTurnoSinSalaNoHaceNada() {
+        Turno turno = turno(29L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CANCELADO, paciente);
+        autenticadoComo(paciente);
+        when(servicioDeTurnos.obtenerTurno(29L)).thenReturn(turno);
+
+        servicio.cancelarSesion(29L);
+
+        verify(sesionDAO, never()).actualizar(any());
+    }
+
+    @Test
+    void unPacienteAjenoNoCancelaLaSala() {
+        Turno turno = turno(30L, ModalidadTurno.TELEMEDICINA, EstadoTurno.CONFIRMADO, paciente);
+        autenticadoComo(otroPaciente);
+        when(servicioDeTurnos.obtenerTurno(30L)).thenReturn(turno);
+
+        assertThrows(EJBAccessException.class, () -> servicio.cancelarSesion(30L));
+        verify(sesionDAO, never()).buscarPorTurno(anyLong());
+    }
+
     @Test
     void elAdministradorNoEstaHabilitado() {
         RolesAllowed roles = ServicioDeTelemedicina.class.getAnnotation(RolesAllowed.class);

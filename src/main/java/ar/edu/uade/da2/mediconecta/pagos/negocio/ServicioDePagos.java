@@ -178,22 +178,34 @@ public class ServicioDePagos implements ServicioDePagosLocal {
      * Pasarela que no confirma el reembolso: ConflictoDeNegocioException (409).
      * En ambos casos la cancelacion entera se revierte. Sin pago APROBADO
      * (copago 0 o sin cotizar) no hay nada que devolver.
+     *
+     * La llamada a la pasarela es lo unico que el rollback no deshace (SCRUM-128):
+     * antes se manda a la base todo lo que la cancelacion ya escribio (el turno
+     * CANCELADO, el reclamo, la sala), asi un error de base sale antes de
+     * devolver el dinero. Y cada reembolso confirmado se guarda en su propia
+     * transaccion: si despues falla el commit, el pago no vuelve a figurar
+     * APROBADO con el dinero ya devuelto, y reintentar la cancelacion no lo
+     * reembolsa dos veces. Ver ServicioDeTurnos.cancelarTurno.
      */
     @Override
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public void reembolsarCopagoDelTurno(Long turnoId) {
         verificarQueElTurnoEsDelCaller(turnoId);
-        for (Pago pago : pagoDAO.listarPorTurno(turnoId)) {
-            if (pago.getEstado() != EstadoPago.APROBADO) {
-                continue;
-            }
+        List<Pago> aprobados = pagoDAO.listarPorTurno(turnoId).stream()
+                .filter(pago -> pago.getEstado() == EstadoPago.APROBADO)
+                .toList();
+        if (aprobados.isEmpty()) {
+            return;
+        }
+        pagoDAO.sincronizar();
+        for (Pago pago : aprobados) {
             ResultadoPasarela resultado = pasarela.reembolsar(pago.getIdTransaccionExterna());
             if (resultado.getEstado() != EstadoPago.REEMBOLSADO) {
                 throw new ConflictoDeNegocioException("La pasarela no confirmo el reembolso del pago "
                         + pago.getId() + " (estado " + resultado.getEstado() + ").");
             }
             pago.setEstado(resultado.getEstado());
-            pagoDAO.actualizar(pago);
+            pagoDAO.actualizarEnNuevaTransaccion(pago);
         }
     }
 

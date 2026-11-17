@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -19,6 +20,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -183,8 +185,17 @@ class ServicioDePagosTest {
 
         assertEquals(EstadoPago.REEMBOLSADO, aprobado.getEstado());
         assertEquals(EstadoPago.RECHAZADO, rechazado.getEstado());
-        verify(pagoDAO).actualizar(aprobado);
-        verify(pagoDAO, never()).actualizar(rechazado);
+        // SCRUM-128: lo que la cancelacion escribio (turno, reclamo, sala) va a
+        // la base antes de la llamada externa, y el reembolso se guarda en una
+        // transaccion propia: si despues falla el commit, el pago no vuelve a
+        // figurar APROBADO con el dinero devuelto, y un reintento no lo
+        // reembolsa dos veces.
+        InOrder orden = inOrder(pagoDAO, pasarela);
+        orden.verify(pagoDAO).sincronizar();
+        orden.verify(pasarela).reembolsar("tx-1");
+        orden.verify(pagoDAO).actualizarEnNuevaTransaccion(aprobado);
+        verify(pagoDAO, never()).actualizarEnNuevaTransaccion(rechazado);
+        verify(pagoDAO, never()).actualizar(any());
     }
 
     @Test
@@ -202,6 +213,7 @@ class ServicioDePagosTest {
                 .rollback());
         assertEquals(EstadoPago.APROBADO, aprobado.getEstado());
         verify(pagoDAO, never()).actualizar(any());
+        verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
     }
 
     @Test
@@ -214,6 +226,7 @@ class ServicioDePagosTest {
         assertThrows(ConflictoDeNegocioException.class,
                 () -> servicio.reembolsarCopagoDelTurno(TURNO));
         verify(pagoDAO, never()).actualizar(any());
+        verify(pagoDAO, never()).actualizarEnNuevaTransaccion(any());
     }
 
     @Test
@@ -224,6 +237,7 @@ class ServicioDePagosTest {
         servicio.reembolsarCopagoDelTurno(TURNO);
 
         verify(pasarela, never()).reembolsar(any());
+        verify(pagoDAO, never()).sincronizar();
     }
 
     private void comoElPacienteDelTurno() {

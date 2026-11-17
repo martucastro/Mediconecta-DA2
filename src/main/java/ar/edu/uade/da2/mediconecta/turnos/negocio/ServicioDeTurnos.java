@@ -314,6 +314,24 @@ public class ServicioDeTurnos {
         return confirmado;
     }
 
+    /**
+     * Libera un hold o cancela un turno confirmado.
+     *
+     * Cancelar un CONFIRMADO deshace lo que dejo la confirmacion (SCRUM-124):
+     * anula el reclamo, cancela la sala y reembolsa el copago, en ese orden
+     * (PuntosDeExtension). El turno se marca CANCELADO antes de avisar, y
+     * ServicioDePagos manda a la base todo lo escrito antes de llamar a la
+     * pasarela (SCRUM-128): una falla al escribir el turno, el reclamo o la
+     * sala sale antes del reembolso, revierte todo y no devuelve nada. Antes el
+     * estado cambiaba despues del reembolso, y una falla al guardarlo dejaba el
+     * dinero devuelto con el turno CONFIRMADO.
+     *
+     * Limite que queda: el commit en si todavia puede fallar despues del
+     * reembolso (se corta la base, falla el commit en dos fases). El turno
+     * vuelve a CONFIRMADO, pero el pago ya quedo REEMBOLSADO en su propia
+     * transaccion: la base no miente sobre el dinero, y si el paciente
+     * reintenta la cancelacion termina sin reembolsar dos veces.
+     */
     @RolesAllowed(ServicioDeUsuarios.ROL_PACIENTE)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public Turno cancelarTurno(Long turnoId) {
@@ -331,24 +349,24 @@ public class ServicioDeTurnos {
                     "El turno no está reservado, no hay nada que cancelar");
         }
 
-        if (turno.getEstado() == EstadoTurno.CONFIRMADO) {
-            // Deshace lo que dejo la confirmacion: reembolso del copago y
-            // anulacion del reclamo (SCRUM-124). Antes de cambiar el estado;
-            // si alguno falla, la cancelacion entera se revierte y el turno
-            // sigue CONFIRMADO.
-            eventoCancelacion.fire(new TurnoEnCancelacion(turno));
-        }
-
         // Liberar un hold devuelve el turno a la agenda, igual que cuando vence
         // (ExpiradorDeHolds). Un turno confirmado queda CANCELADO y conserva al
         // paciente: si lo soltara, el paciente perdia el turno de /mios y su
         // pago REEMBOLSADO le daba 403. La franja no vuelve a la agenda: el
         // profesional abre otra (abrirDisponibilidad ignora las CANCELADO).
-        if (turno.getEstado() == EstadoTurno.EN_HOLD) {
+        boolean confirmado = turno.getEstado() == EstadoTurno.CONFIRMADO;
+        if (confirmado) {
+            turno.setEstado(EstadoTurno.CANCELADO);
+        } else {
             turno.setEstado(EstadoTurno.DISPONIBLE);
             turno.liberar();
-        } else {
-            turno.setEstado(EstadoTurno.CANCELADO);
+        }
+
+        if (confirmado) {
+            // Deshace lo que dejo la confirmacion, con el turno ya CANCELADO
+            // (ver el javadoc). Si algun paso falla, la cancelacion entera se
+            // revierte y el turno sigue CONFIRMADO.
+            eventoCancelacion.fire(new TurnoEnCancelacion(turno));
         }
         expirador.cancelar(turnoId);
         return turnoDAO.actualizar(turno);

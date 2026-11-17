@@ -43,6 +43,9 @@ public final class PuntosDeExtension {
     /** TurnoEnCancelacion: anulacion del reclamo a la obra social (SCRUM-124). */
     public static final int ANULACION_RECLAMO = 100;
 
+    /** TurnoEnCancelacion: la sala de video queda CANCELADA (SCRUM-132). */
+    public static final int CIERRE_SALA = 150;
+
     /**
      * TurnoEnCancelacion: reembolso del copago (SCRUM-124). Va al final: es lo
      * unico que el rollback no deshace.
