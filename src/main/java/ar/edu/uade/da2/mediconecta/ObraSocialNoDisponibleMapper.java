@@ -1,6 +1,8 @@
-package ar.edu.uade.da2.mediconecta.obrassociales.negocio;
+package ar.edu.uade.da2.mediconecta;
 
 import java.util.Map;
+
+import ar.edu.uade.da2.mediconecta.obrassociales.negocio.ObraSocialNoDisponibleException;
 
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -14,8 +16,8 @@ import jakarta.ws.rs.ext.Provider;
  * recibe ante un error nuestro. 503 dice lo que pasa: el servicio del que
  * dependemos no esta disponible y se puede reintentar.
  *
- * Como esta excepcion es especifica de este componente, su mapper vive junto a
- * ella y no en el paquete raiz (igual que PasarelaNoDisponibleMapper en pagos).
+ * Vive en el paquete raiz con los demas mappers: armar respuestas HTTP es
+ * trabajo de la presentacion, no de la capa de negocio de obras sociales.
  */
 @Provider
 public class ObraSocialNoDisponibleMapper implements ExceptionMapper<ObraSocialNoDisponibleException> {

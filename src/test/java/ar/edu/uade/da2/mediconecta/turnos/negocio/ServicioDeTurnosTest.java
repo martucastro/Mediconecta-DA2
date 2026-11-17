@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,6 +46,7 @@ import ar.edu.uade.da2.mediconecta.turnos.datos.TurnoDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.ejb.EJBAccessException;
 import jakarta.ejb.SessionContext;
 import jakarta.jms.JMSContext;
 import jakarta.jms.JMSProducer;
@@ -84,6 +86,7 @@ class ServicioDeTurnosTest {
 
     private final EventoSincronico<TurnoEnReserva> eventoReserva = new EventoSincronico<>();
     private final EventoSincronico<TurnoEnConfirmacion> eventoConfirmacion = new EventoSincronico<>();
+    private final EventoSincronico<TurnoEnCancelacion> eventoCancelacion = new EventoSincronico<>();
 
     private Usuario paciente;
     private Usuario profesional;
@@ -94,6 +97,7 @@ class ServicioDeTurnosTest {
         profesional = usuario(2L, "profesional@mediconecta.com", ServicioDeUsuarios.ROL_PROFESIONAL);
         inyectar(servicio, "eventoReserva", eventoReserva);
         inyectar(servicio, "eventoConfirmacion", eventoConfirmacion);
+        inyectar(servicio, "eventoCancelacion", eventoCancelacion);
     }
 
     // ---- Modelo y apertura de franjas -----------------------------------------
@@ -126,6 +130,64 @@ class ServicioDeTurnosTest {
 
         assertEquals(ModalidadTurno.TELEMEDICINA, turno.getModalidad());
         assertNull(turno.getConsultorio());
+    }
+
+    @Test
+    void noSePuedeAbrirUnaFranjaAMasDeDosAnios() {
+        // Sin tope, "+999999-12-31T23:59:59" llegaba a PostgreSQL y salia 500
+        // (timestamp out of range).
+        for (LocalDateTime fechaHora : new LocalDateTime[] {
+                LocalDateTime.now().plusYears(2).plusDays(1),
+                LocalDateTime.of(999_999, 12, 31, 23, 59, 59) }) {
+            assertThrows(DatosInvalidosException.class,
+                    () -> servicio.abrirDisponibilidad(fechaHora, null, null));
+        }
+        verify(turnoDAO, never()).listarPorProfesional(anyLong(), any());
+        verify(turnoDAO, never()).guardar(any());
+    }
+
+    @Test
+    void noSePuedeAbrirDosVecesLaMismaFranja() {
+        autenticadoComo(profesional);
+        LocalDateTime fechaHora = LocalDateTime.now().plusDays(1)
+                .withHour(9).withMinute(5).withSecond(0).withNano(0);
+        when(turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate()))
+                .thenReturn(List.of(new Turno(profesional, fechaHora)));
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.abrirDisponibilidad(fechaHora, null, null));
+        // La fecha se lee como la escribe una persona, no en ISO-8601.
+        assertEquals(String.format("El profesional ya tiene una franja abierta el %02d/%02d/%d 09:05",
+                fechaHora.getDayOfMonth(), fechaHora.getMonthValue(), fechaHora.getYear()),
+                e.getMessage());
+        verify(turnoDAO, never()).guardar(any());
+    }
+
+    @Test
+    void laMismaFranjaConOtrosSegundosTambienEstaOcupada() {
+        autenticadoComo(profesional);
+        LocalDateTime minuto = LocalDateTime.now().plusDays(1).withSecond(0).withNano(0);
+        LocalDateTime pedida = minuto.plusSeconds(42);
+        when(turnoDAO.listarPorProfesional(profesional.getId(), pedida.toLocalDate()))
+                .thenReturn(List.of(new Turno(profesional, minuto.plusSeconds(15).plusNanos(9))));
+
+        assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.abrirDisponibilidad(pedida, null, null));
+        verify(turnoDAO, never()).guardar(any());
+    }
+
+    @Test
+    void unaFranjaCanceladaNoImpideVolverAAbrirEseHorario() {
+        autenticadoComo(profesional);
+        LocalDateTime fechaHora = LocalDateTime.now().plusDays(1).withNano(0);
+        Turno cancelado = new Turno(profesional, fechaHora);
+        cancelado.setEstado(EstadoTurno.CANCELADO);
+        when(turnoDAO.listarPorProfesional(profesional.getId(), fechaHora.toLocalDate()))
+                .thenReturn(List.of(cancelado, new Turno(profesional, fechaHora.plusHours(1))));
+
+        Turno turno = servicio.abrirDisponibilidad(fechaHora, null, null);
+
+        verify(turnoDAO).guardar(turno);
     }
 
     @Test
@@ -214,6 +276,31 @@ class ServicioDeTurnosTest {
     }
 
     @Test
+    void noSePuedeReservarUnaFranjaQueYaPaso() {
+        Turno turno = new Turno(profesional, LocalDateTime.now().minusHours(1));
+        turno.setId(12L);
+        prepararReserva(turno);
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.reservarTurno(12L));
+        assertEquals("El turno ya pasó: no se puede reservar", e.getMessage());
+        assertEquals(EstadoTurno.DISPONIBLE, turno.getEstado());
+        assertNull(turno.getPaciente());
+        assertTrue(eventoReserva.disparados().isEmpty());
+        verify(expirador, never()).programar(anyLong(), anyLong());
+    }
+
+    @Test
+    void reservarUnTurnoRetenidoDiceQueEstaReservadoEnPalabras() {
+        Turno turno = turnoEnHold(14L, ModalidadTurno.PRESENCIAL);
+        prepararReserva(turno);
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.reservarTurno(14L));
+        assertEquals("El turno ya no está disponible: está reservado", e.getMessage());
+    }
+
+    @Test
     void siUnObservadorDeLaReservaFallaNoQuedaHold() {
         Turno turno = turnoDisponible(11L);
         prepararReserva(turno);
@@ -260,6 +347,47 @@ class ServicioDeTurnosTest {
         verify(expirador, never()).cancelar(anyLong());
         verify(turnoDAO, never()).actualizar(any());
         verify(jmsContext, never()).createProducer();
+    }
+
+    @Test
+    void otroPacienteRecibe403SinEnterarseDelEstadoDelTurno() {
+        Turno turno = turnoEnHold(31L, ModalidadTurno.PRESENCIAL);
+        turno.setEstado(EstadoTurno.CONFIRMADO);
+        autenticadoComo(usuario(9L, "otro@mediconecta.com", ServicioDeUsuarios.ROL_PACIENTE));
+        when(turnoDAO.buscarParaActualizar(31L)).thenReturn(turno);
+
+        // Antes respondia 409 "esta CONFIRMADO": le contaba el estado del turno de otro.
+        assertThrows(EJBAccessException.class, () -> servicio.confirmarTurno(31L));
+        assertThrows(EJBAccessException.class, () -> servicio.cancelarTurno(31L));
+        verify(turnoDAO, never()).actualizar(any());
+    }
+
+    @Test
+    void confirmarUnTurnoQueYaVolvioALaAgendaSigueSiendo409() {
+        // Sin paciente no hay nada ajeno que proteger: HoldPage usa este 409
+        // para mostrar "reserva vencida".
+        when(turnoDAO.buscarParaActualizar(32L)).thenReturn(turnoDisponible(32L));
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.confirmarTurno(32L));
+        // El estado se nombra con palabras, no con el enum.
+        assertEquals("El turno no tiene un hold activo: está disponible", e.getMessage());
+    }
+
+    @Test
+    void unHoldVencidoNoSeConfirmaAunqueElBarridoTodaviaNoLoLibero() {
+        Turno turno = turnoEnHold(33L, ModalidadTurno.PRESENCIAL);
+        turno.setInicioHold(LocalDateTime.now()
+                .minusNanos(ExpiradorDeHolds.DURACION_HOLD_MS * 1_000_000).minusSeconds(1));
+        autenticadoComo(paciente);
+        when(turnoDAO.buscarParaActualizar(33L)).thenReturn(turno);
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.confirmarTurno(33L));
+        assertEquals("El turno no tiene un hold activo: el hold venció", e.getMessage());
+        assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
+        assertTrue(eventoConfirmacion.disparados().isEmpty());
+        verify(turnoDAO, never()).actualizar(any());
     }
 
     // ---- Sala de video al confirmar (SCRUM-95) --------------------------------
@@ -368,18 +496,80 @@ class ServicioDeTurnosTest {
     }
 
     @Test
-    void cancelarNoDejaLaCoberturaDelPacienteEnElTurno() {
+    void liberarUnHoldLoDevuelveADisponibleComoAlVencer() {
         Turno turno = turnoEnHoldConCobertura(41L);
         prepararReserva(turno);
         when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
         when(turnoDAO.actualizar(turno)).thenReturn(turno);
 
-        Turno cancelado = servicio.cancelarTurno(41L);
+        Turno liberado = servicio.cancelarTurno(41L);
+
+        // Igual que ExpiradorDeHolds: vuelve a la agenda sin nada del paciente.
+        assertEquals(EstadoTurno.DISPONIBLE, liberado.getEstado());
+        assertNull(liberado.getPaciente());
+        assertNull(liberado.getInicioHold());
+        assertNull(liberado.getCoberturaAutorizada());
+        assertNull(liberado.getCoberturaPorcentaje());
+        assertNull(liberado.getNumeroAutorizacion());
+        assertNull(liberado.getCopago());
+        verify(expirador).cancelar(41L);
+        // Un hold no tiene copago cobrado ni reclamo: no hay nada que compensar.
+        assertTrue(eventoCancelacion.disparados().isEmpty());
+    }
+
+    @Test
+    void cancelarUnTurnoConfirmadoLoDejaCancelado() {
+        Turno turno = turnoEnHoldConCobertura(42L);
+        turno.setEstado(EstadoTurno.CONFIRMADO);
+        prepararReserva(turno);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
+        when(turnoDAO.actualizar(turno)).thenReturn(turno);
+
+        eventoCancelacion.observadoPor(e -> assertEquals(paciente, e.getTurno().getPaciente()));
+
+        Turno cancelado = servicio.cancelarTurno(42L);
 
         assertEquals(EstadoTurno.CANCELADO, cancelado.getEstado());
-        assertNull(cancelado.getPaciente());
-        assertNull(cancelado.getNumeroAutorizacion());
-        assertNull(cancelado.getCopago());
+        // Conserva al paciente: sigue viendo el turno en /mios y su pago
+        // REEMBOLSADO (ServicioDePagos lo autoriza por el paciente del turno).
+        assertSame(paciente, cancelado.getPaciente());
+        assertEquals(new BigDecimal("1500.00"), cancelado.getCopago());
+        verify(expirador).cancelar(42L);
+        // Reembolso del copago y anulacion del reclamo (SCRUM-124), con el
+        // paciente todavia en el turno.
+        assertEquals(1, eventoCancelacion.disparados().size());
+        assertSame(turno, eventoCancelacion.disparados().get(0).getTurno());
+    }
+
+    @Test
+    void siLaCompensacionFallaElTurnoSigueConfirmado() {
+        Turno turno = turnoEnHoldConCobertura(43L);
+        turno.setEstado(EstadoTurno.CONFIRMADO);
+        prepararReserva(turno);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(false);
+        eventoCancelacion.observadoPor(e -> {
+            throw new ConflictoDeNegocioException("Pasarela caida al reembolsar");
+        });
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.cancelarTurno(43L));
+
+        assertEquals(EstadoTurno.CONFIRMADO, turno.getEstado());
+        assertEquals(paciente, turno.getPaciente());
+        verify(turnoDAO, never()).actualizar(any());
+    }
+
+    @Test
+    void cancelarUnTurnoYaCanceladoEs409() {
+        Turno turno = turnoDisponible(44L);
+        turno.setEstado(EstadoTurno.CANCELADO);
+        when(turnoDAO.buscarParaActualizar(44L)).thenReturn(turno);
+        // lenient: con el arreglo ya no se consulta quien llama (el turno no tiene paciente).
+        Principal principal = paciente::getEmail;
+        lenient().when(contexto.getCallerPrincipal()).thenReturn(principal);
+        lenient().when(servicioDeUsuarios.obtenerPorEmail(paciente.getEmail())).thenReturn(paciente);
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.cancelarTurno(44L));
+        verify(turnoDAO, never()).actualizar(any());
     }
 
     // ---- Mis turnos ------------------------------------------------------------

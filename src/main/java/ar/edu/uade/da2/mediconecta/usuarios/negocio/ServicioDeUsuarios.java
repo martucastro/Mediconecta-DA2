@@ -7,6 +7,7 @@ import ar.edu.uade.da2.mediconecta.usuarios.datos.UsuarioDAO;
 
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.PermitAll;
@@ -34,6 +35,19 @@ public class ServicioDeUsuarios {
     private static final Set<String> ROLES_VALIDOS =
             Set.of(ROL_PACIENTE, ROL_PROFESIONAL, ROL_ADMINISTRADOR);
 
+    // Forma basica de un email: algo@algo.tld, sin espacios (SCRUM-126). Que
+    // exista de verdad solo se sabria mandandole un mail.
+    private static final Pattern FORMA_DE_EMAIL = Pattern.compile("[^\\s@]+@[^\\s@]+\\.[^\\s@]+");
+
+    private static final int MINIMO_CONTRASENA = 8;
+
+    // Sin tope, una contraseña de 200 KB se aceptaba y se hasheaba entera.
+    private static final int MAXIMO_CONTRASENA = 128;
+
+    // Largo de las columnas nombre y email (varchar(255) en Usuario). Sin este
+    // chequeo un texto mas largo fallaba recien en el INSERT, como 500.
+    private static final int MAXIMO_TEXTO = 255;
+
     @Inject
     private UsuarioDAO usuarioDAO;
 
@@ -59,6 +73,26 @@ public class ServicioDeUsuarios {
                 || rol == null || rol.isBlank()
                 || contrasenaPlana == null || contrasenaPlana.isBlank()) {
             throw new DatosInvalidosException("Todos los datos son obligatorios.");
+        }
+
+        if (nombre.length() > MAXIMO_TEXTO || email.length() > MAXIMO_TEXTO) {
+            throw new DatosInvalidosException(
+                    "El nombre y el email admiten hasta " + MAXIMO_TEXTO + " caracteres.");
+        }
+
+        if (!FORMA_DE_EMAIL.matcher(email).matches()) {
+            throw new DatosInvalidosException(
+                    "El email no tiene un formato válido (por ejemplo, nombre@dominio.com).");
+        }
+
+        if (contrasenaPlana.length() < MINIMO_CONTRASENA) {
+            throw new DatosInvalidosException(
+                    "La contraseña debe tener al menos " + MINIMO_CONTRASENA + " caracteres.");
+        }
+
+        if (contrasenaPlana.length() > MAXIMO_CONTRASENA) {
+            throw new DatosInvalidosException(
+                    "La contraseña admite hasta " + MAXIMO_CONTRASENA + " caracteres.");
         }
 
         if (!ROLES_VALIDOS.contains(rol)) {
@@ -92,6 +126,38 @@ public class ServicioDeUsuarios {
     }
 
     public Usuario obtenerUsuario(Long id) {
+        return usuarioDAO.buscarPorId(id);
+    }
+
+
+    /**
+     * Consulta de un usuario por id desde la API (GET /api/usuarios/{id}).
+     *
+     * Un administrador puede consultar a cualquiera. Cualquier otro rol solo
+     * puede consultar su propio id: @RolesAllowed dice "es PACIENTE", nunca
+     * "este id es el suyo", asi que esa parte se resuelve aca, comparando el
+     * caller autenticado contra el id pedido.
+     *
+     * La pertenencia se verifica ANTES de buscar el id pedido, para que un
+     * no-administrador reciba el mismo 403 exista o no el usuario y no pueda
+     * descubrir que ids estan ocupados. Un administrador con un id inexistente
+     * recibe null (404 en la capa de presentacion).
+     *
+     * Es un metodo aparte de obtenerUsuario a proposito: ese lo usan otros
+     * componentes por dentro (obras sociales, historia clinica) y no debe
+     * restringirse.
+     */
+    @RolesAllowed({ROL_PACIENTE, ROL_PROFESIONAL, ROL_ADMINISTRADOR})
+    public Usuario consultarUsuario(Long id) {
+        if (!contexto.isCallerInRole(ROL_ADMINISTRADOR)) {
+            String emailDelCaller = contexto.getCallerPrincipal().getName();
+            Usuario solicitante = obtenerPorEmail(emailDelCaller);
+
+            if (solicitante == null || !solicitante.getId().equals(id)) {
+                throw new EJBAccessException(
+                        "Solo se puede consultar el propio usuario.");
+            }
+        }
         return usuarioDAO.buscarPorId(id);
     }
 

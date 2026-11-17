@@ -8,6 +8,8 @@ import java.util.List;
  */
 public class RegistrarConsultaDTO {
 
+    // Se ignora: el autor es siempre el profesional autenticado. Queda para
+    // no romper a los clientes que todavia lo mandan.
     private Long profesionalId;
     private NuevaEntradaDTO diagnostico;
     private List<NuevaEntradaDTO> recetas;

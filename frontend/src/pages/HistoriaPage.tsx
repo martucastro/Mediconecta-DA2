@@ -98,10 +98,10 @@ export default function HistoriaPage() {
           <Link to="/agenda">Mi agenda</Link>
           <Link to="/historia" aria-current="page">Pacientes</Link>
           <a href="#">Facturación</a>
-          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="" />
           <BotonCerrarSesion />
         </nav>
-        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="" />
       </header>
 
       <main className="content stack" style={{ gap: 26 }}>
