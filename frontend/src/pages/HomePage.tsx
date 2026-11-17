@@ -114,6 +114,7 @@ export default function HomePage() {
         </Link>
         <nav className="nav">
           <Link to="/home" aria-current="page">Mis turnos</Link>
+          <Link to="/notificaciones">Notificaciones</Link>
           <img className="avatar" src={ASSETS.avatar} alt="" />
           <BotonCerrarSesion />
         </nav>

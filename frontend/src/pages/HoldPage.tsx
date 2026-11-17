@@ -182,6 +182,7 @@ export default function HoldPage() {
           MediConecta
         </Link>
         <Link className="m" to="/disponibilidad" style={{ fontWeight: 500 }}>← Turno</Link>
+        <Link className="d" to="/notificaciones">Notificaciones</Link>
         <img className="avatar d" src={ASSETS.avatar} alt="" />
         <img className="m" src={ASSETS.logo} alt="MediConecta" style={{ width: 18, height: 18 }} />
       </header>
