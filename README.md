@@ -260,12 +260,13 @@ y ahí se guardan los ids que la colección va creando.
 corta; también toma los ids de las respuestas, pero la de `postman/` cubre más
 casos: preferí esa.
 
-Las pruebas de unidad corren sin servidor: 256 del backend (JUnit y Mockito) y
-28 del frontend (Vitest):
+Las pruebas de unidad corren sin servidor: 426 del backend (JUnit y Mockito),
+58 del frontend (Vitest) y 27 del componente Node.js `recordatorios` (Jest):
 
 ```bash
 mvn test
 cd frontend && npm test
+cd recordatorios && npm test
 ```
 
 ### 6. Frontend (React + Vite)

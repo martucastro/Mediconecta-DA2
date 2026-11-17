@@ -825,7 +825,7 @@ public class AccesoDenegadoMapper implements ExceptionMapper<EJBAccessException>
     @Override
     public Response toResponse(EJBAccessException excepcion) {
         return Response.status(Response.Status.FORBIDDEN)
-                .entity("No tiene permisos para realizar esta operacion")
+                .entity("No tiene permisos para realizar esta operación")
                 .type("text/plain")
                 .build();
     }
