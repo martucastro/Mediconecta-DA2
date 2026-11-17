@@ -149,6 +149,9 @@ comprobar "el copago quedo APROBADO"          "si" "$(printf '%s' "$PAGOS" | gre
 comprobar "el copago cobrado es de 6000"      "si" "$(printf '%s' "$PAGOS" | grep -q '"monto":6000.00' && echo si || echo no)"
 comprobar "el intento rechazado quedo registrado" "si" "$(printf '%s' "$PAGOS" | grep -q '"estado":"RECHAZADO"' && echo si || echo no)"
 comprobar "pagos sin credenciales"            401 "$(codigo "$BASE/pagos?turnoId=$ID")"
+# SCRUM-132: devolver el copago de un turno que sigue confirmado lo dejaba sin pago.
+ID_PAGO=$(printf '%s' "$PAGOS" | tr '{' '\n' | grep '"estado":"APROBADO"' | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+comprobar "admin NO reembolsa un turno confirmado" 409 "$(codigo -u "$ADMIN" -X PUT "$BASE/pagos/$ID_PAGO/reembolso")"
 
 echo
 echo "Mis turnos (resueltos desde el usuario autenticado)"

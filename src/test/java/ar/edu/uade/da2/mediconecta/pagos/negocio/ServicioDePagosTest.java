@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,6 +31,7 @@ import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.Pago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.PagoDAO;
+import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
@@ -238,6 +240,67 @@ class ServicioDePagosTest {
 
         verify(pasarela, never()).reembolsar(any());
         verify(pagoDAO, never()).sincronizar();
+    }
+
+    // ---- Reembolso del administrador (SCRUM-132) -----------------------------
+
+    @Test
+    void elAdministradorNoReembolsaElCopagoDeUnTurnoConfirmado() {
+        // Antes lo devolvia y el turno seguia CONFIRMADO, con su reclamo
+        // ENVIADO a la obra social: un turno vigente sin pago. Para devolverlo,
+        // se cancela el turno y la cancelacion lo reembolsa.
+        Pago aprobado = pagoComoAdministrador(40L, EstadoPago.APROBADO, EstadoTurno.CONFIRMADO);
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.reembolsar(40L));
+
+        assertTrue(e.getMessage().contains("confirmado"), e.getMessage());
+        assertEquals(EstadoPago.APROBADO, aprobado.getEstado());
+        verify(pasarela, never()).reembolsar(any());
+    }
+
+    @Test
+    void elAdministradorReembolsaElCopagoDeUnTurnoQueYaNoEstaConfirmado() {
+        Pago aprobado = pagoComoAdministrador(41L, EstadoPago.APROBADO, EstadoTurno.CANCELADO);
+        when(pasarela.reembolsar("tx-41")).thenReturn(new ResultadoPasarela(EstadoPago.REEMBOLSADO, "tx-41"));
+        when(pagoDAO.actualizar(aprobado)).thenReturn(aprobado);
+
+        assertEquals(EstadoPago.REEMBOLSADO, servicio.reembolsar(41L).getEstado());
+    }
+
+    @Test
+    void elAdministradorDevuelveUnaCompensacionPendiente() {
+        // El cobro huerfano cuyo reembolso automatico fallo (CompensacionDeCobro).
+        Pago pendiente = pagoComoAdministrador(42L, EstadoPago.COMPENSACION_PENDIENTE, EstadoTurno.EN_HOLD);
+        when(pasarela.reembolsar("tx-42")).thenReturn(new ResultadoPasarela(EstadoPago.REEMBOLSADO, "tx-42"));
+        when(pagoDAO.actualizar(pendiente)).thenReturn(pendiente);
+
+        assertEquals(EstadoPago.REEMBOLSADO, servicio.reembolsar(42L).getEstado());
+    }
+
+    @Test
+    void siLaPasarelaNoConfirmaElReembolsoDelAdministradorElPagoNoCambia() {
+        // Antes guardaba el estado que viniera: un RECHAZADO dejaba el pago
+        // RECHAZADO con el dinero todavia cobrado.
+        Pago pendiente = pagoComoAdministrador(43L, EstadoPago.COMPENSACION_PENDIENTE, EstadoTurno.EN_HOLD);
+        when(pasarela.reembolsar("tx-43")).thenReturn(new ResultadoPasarela(EstadoPago.RECHAZADO, null));
+
+        assertThrows(ConflictoDeNegocioException.class, () -> servicio.reembolsar(43L));
+
+        assertEquals(EstadoPago.COMPENSACION_PENDIENTE, pendiente.getEstado());
+        verify(pagoDAO, never()).actualizar(any());
+    }
+
+    private Pago pagoComoAdministrador(Long pagoId, EstadoPago estado, EstadoTurno estadoTurno) {
+        Pago pago = pago(estado, "tx-" + pagoId);
+        pago.setId(pagoId);
+        Turno turno = new Turno(null, LocalDateTime.now().plusDays(1));
+        turno.setId(TURNO);
+        turno.setEstado(estadoTurno);
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(true);
+        when(pagoDAO.buscarPorId(pagoId)).thenReturn(pago);
+        lenient().when(servicioDeTurnos.obtenerTurno(TURNO)).thenReturn(turno);
+        return pago;
     }
 
     private void comoElPacienteDelTurno() {

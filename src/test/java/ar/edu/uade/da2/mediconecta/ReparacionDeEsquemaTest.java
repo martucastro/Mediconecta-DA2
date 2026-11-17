@@ -85,6 +85,23 @@ class ReparacionDeEsquemaTest {
     }
 
     @Test
+    void quitaElCheckDeSesionesQueNoIncluyeCancelada() throws Exception {
+        conRestricciones("reclamos", new Object[] {"reclamos_estado_check", RECLAMOS_ACTUAL});
+        conRestricciones("pagos", new Object[] {"pagos_estado_check", PAGOS_ACTUAL});
+        conRestricciones("sesiones_video",
+                new Object[] {"sesiones_video_estado_check", "CHECK (((estado)::text = 'CREADA'::text))"});
+        Query alter = mock(Query.class);
+        when(em.createNativeQuery(
+                "ALTER TABLE sesiones_video DROP CONSTRAINT IF EXISTS \"sesiones_video_estado_check\""))
+                .thenReturn(alter);
+
+        reparacion.quitarRestriccionesDesactualizadas();
+
+        verify(alter).executeUpdate();
+        verify(transaccion).commit();
+    }
+
+    @Test
     void enUnaBaseNuevaNoTocaNada() throws Exception {
         conRestricciones("reclamos", new Object[] {"reclamos_estado_check", RECLAMOS_ACTUAL});
         conRestricciones("pagos", new Object[] {"pagos_estado_check", PAGOS_ACTUAL});

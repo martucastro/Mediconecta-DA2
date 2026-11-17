@@ -9,6 +9,7 @@ import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.pagos.datos.EstadoPago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.Pago;
 import ar.edu.uade.da2.mediconecta.pagos.datos.PagoDAO;
+import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
 import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
@@ -151,6 +152,17 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         return pagoDAO.listarPorTurno(turnoId);
     }
 
+    /**
+     * Reembolso suelto, del administrador (PUT /api/pagos/{id}/reembolso).
+     *
+     * Acepta un pago APROBADO o COMPENSACION_PENDIENTE (un cobro huérfano cuyo
+     * reembolso automático falló, ver CompensacionDeCobro). Un copago APROBADO
+     * de un turno que sigue CONFIRMADO se rechaza con 409 (SCRUM-132): antes se
+     * devolvía y el turno quedaba confirmado, con su reclamo ENVIADO a la obra
+     * social, sin pago. Para devolverlo se cancela el turno, y la cancelación
+     * lo reembolsa. Si la pasarela no confirma el reembolso, 409 y el pago no
+     * cambia.
+     */
     @Override
     @RolesAllowed(ServicioDeUsuarios.ROL_ADMINISTRADOR)
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
@@ -159,13 +171,28 @@ public class ServicioDePagos implements ServicioDePagosLocal {
         if (pago == null) {
             throw new DatosInvalidosException("No existe un pago con id " + pagoId + ".");
         }
-        if (pago.getEstado() != EstadoPago.APROBADO) {
+        if (pago.getEstado() != EstadoPago.APROBADO
+                && pago.getEstado() != EstadoPago.COMPENSACION_PENDIENTE) {
             throw new ConflictoDeNegocioException(
-                    "Solo se puede reembolsar un pago APROBADO; el pago " + pagoId
-                            + " está en estado " + pago.getEstado() + ".");
+                    "Solo se puede reembolsar un pago APROBADO o COMPENSACION_PENDIENTE; el pago "
+                            + pagoId + " está en estado " + pago.getEstado() + ".");
+        }
+        if (pago.getEstado() == EstadoPago.APROBADO) {
+            Turno turno = servicioDeTurnos.obtenerTurno(pago.getTurnoId());
+            if (turno != null && turno.getEstado() == EstadoTurno.CONFIRMADO) {
+                throw new ConflictoDeNegocioException("El turno " + pago.getTurnoId()
+                        + " sigue confirmado: para devolver su copago hay que cancelar el turno,"
+                        + " y la cancelación lo reembolsa.");
+            }
         }
 
-        return reembolsarEnPasarela(pago);
+        ResultadoPasarela resultado = pasarela.reembolsar(pago.getIdTransaccionExterna());
+        if (resultado.getEstado() != EstadoPago.REEMBOLSADO) {
+            throw new ConflictoDeNegocioException("La pasarela no confirmó el reembolso del pago "
+                    + pagoId + " (estado " + resultado.getEstado() + ").");
+        }
+        pago.setEstado(EstadoPago.REEMBOLSADO);
+        return pagoDAO.actualizar(pago);
     }
 
     /**
@@ -207,12 +234,6 @@ public class ServicioDePagos implements ServicioDePagosLocal {
             pago.setEstado(resultado.getEstado());
             pagoDAO.actualizarEnNuevaTransaccion(pago);
         }
-    }
-
-    private Pago reembolsarEnPasarela(Pago pago) {
-        ResultadoPasarela resultado = pasarela.reembolsar(pago.getIdTransaccionExterna());
-        pago.setEstado(resultado.getEstado());
-        return pagoDAO.actualizar(pago);
     }
 
     private void validarCobro(CobroDTO datos) {
