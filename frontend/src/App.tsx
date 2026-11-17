@@ -4,6 +4,7 @@ import HomePage from './pages/HomePage'
 import DisponibilidadPage from './pages/DisponibilidadPage'
 import HoldPage from './pages/HoldPage'
 import AgendaPage from './pages/AgendaPage'
+import AdminPage from './pages/AdminPage'
 import HistoriaPage from './pages/HistoriaPage'
 import NotificacionesPage from './pages/NotificacionesPage'
 import NotFoundPage from './pages/NotFoundPage'
@@ -27,6 +28,10 @@ function App() {
 
       <Route element={<RutaProtegida roles={['PACIENTE', 'PROFESIONAL']} />}>
         <Route path="/historia" element={<HistoriaPage />} />
+      </Route>
+
+      <Route element={<RutaProtegida roles={['ADMINISTRADOR']} />}>
+        <Route path="/admin" element={<AdminPage />} />
       </Route>
 
       <Route path="*" element={<NotFoundPage />} />
