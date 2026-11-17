@@ -1,8 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { Logger } from '@nestjs/common';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RepositorioDeRecordatorios } from '../datos/repositorio-de-recordatorios';
 import { calcularEnvio, recordatoriosVencidos, ServicioDeRecordatorios } from './servicio-de-recordatorios';
+
+Logger.overrideLogger(false);
 
 const HORA = 60 * 60 * 1000;
 const ahora = new Date('2026-11-17T12:00:00');
@@ -69,6 +72,41 @@ describe('ServicioDeRecordatorios', () => {
     servicio.registrar({ turnoId: 10, pacienteId: 3, fechaHora: '2026-11-20T10:00' }, ahora);
     const otraInstancia = new ServicioDeRecordatorios(new RepositorioDeRecordatorios());
     expect(otraInstancia.listar(10)).toHaveLength(1);
+  });
+
+  it('si no puede guardar, registrar falla sin dejar nada y la reentrega lo registra', () => {
+    const tmp = `${process.env.RECORDATORIOS_ARCHIVO}.tmp`;
+    mkdirSync(tmp); // la escritura falla
+    expect(() => servicio.registrar({ turnoId: 12, pacienteId: 3, fechaHora: '2026-11-20T10:00' }, ahora)).toThrow();
+    expect(servicio.listar(12)).toHaveLength(0);
+
+    rmSync(tmp, { recursive: true });
+    servicio.registrar({ turnoId: 12, pacienteId: 3, fechaHora: '2026-11-20T10:00' }, ahora);
+    expect(new ServicioDeRecordatorios(new RepositorioDeRecordatorios()).listar(12)).toHaveLength(1);
+  });
+
+  it('si no puede guardar el envio, enviarVencidos no lanza y lo deja pendiente para la proxima revision', () => {
+    servicio.registrar({ turnoId: 13, pacienteId: 3, fechaHora: '2026-11-20T10:00' }, ahora);
+    const tmp = `${process.env.RECORDATORIOS_ARCHIVO}.tmp`;
+    mkdirSync(tmp);
+    const llegada = new Date('2026-11-19T10:00:00');
+    expect(() => servicio.enviarVencidos(llegada)).not.toThrow();
+    expect(servicio.listar(13)[0].enviadoEn).toBeNull();
+
+    rmSync(tmp, { recursive: true });
+    servicio.enviarVencidos(llegada);
+    expect(servicio.listar(13)[0].enviadoEn).toBe(llegada.toISOString());
+  });
+
+  it('si falla marcar el envio inmediato, registrar no lanza: el recordatorio ya quedo guardado', () => {
+    const repositorio = new RepositorioDeRecordatorios();
+    jest.spyOn(repositorio, 'marcarEnviados').mockImplementation(() => {
+      throw new Error('disco lleno');
+    });
+    const conFalla = new ServicioDeRecordatorios(repositorio);
+    const r = conFalla.registrar({ turnoId: 14, pacienteId: 3, fechaHora: '2026-11-17T14:00' }, ahora);
+    expect(r.enviadoEn).toBeNull();
+    expect(new ServicioDeRecordatorios(new RepositorioDeRecordatorios()).listar(14)).toHaveLength(1);
   });
 
   it('enviarVencidos marca como enviado lo que ya llego a su hora', () => {

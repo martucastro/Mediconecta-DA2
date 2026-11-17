@@ -17,17 +17,16 @@ export interface Recordatorio {
  * Almacen propio de ServicioDeRecordatorios: un archivo JSON, sin tocar las
  * tablas de mediconecta. Se carga entero en memoria al arrancar y se reescribe
  * en cada cambio (archivo temporal + rename, para no dejarlo a medio escribir
- * si el proceso muere).
+ * si el proceso muere). La memoria cambia solo despues de que el archivo se
+ * escribio: si guardar falla, el repositorio queda como estaba.
  */
 // ponytail: archivo JSON entero en memoria; pasar a SQLite si el volumen crece.
 @Injectable()
 export class RepositorioDeRecordatorios {
   private readonly archivo = process.env.RECORDATORIOS_ARCHIVO ?? 'data/recordatorios.json';
-  private readonly recordatorios: Recordatorio[] = existsSync(this.archivo)
-    ? JSON.parse(readFileSync(this.archivo, 'utf8'))
-    : [];
+  private recordatorios: Recordatorio[] = leerAlmacen(this.archivo);
 
-  todos(): Recordatorio[] {
+  todos(): readonly Recordatorio[] {
     return this.recordatorios;
   }
 
@@ -36,14 +35,46 @@ export class RepositorioDeRecordatorios {
   }
 
   agregar(recordatorio: Recordatorio): void {
-    this.recordatorios.push(recordatorio);
-    this.guardar();
+    this.guardar([...this.recordatorios, recordatorio]);
   }
 
-  guardar(): void {
+  marcarEnviados(turnoIds: number[], enviadoEn: string): void {
+    this.guardar(this.recordatorios.map((r) => (turnoIds.includes(r.turnoId) ? { ...r, enviadoEn } : r)));
+  }
+
+  private guardar(nuevos: Recordatorio[]): void {
     mkdirSync(dirname(this.archivo), { recursive: true });
     const temporal = `${this.archivo}.tmp`;
-    writeFileSync(temporal, JSON.stringify(this.recordatorios, null, 2));
+    writeFileSync(temporal, JSON.stringify(nuevos, null, 2));
     renameSync(temporal, this.archivo);
+    this.recordatorios = nuevos;
   }
+}
+
+/**
+ * Un almacen ilegible frena el arranque en vez de tomarse como vacio: si no,
+ * la proxima escritura lo pisaria y se perderian los recordatorios.
+ */
+function leerAlmacen(archivo: string): Recordatorio[] {
+  if (!existsSync(archivo)) {
+    return [];
+  }
+  let datos: unknown;
+  try {
+    datos = JSON.parse(readFileSync(archivo, 'utf8'));
+  } catch (e) {
+    throw new Error(`El almacen de recordatorios ${archivo} no es JSON valido: ${(e as Error).message}`);
+  }
+  if (!Array.isArray(datos) || !datos.every(esRecordatorio)) {
+    throw new Error(`El almacen de recordatorios ${archivo} no tiene el formato esperado: una lista de recordatorios`);
+  }
+  return datos;
+}
+
+function esRecordatorio(valor: unknown): valor is Recordatorio {
+  const r = valor as Recordatorio;
+  return typeof valor === 'object' && valor !== null
+    && Number.isSafeInteger(r.turnoId) && Number.isSafeInteger(r.pacienteId)
+    && typeof r.fechaHoraTurno === 'string' && typeof r.programadoPara === 'string'
+    && (r.enviadoEn === null || typeof r.enviadoEn === 'string');
 }
