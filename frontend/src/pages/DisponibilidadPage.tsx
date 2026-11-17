@@ -174,6 +174,8 @@ export default function DisponibilidadPage() {
         </Link>
         <nav className="nav">
           <Link to="/home">Mis turnos</Link>
+          <Link to="/historia">Mi historia clínica</Link>
+          <Link to="/notificaciones">Notificaciones</Link>
           <img className="avatar" src={ASSETS.avatar} alt="" />
         </nav>
         <img className="avatar m" src={ASSETS.avatar} alt="" />

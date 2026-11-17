@@ -270,6 +270,11 @@ export default function AgendaPage() {
                       <p className="appt-name">Sin paciente</p>
                     )}
                     <p className="appt-sub">{detalle(turno)}</p>
+                    {turno.pacienteId != null && (
+                      <Link to={`/historia?pacienteId=${turno.pacienteId}`} state={{ nombre: turno.pacienteNombre }} style={{ display: 'inline-block', marginTop: 6, fontSize: 14, fontWeight: 500, color: 'var(--primary)' }}>
+                        Historia clínica
+                      </Link>
+                    )}
                     {turno.modalidad === 'TELEMEDICINA' && turno.estado === 'CONFIRMADO' && (
                       <div style={{ marginTop: 10 }}>
                         <UnirseAConsulta turnoId={turno.id} style={{ padding: '9px 14px', fontSize: 13 }} />

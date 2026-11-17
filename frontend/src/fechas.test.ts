@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aDate, claveDelDia, formatearDiaLargo, formatearFechaHora, formatearHora, horaSugerida, inicioDelDia, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
+import { aDate, claveDelDia, formatearDiaLargo, formatearFechaCorta, formatearFechaHora, formatearHora, horaSugerida, inicioDelDia, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
 
 describe('parsearFechaHora', () => {
   it('lee un LocalDateTime con segundos como hora local', () => {
@@ -127,5 +127,11 @@ describe('inicioDelDia', () => {
     expect(claveDelDia(fecha)).toBe('2026-03-01')
     expect([fecha.getHours(), fecha.getMinutes()]).toEqual([0, 0])
     expect(fecha.getDay()).toBe(0) // domingo
+  })
+})
+
+describe('formatearFechaCorta', () => {
+  it('muestra dia, mes y anio con dos digitos', () => {
+    expect(formatearFechaCorta(parsearFechaHora('2026-03-05T09:00:00')!)).toBe('05/03/2026')
   })
 })

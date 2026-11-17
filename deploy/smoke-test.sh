@@ -151,6 +151,18 @@ comprobar "copago con tarjeta rechazada"      409 "$(codigo -u "$PACI" -X PUT -H
                                                      -d '{"tokenMedioDePago":"rechazar_demo"}' "$BASE/turnos/$ID/confirmar")"
 comprobar "el rechazo deja el turno EN_HOLD"  "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | tr '{' '\n' | grep "\"id\":$ID[,}]" | grep -q EN_HOLD && echo si || echo no)"
 comprobar "el paciente confirma el suyo"      200 "$(codigo -u "$PACI" -X PUT "${PAGO[@]}" "$BASE/turnos/$ID/confirmar")"
+comprobar "anonimo NO ve notificaciones"      401 "$(codigo "$BASE/notificaciones/mias")"
+comprobar "profesional NO ve notificaciones"  403 "$(codigo -u "$PROF" "$BASE/notificaciones/mias")"
+# La notificacion la crea un consumidor JMS: llega un instante despues de confirmar.
+NOTIFICADO=no
+for i in 1 2 3 4 5; do
+  if curl -s -u "$PACI" "$BASE/notificaciones/mias" | grep -q "\"turnoId\":$ID[,}]"; then
+    NOTIFICADO=si
+    break
+  fi
+  sleep 1
+done
+comprobar "el paciente ve la notificacion del turno" "si" "$NOTIFICADO"
 
 echo
 echo "Pagos (copago de la confirmacion)"
