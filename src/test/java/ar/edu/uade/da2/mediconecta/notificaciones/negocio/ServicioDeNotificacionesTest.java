@@ -1,6 +1,7 @@
 package ar.edu.uade.da2.mediconecta.notificaciones.negocio;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -9,8 +10,14 @@ import static org.mockito.Mockito.when;
 
 import ar.edu.uade.da2.mediconecta.notificaciones.datos.Notificacion;
 import ar.edu.uade.da2.mediconecta.notificaciones.datos.NotificacionDAO;
+import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 
+import java.security.Principal;
 import java.util.List;
+
+import jakarta.ejb.EJBAccessException;
+import jakarta.ejb.SessionContext;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +35,12 @@ class ServicioDeNotificacionesTest {
 
     @Mock
     private NotificacionDAO notificacionDAO;
+
+    @Mock
+    private SessionContext contexto;
+
+    @Mock
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     @InjectMocks
     private ServicioDeNotificaciones servicio;
@@ -79,10 +92,25 @@ class ServicioDeNotificacionesTest {
     }
 
     @Test
-    void listarMiasPideAlDaoLasDelPaciente() {
+    void listarMiasDevuelveLasDelPacienteAutenticado() {
+        Usuario paciente = new Usuario("Ana Perez", "ana@test.com", "PACIENTE", "hash");
+        paciente.setId(3L);
+        Principal principal = () -> "ana@test.com";
+        when(contexto.getCallerPrincipal()).thenReturn(principal);
+        when(servicioDeUsuarios.obtenerPorEmail("ana@test.com")).thenReturn(paciente);
         Notificacion una = new Notificacion(7L, 3L, "LOG", "hola");
         when(notificacionDAO.buscarPorPaciente(3L)).thenReturn(List.of(una));
 
-        assertEquals(List.of(una), servicio.listarMias(3L));
+        assertEquals(List.of(una), servicio.listarMias());
+    }
+
+    @Test
+    void listarMiasConUnCallerQueNoExisteEsAccesoDenegado() {
+        Principal fantasma = () -> "fantasma@test.com";
+        when(contexto.getCallerPrincipal()).thenReturn(fantasma);
+        when(servicioDeUsuarios.obtenerPorEmail("fantasma@test.com")).thenReturn(null);
+
+        assertThrows(EJBAccessException.class, () -> servicio.listarMias());
+        verify(notificacionDAO, never()).buscarPorPaciente(any());
     }
 }

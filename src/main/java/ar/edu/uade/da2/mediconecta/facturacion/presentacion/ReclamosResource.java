@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import ar.edu.uade.da2.mediconecta.facturacion.datos.Reclamo;
-import ar.edu.uade.da2.mediconecta.facturacion.negocio.ServicioDeFacturacion;
+import ar.edu.uade.da2.mediconecta.facturacion.negocio.ServicioDeFacturacionLocal;
 
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -30,7 +30,7 @@ import jakarta.ws.rs.core.Response;
 public class ReclamosResource {
 
     @Inject
-    private ServicioDeFacturacion servicio;
+    private ServicioDeFacturacionLocal servicio;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)

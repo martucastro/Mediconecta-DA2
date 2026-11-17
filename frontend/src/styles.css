@@ -1,4 +1,9 @@
-@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap");
+/* Las fuentes viajan dentro del WAR (SCRUM-134): sin internet la app se ve
+   igual. Son las mismas familias que se pedian a Google Fonts, en su version
+   variable: Newsreader con el eje de tamano optico (opsz) e Instrument Sans
+   con el de peso. */
+@import "@fontsource-variable/newsreader/opsz.css";
+@import "@fontsource-variable/instrument-sans/wght.css";
 
 :root {
   --ground: #fbfaf8;
@@ -11,8 +16,8 @@
   --success: #2f6b45;
   --accent: #b4461a;
   --accent-soft: #fbede6;
-  --serif: "Newsreader", Georgia, serif;
-  --sans: "Instrument Sans", system-ui, sans-serif;
+  --serif: "Newsreader Variable", Georgia, serif;
+  --sans: "Instrument Sans Variable", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; }
@@ -75,6 +80,7 @@ button { cursor: pointer; background: none; border: 0; }
 .btn-primary { background: var(--primary); border-color: var(--primary); color: var(--surface); font-weight: 600; }
 .btn-lg { padding: 16px 32px; border-radius: 10px; font-size: 16px; }
 .btn-block { width: 100%; }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .tag {
   display: inline-block;
   padding: 6px 12px;
@@ -180,6 +186,7 @@ button { cursor: pointer; background: none; border: 0; }
   font-size: 15px;
   font-weight: 500;
 }
+.slot-modalidad { display: block; margin-top: 2px; font-size: 11px; font-weight: 500; opacity: 0.75; }
 .slot:disabled { background: var(--ground); color: var(--muted); opacity: 0.55; cursor: not-allowed; }
 .slot[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--surface); font-weight: 600; }
 

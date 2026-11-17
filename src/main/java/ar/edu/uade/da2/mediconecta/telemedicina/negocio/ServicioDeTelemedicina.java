@@ -4,14 +4,16 @@ import java.util.logging.Logger;
 
 import ar.edu.uade.da2.mediconecta.comun.negocio.ConflictoDeNegocioException;
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
+import ar.edu.uade.da2.mediconecta.telemedicina.datos.EstadoSesionVideo;
 import ar.edu.uade.da2.mediconecta.telemedicina.datos.SesionVideo;
 import ar.edu.uade.da2.mediconecta.telemedicina.datos.SesionVideoDAO;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
-import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.EJBAccessException;
@@ -38,7 +40,7 @@ import jakarta.inject.Inject;
  */
 @Stateless
 @RolesAllowed({ ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL })
-public class ServicioDeTelemedicina {
+public class ServicioDeTelemedicina implements ServicioDeTelemedicinaLocal {
 
     private static final Logger LOGGER = Logger.getLogger(ServicioDeTelemedicina.class.getName());
 
@@ -52,10 +54,10 @@ public class ServicioDeTelemedicina {
     private ProveedorDeVideoAdapter proveedor;
 
     @Inject
-    private ServicioDeTurnos servicioDeTurnos;
+    private ServicioDeTurnosLocal servicioDeTurnos;
 
     @Inject
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     @Resource
     private SessionContext contexto;
@@ -143,6 +145,22 @@ public class ServicioDeTelemedicina {
             return null;
         }
         return enlacePara(caller, turno, sesion);
+    }
+
+    /**
+     * Marca CANCELADA la sala de un turno que el paciente cancelo
+     * (SalaAlCancelar, dentro de la transaccion de cancelarTurno). Un turno
+     * sin sala no tiene nada que cancelar. Misma regla de acceso que el resto
+     * de la fachada: solo el paciente o el profesional del turno.
+     */
+    @Override
+    @TransactionAttribute(TransactionAttributeType.MANDATORY)
+    public void cancelarSesion(Long turnoId) {
+        turnoDelCaller(turnoId, usuarioAutenticado(), false);
+        SesionVideo sesion = sesionDAO.buscarPorTurno(turnoId);
+        if (sesion != null) {
+            sesion.setEstado(EstadoSesionVideo.CANCELADA);
+        }
     }
 
     /** El enlace de anfitrion para el profesional, el de invitado para el paciente. */

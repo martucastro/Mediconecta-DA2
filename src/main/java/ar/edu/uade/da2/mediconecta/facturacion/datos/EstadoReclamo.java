@@ -10,5 +10,7 @@ package ar.edu.uade.da2.mediconecta.facturacion.datos;
 public enum EstadoReclamo {
     PENDIENTE,
     ENVIADO,
-    EN_REVISION_MANUAL
+    EN_REVISION_MANUAL,
+    // El turno se cancelo antes de enviarlo: no se presenta nunca (SCRUM-124).
+    ANULADO
 }

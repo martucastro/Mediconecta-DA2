@@ -1,5 +1,7 @@
 # Guía del código de MediConecta
 
+> **Alcance.** Esta guía describe la etapa de la Entrega N.º 1, con tres componentes (usuarios, turnos e historia clínica). Para el sistema actual, con los ocho componentes, la mensajería JMS y las integraciones SOAP y REST, ver [`documento-tecnico-entrega-2.md`](documento-tecnico-entrega-2.md).
+
 Este documento explica el sistema pieza por pieza, en palabras simples. La idea es que puedas leerlo de corrido y después responder cualquier pregunta sobre cualquier parte, sin importar quién escribió qué.
 
 Está escrito para leerse en orden, pero cada sección se entiende sola.
@@ -112,7 +114,7 @@ private Long pacienteId;
 
 Un `Long pacienteId` suelto, en vez de una relación `@ManyToOne Usuario paciente`. Es a propósito: una relación JPA ataría la tabla `historias_clinicas` a la tabla `usuarios` a nivel de base, y el componente de historia clínica dejaría de poder existir sin el de usuarios.
 
-Ojo que **`Turno` sí usa `@ManyToOne Usuario`**. Esa es una inconsistencia real entre componentes, la anoto al final en la revisión.
+Ojo que **`Turno` sí usa `@ManyToOne Usuario`** (paciente y profesional). Es la única excepción a esa regla, heredada de esta etapa y documentada como deliberada en el documento técnico de la Entrega N.º 2; los componentes posteriores guardan solo ids.
 
 ---
 
@@ -409,7 +411,7 @@ El segundo motivo es más aburrido pero igual de importante: si mañana renombr�
 
 ## 5. Componente Turnos
 
-El más interesante de los tres, porque es el que tiene **estado conversacional**: una reserva que empieza, dura cinco minutos y termina.
+El más interesante de los tres, porque su proceso es una **conversación**: una reserva que empieza, dura cinco minutos y termina (confirmada, cancelada o vencida).
 
 ### El ciclo de vida de un turno
 
@@ -476,7 +478,7 @@ Los dos creen que tienen el turno. `PESSIMISTIC_WRITE` le dice a PostgreSQL "tra
 public class ServicioDeTurnos {
 ```
 
-`@Stateful` significa que la instancia **recuerda cosas entre llamadas**. Es el requisito de la consigna que definió el stack entero: ni Spring ni Node tienen un equivalente nativo.
+`@Stateful` significa que el contenedor gestiona el ciclo de vida de **una instancia por cliente**, que podría recordar cosas entre llamadas. Es el requisito de la consigna que definió el stack entero: ni Spring ni Node tienen un equivalente nativo. Ojo con lo que hace el código con eso: los recursos `@RequestScoped` lo inyectan con `@Inject`, así que hay una instancia nueva por petición (`@PostConstruct` y `@PreDestroy` lo dejan en el log), y el estado del hold vive en la fila del turno, no en el bean.
 
 El método central:
 
@@ -515,7 +517,7 @@ Línea por línea:
 
 **Dos excepciones distintas.** "No existe el turno" es un dato malo del cliente → 400. "El turno ya está reservado" es un conflicto con el estado actual → 409. Son situaciones distintas y el cliente necesita distinguirlas.
 
-**`this.turnoEnCursoId = turnoId`** — acá se ve el stateful: el bean recuerda qué turno está reteniendo.
+**`this.turnoEnCursoId = turnoId`** — el único campo propio del bean. Se escribe, pero ningún método lo lee: la fuente de verdad es la fila del turno (`EN_HOLD` e `inicioHold`).
 
 **`expirador.programar(...)`** — le pide al contenedor que programe la liberación automática.
 
@@ -670,7 +672,7 @@ public interface ServicioDeHistoriaClinicaLocal {
 
 Es la única cara visible del componente. Los DAO, el factory y la implementación quedan escondidos detrás de estas cinco operaciones. Esto es **exactamente** lo que la consigna pide con "componentes con su interfaz explícita y documentada".
 
-Vale la pena notar: los otros dos componentes **no tienen interfaz**, se inyecta la clase concreta. Lo anoto en la revisión.
+Vale la pena notar: los otros dos componentes **no tienen interfaz**, se inyecta la clase concreta (la vista sin interfaz del EJB). Su contrato explícito es el REST.
 
 ### `datos/` — herencia en una sola tabla
 
@@ -1000,7 +1002,7 @@ POST /mediconecta/api/historias/paciente/3/consultas
 | **Contenedor** | El servidor de aplicaciones (WildFly) visto como "el que corre y administra tu código" |
 | **EJB** | Una clase que el contenedor administra: le da transacciones, seguridad y ciclo de vida |
 | **`@Stateless`** | Cada llamada es independiente; el contenedor reusa instancias de un pool |
-| **`@Stateful`** | La instancia recuerda cosas entre llamadas |
+| **`@Stateful`** | Una instancia por cliente, con ciclo de vida gestionado por el contenedor; puede recordar cosas entre llamadas |
 | **`@Singleton`** | Una sola instancia en todo el sistema |
 | **Inyección de dependencias** | Vos declarás qué necesitás (`@Inject`), el contenedor te lo da armado |
 | **JPA / Hibernate** | JPA es el estándar para mapear clases a tablas; Hibernate es la implementación que usamos |
@@ -1020,7 +1022,7 @@ POST /mediconecta/api/historias/paciente/3/consultas
 
 Las cinco respuestas que conviene tener a mano:
 
-**¿Por qué Jakarta EE?** Por el componente stateful. La consigna pide una conversación con estado entre llamadas, y `@Stateful` lo resuelve de forma nativa. En Spring o Node habría que armarlo a mano con sesiones o una caché externa.
+**¿Por qué Jakarta EE?** Por el componente stateful. La consigna pide un componente cuyo ciclo de vida gestione el contenedor, y `@Stateful` lo resuelve de forma nativa; en Spring o Node habría que armarlo a mano. El estado del hold, igual, se guardó en la base a propósito: así sobrevive a un reinicio y se puede confirmar desde otra petición.
 
 **¿Por qué el temporizador está en `ExpiradorDeHolds` y no en `ServicioDeTurnos`?** Porque la especificación de Jakarta Enterprise Beans no permite timers sobre un stateful session bean. Está en el javadoc de `TimerService`. Compilaba, pero fallaba al ejecutar.
 

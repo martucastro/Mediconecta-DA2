@@ -5,8 +5,26 @@
     "description": "Secuencia de demo verificada contra el codigo (UsuariosResource/ServicioDeUsuarios, TurnosResource/ServicioDeTurnos, HistoriaClinicaResource/ServicioDeHistoriaClinica). Correr las carpetas en orden 00 -> 01 -> 02 -> 03, y despues de ~5 minutos sin confirmar el turno del paso 02, correr 04 para ver la liberacion automatica del hold.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// {{franja}}: fecha y hora futura al azar (entre 30 y 630 dias desde hoy, a cualquier minuto)",
+          "// para abrir franjas. Cambia en cada request, asi que correr la coleccion de nuevo",
+          "// sobre la misma base no choca con las franjas ya abiertas (409).",
+          "var dias = 30 + Math.floor(Math.random() * 600);",
+          "var minutos = Math.floor(Math.random() * 24 * 60);",
+          "var d = new Date(Date.now() + dias * 864e5);",
+          "d.setUTCHours(0, minutos, 0, 0);",
+          "pm.variables.set('franja', d.toISOString().slice(0, 16) + ':00');"
+        ]
+      }
+    }
+  ],
   "variable": [
-    { "key": "base_url", "value": "http://localhost:8080/api" },
+    { "key": "base_url", "value": "http://localhost:8080/mediconecta/api" },
     { "key": "soap_url", "value": "http://localhost:8080/mediconecta/legado/obrasocial" }
   ],
   "item": [
@@ -21,9 +39,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('201 Created', function () {",
-                  "    pm.expect([200,201]).to.include(pm.response.code);",
-                  "});"
+                  "if (pm.response.code === 409) {",
+                  "    // Corrida anterior sobre la misma base: Paciente B ya existe.",
+                  "    pm.test('409: Paciente B ya existia', function () {",
+                  "        pm.expect(pm.response.json().error).to.include('Ya existe un usuario');",
+                  "    });",
+                  "} else {",
+                  "    pm.test('201 Created', function () {",
+                  "        pm.expect([200,201]).to.include(pm.response.code);",
+                  "    });",
+                  "}"
                 ]
               }
             }
@@ -60,6 +85,10 @@
                 "exec": [
                   "pm.test('401 Unauthorized', function () {",
                   "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('El error viene en JSON (SCRUM-132)', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    pm.expect(pm.response.json().error).to.be.a('string');",
                   "});"
                 ]
               }
@@ -86,6 +115,10 @@
                 "exec": [
                   "pm.test('401 Unauthorized', function () {",
                   "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('El error viene en JSON (SCRUM-132)', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    pm.expect(pm.response.json().error).to.be.a('string');",
                   "});"
                 ]
               }
@@ -152,6 +185,10 @@
                 "exec": [
                   "pm.test('403 Forbidden', function () {",
                   "    pm.response.to.have.status(403);",
+                  "});",
+                  "pm.test('El error viene en JSON (SCRUM-132)', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    pm.expect(pm.response.json().error).to.be.a('string');",
                   "});"
                 ]
               }
@@ -215,6 +252,255 @@
             },
             "description": "Endpoint publico (sin auth), SCRUM-81. Devuelve solo {id, nombre} de usuarios con rol PROFESIONAL, para que el paciente elija con quien reservar antes de loguearse."
           }
+        },
+        {
+          "name": "Resolver ids de ADMINISTRADOR y PACIENTE A (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "var admin = jsonData.find(function (u) { return u.email === pm.environment.get('admin_email'); });",
+                  "var pacienteA = jsonData.find(function (u) { return u.email === pm.environment.get('pacienteA_email'); });",
+                  "var profesional = jsonData.find(function (u) { return u.email === pm.environment.get('profesional_email'); });",
+                  "if (profesional) {",
+                  "    pm.environment.set('profesional_id', profesional.id);",
+                  "}",
+                  "if (admin && pacienteA) {",
+                  "    pm.environment.set('admin_id', admin.id);",
+                  "    pm.environment.set('pacienteA_id', pacienteA.id);",
+                  "} else {",
+                  "    console.warn('No se encontraron admin o paciente A en el listado, completar admin_id y pacienteA_id a mano.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "description": "Prepara las requests de consulta por id: guarda admin_id y pacienteA_id, que dependen de la base de cada uno."
+          }
+        },
+        {
+          "name": "Consulta por id - anonimo (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "SCRUM-102. Antes devolvia email y rol sin pedir credenciales; ahora web.xml exige estar autenticado."
+          }
+        },
+        {
+          "name": "Consulta por id - PACIENTE su propio usuario (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('devuelve su propio usuario y no expone la contrasena', function () {",
+                  "    var usuario = pm.response.json();",
+                  "    pm.expect(usuario.email).to.eql(pm.environment.get('pacienteA_email'));",
+                  "    pm.expect(usuario).to.not.have.property('contrasenaHash');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "ServicioDeUsuarios.consultarUsuario deja pasar al paciente cuando el id pedido es el suyo."
+          }
+        },
+        {
+          "name": "Consulta por id - PACIENTE otro usuario (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});",
+                  "pm.test('El error viene en JSON (SCRUM-132)', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    pm.expect(pm.response.json().error).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{admin_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{admin_id}}"]
+            },
+            "description": "Control de pertenencia programatico: @RolesAllowed solo dice que es PACIENTE, no que el id sea el suyo. Lo resuelve ServicioDeUsuarios.consultarUsuario."
+          }
+        },
+        {
+          "name": "Consulta por id - ADMINISTRADOR (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/{{pacienteA_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "{{pacienteA_id}}"]
+            },
+            "description": "El administrador puede consultar a cualquier usuario."
+          }
+        },
+        {
+          "name": "Consulta por id - ADMINISTRADOR, id inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('El error viene en JSON (SCRUM-132)', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                  "    pm.expect(pm.response.json().error).to.be.a('string');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/999999999",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "999999999"]
+            },
+            "description": "Solo el administrador distingue un id inexistente (404). Un paciente recibe 403 exista o no el id, para no revelar que ids estan ocupados."
+          }
+        },
+        {
+          "name": "Login sigue siendo publico (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{pacienteA_email}}\",\n  \"contrasena\": \"{{pacienteA_password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/usuarios/login",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "login"]
+            },
+            "description": "SCRUM-102 no debe cerrar POST /api/usuarios/login: el constraint de web.xml es solo para GET."
+          }
         }
       ]
     },
@@ -250,7 +536,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-20T10:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",
@@ -276,8 +562,9 @@
                   "    pm.expect(jsonData.modalidad).to.eql('PRESENCIAL');",
                   "    pm.expect(jsonData.consultorio).to.eql('Consultorio 3');",
                   "});",
+                  "pm.collectionVariables.set('turno_fecha', pm.variables.get('franja').slice(0, 10));",
                   "if (jsonData && jsonData.id) {",
-                  "    pm.collectionVariables.set('turno_id', jsonData.id);",
+                  "    pm.environment.set('turno_id', jsonData.id);",
                   "    console.log('turno_id guardado:', jsonData.id);",
                   "} else {",
                   "    console.warn('No se encontro campo id en la respuesta, completar turno_id a mano.');",
@@ -300,7 +587,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-20T10:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",
@@ -323,7 +610,7 @@
                   "});",
                   "pm.test('incluye la franja recien abierta', function () {",
                   "    var body = pm.response.json();",
-                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var turnoId = pm.variables.get('turno_id');",
                   "    var propio = body.find(function (t) { return String(t.id) === String(turnoId); });",
                   "    pm.expect(propio, 'franja propia en la agenda del dia').to.exist;",
                   "});"
@@ -342,11 +629,11 @@
               ]
             },
             "url": {
-              "raw": "{{base_url}}/turnos/mios?fecha=2027-03-20",
+              "raw": "{{base_url}}/turnos/mios?fecha={{turno_fecha}}",
               "host": ["{{base_url}}"],
               "path": ["turnos", "mios"],
               "query": [
-                { "key": "fecha", "value": "2027-03-20" }
+                { "key": "fecha", "value": "{{turno_fecha}}" }
               ]
             },
             "description": "A diferencia de la vista del paciente, el profesional ve TODOS los estados de su propia agenda (DISPONIBLE incluido). ?fecha=YYYY-MM-DD es opcional; sin el parametro devuelve toda la agenda del profesional."
@@ -405,7 +692,7 @@
                   "});",
                   "pm.test('incluye el turno reservado, en EN_HOLD', function () {",
                   "    var body = pm.response.json();",
-                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var turnoId = pm.variables.get('turno_id');",
                   "    var propio = body.find(function (t) { return String(t.id) === String(turnoId); });",
                   "    pm.expect(propio, 'turno propio en la respuesta').to.exist;",
                   "    pm.expect(propio.estado).to.eql('EN_HOLD');",
@@ -445,7 +732,7 @@
                   "});",
                   "pm.test('no incluye el turno retenido por PACIENTE_A', function () {",
                   "    var body = pm.response.json();",
-                  "    var turnoId = pm.collectionVariables.get('turno_id');",
+                  "    var turnoId = pm.variables.get('turno_id');",
                   "    var ajeno = body.find(function (t) { return String(t.id) === String(turnoId); });",
                   "    pm.expect(ajeno, 'turno de otro paciente').to.be.undefined;",
                   "});"
@@ -501,7 +788,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -534,7 +827,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -628,7 +927,7 @@
                   "    pm.expect(jsonData.modalidad).to.eql('TELEMEDICINA');",
                   "});",
                   "if (jsonData && jsonData.id) {",
-                  "    pm.collectionVariables.set('turno_id_b', jsonData.id);",
+                  "    pm.environment.set('turno_id_b', jsonData.id);",
                   "}"
                 ]
               }
@@ -648,7 +947,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-20T11:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/turnos/disponibilidad",
@@ -699,7 +998,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -734,7 +1039,7 @@
                   "var email = pm.environment.get('pacienteA_email');",
                   "var user = jsonData.find(function (u) { return u.email === email; });",
                   "if (user) {",
-                  "    pm.collectionVariables.set('pacienteA_id', user.id);",
+                  "    pm.environment.set('pacienteA_id', user.id);",
                   "    console.log('pacienteA_id guardado:', user.id);",
                   "} else {",
                   "    console.warn('No se encontro el paciente A en el listado, completar pacienteA_id a mano.');",
@@ -769,9 +1074,16 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('201 Created', function () {",
-                  "    pm.expect([200,201]).to.include(pm.response.code);",
-                  "});"
+                  "if (pm.response.code === 409) {",
+                  "    // Corrida anterior sobre la misma base: la historia clinica ya existe.",
+                  "    pm.test('409: la historia clinica ya existia', function () {",
+                  "        pm.expect(pm.response.json().error).to.include('ya tiene una historia');",
+                  "    });",
+                  "} else {",
+                  "    pm.test('201 Created', function () {",
+                  "        pm.expect([200,201]).to.include(pm.response.code);",
+                  "    });",
+                  "}"
                 ]
               }
             }
@@ -949,11 +1261,11 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/turnos?profesionalId=2",
+              "raw": "{{base_url}}/turnos?profesionalId={{profesional_id}}",
               "host": ["{{base_url}}"],
               "path": ["turnos"],
               "query": [
-                { "key": "profesionalId", "value": "2" }
+                { "key": "profesionalId", "value": "{{profesional_id}}" }
               ]
             },
             "description": "TurnosResource ahora expone GET /turnos/mios (ver carpeta 02), asi que ya no hace falta DBeaver para verificar el cierre del hold: la request de abajo, corrida antes y despues de los ~5 minutos, alcanza. La consulta a DBeaver queda como alternativa para quien prefiera mirar la fila directamente:\n\nSELECT id, paciente_id, profesional_id, estado, iniciohold FROM turnos WHERE id = {{turno_id}};\n\nDespues de ~5 minutos sin confirmar (ExpiradorDeHolds/@Timeout, DURACION_HOLD_MS=5min), estado deberia volver a DISPONIBLE y paciente_id/iniciohold a null, sin ninguna request de por medio. El seed crea admin=1, profesional=2, paciente=3, asi que el profesional de prueba es el 2."
@@ -970,11 +1282,15 @@
                   "pm.test('200 OK', function () {",
                   "    pm.response.to.have.status(200);",
                   "});",
-                  "pm.test('el turno vencido ya no esta EN_HOLD para el paciente', function () {",
+                  "pm.test('el turno ya no esta EN_HOLD para el paciente', function () {",
                   "    var body = pm.response.json();",
-                  "    var turnoId = pm.collectionVariables.get('turno_id');",
-                  "    var sigueApareciendo = body.some(function (t) { return String(t.id) === String(turnoId); });",
-                  "    pm.expect(sigueApareciendo, 'el turno vencido ya no deberia listarse como propio').to.be.false;",
+                  "    var turnoId = pm.variables.get('turno_id');",
+                  "    var propio = body.find(function (t) { return String(t.id) === String(turnoId); });",
+                  "    // Esperando ~5 min sin confirmar, el hold vence y el turno deja de ser del paciente.",
+                  "    // Corriendo la coleccion entera de un tiron, 02 ya lo confirmo: sigue siendo suyo, CONFIRMADO.",
+                  "    if (propio) {",
+                  "        pm.expect(propio.estado, 'confirmado en 02').to.eql('CONFIRMADO');",
+                  "    }",
                   "});"
                 ]
               }
@@ -1001,7 +1317,334 @@
       ]
     },
     {
-      "name": "05 - Obra social legado (SOAP, sistema externo simulado)",
+      "name": "05 - Mensajeria asincronica (topico TurnoConfirmado, NotificacionMDB)",
+      "description": "Correr los 5 pedidos en orden, sin pausas largas, con la consola de WildFly a la vista. La confirmacion publica un mensaje en el topico TurnoConfirmado dentro de su transaccion; NotificacionMDB lo consume DESPUES, en otro hilo, asi que la respuesta HTTP no espera. Evidencia: (1) en el log, 'Notificacion simulada para paciente...' sale con un hilo distinto de '(default task-N)', el de la peticion; (2) el pedido 4 trae la notificacion que escribio el MDB, sin mirar el log.",
+      "item": [
+        {
+          "name": "1 - Abrir disponibilidad como PROFESIONAL (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.id) {",
+                  "    pm.environment.set('turno_id_async', jsonData.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{profesional_email}}", "type": "string" },
+                { "key": "password", "value": "{{profesional_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/disponibilidad",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "disponibilidad"]
+            },
+            "description": "Guarda el id de la franja en turno_id_async."
+          }
+        },
+        {
+          "name": "2 - Reservar como PACIENTE_A (EN_HOLD)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservado: EN_HOLD', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "    pm.expect(pm.response.json().estado).to.eql('EN_HOLD');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_id_async}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": ["{{base_url}}"],
+              "path": ["turnos"]
+            },
+            "description": "El hold dura 5 minutos: confirmar antes (pedido 3)."
+          }
+        },
+        {
+          "name": "3 - Confirmar como PACIENTE_A (200, publica en el topico)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "// Hora local en que llego la respuesta HTTP, para ubicar en el log de WildFly (misma zona horaria) las lineas del confirmar y las del MDB.",
+                  "pm.environment.set('t_respuesta_confirmar', new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 23));",
+                  "console.log('Respuesta del PUT /confirmar a las ' + pm.environment.get('t_respuesta_confirmar') + ' (hora local). Ahora buscar en el log de WildFly: Notificacion simulada para paciente');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_id_async}}/confirmar",
+              "host": ["{{base_url}}"],
+              "path": ["turnos", "{{turno_id_async}}", "confirmar"]
+            },
+            "description": "ServicioDeTurnos.confirmarTurno cobra, confirma y publica TurnoConfirmado en la misma transaccion. La respuesta vuelve sin esperar a NotificacionMDB."
+          }
+        },
+        {
+          "name": "4 - Verificar la notificacion generada (PACIENTE_A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var turnoId = pm.environment.get('turno_id_async');",
+                  "var n = pm.response.json().find(function (x) { return String(x.turnoId) === String(turnoId); });",
+                  "pm.test('Hay una notificacion para el turno ' + turnoId + ' (si no aparece, reenviar este pedido: el MDB corre en otro hilo)', function () {",
+                  "    pm.expect(n, 'notificacion del turno').to.exist;",
+                  "});",
+                  "if (n) {",
+                  "    pm.test('Mensaje de turno confirmado, canal LOG', function () {",
+                  "        pm.expect(n.mensaje).to.include('Tu turno #' + turnoId + ' quedo confirmado');",
+                  "        pm.expect(n.canal).to.eql('LOG');",
+                  "    });",
+                  "    console.log('fechaEnvio de la notificacion: ' + n.fechaEnvio + ' | respuesta del confirmar: ' + pm.environment.get('t_respuesta_confirmar') + ' (hora local). La notificacion la escribe NotificacionMDB despues del commit de confirmarTurno, en otro hilo.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{pacienteA_email}}", "type": "string" },
+                { "key": "password", "value": "{{pacienteA_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/notificaciones/mias",
+              "host": ["{{base_url}}"],
+              "path": ["notificaciones", "mias"]
+            },
+            "description": "Solo PACIENTE (otros roles: 403, sin credenciales: 401). Evidencia persistida de que NotificacionMDB consumio el mensaje, sin depender del log."
+          }
+        },
+        {
+          "name": "5 - Verificar el reclamo a la obra social (ADMINISTRADOR)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var turnoId = pm.environment.get('turno_id_async');",
+                  "var r = pm.response.json().find(function (x) { return String(x.turnoId) === String(turnoId); });",
+                  "pm.test('Hay un reclamo para el turno ' + turnoId + ' (si no aparece, reenviar este pedido: pasa por el topico, la cola y el SOAP)', function () {",
+                  "    pm.expect(r, 'reclamo del turno').to.exist;",
+                  "});",
+                  "if (r) {",
+                  "    pm.test('Reclamo ENVIADO (o PENDIENTE si todavia esta en la cola)', function () {",
+                  "        pm.expect(['ENVIADO', 'PENDIENTE']).to.include(r.estado);",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{admin_email}}", "type": "string" },
+                { "key": "password", "value": "{{admin_password}}", "type": "string" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/reclamos",
+              "host": ["{{base_url}}"],
+              "path": ["reclamos"]
+            },
+            "description": "El segundo suscriptor del topico (TurnoConfirmadoFacturacionMDB) registra el reclamo y lo encola; ReclamoMDB lo presenta por SOAP. Solo ADMINISTRADOR. Si el paciente de la demo no tiene obra social, el turno puede no generar reclamo."
+          }
+        },
+        {
+          "name": "6 - Verificar el cobro del copago (PACIENTE_A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var pagos = pm.response.json();",
+                  "pm.test('Hay un pago APROBADO de 6000 (copago del 30% de un arancel de 20000)', function () {",
+                  "    var aprobado = pagos.find(function (p) { return p.estado === 'APROBADO'; });",
+                  "    pm.expect(aprobado, 'pago aprobado').to.exist;",
+                  "    pm.expect(Number(aprobado.monto)).to.eql(6000);",
+                  "    pm.collectionVariables.set('pago_id_async', aprobado.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/pagos?turnoId={{turno_id_async}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pagos"
+              ],
+              "query": [
+                {
+                  "key": "turnoId",
+                  "value": "{{turno_id_async}}"
+                }
+              ]
+            },
+            "description": "El cobro lo hace la confirmacion (pasarela externa simulada), antes de publicar en el topico."
+          }
+        },
+        {
+          "name": "7 - ADMINISTRADOR no reembolsa el copago de un turno confirmado (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test('Pide cancelar el turno', function () {",
+                  "    pm.expect(pm.response.json().error).to.include('confirmado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/pagos/{{pago_id_async}}/reembolso",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pagos",
+                "{{pago_id_async}}",
+                "reembolso"
+              ]
+            },
+            "description": "SCRUM-132: devolver el copago de un turno que sigue CONFIRMADO lo dejaba confirmado y con su reclamo ENVIADO, sin pago. Para devolverlo se cancela el turno, y la cancelacion lo reembolsa."
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Obra social legado (SOAP, sistema externo simulado)",
       "description": "Endpoint JAX-WS que simula el sistema legado de la obra social. No requiere autenticacion. Independiente del resto de las carpetas.",
       "item": [
         {
@@ -1016,6 +1659,9 @@
                   "pm.test('publica las dos operaciones', () => {",
                   "    pm.expect(pm.response.text()).to.include('validarCobertura');",
                   "    pm.expect(pm.response.text()).to.include('autorizarPrestacion');",
+                  "});",
+                  "pm.test('declara el fault PedidoInvalido (SCRUM-129)', () => {",
+                  "    pm.expect(pm.response.text()).to.include('<wsdl:fault message=\"tns:PedidoInvalidoException\"');",
                   "});"
                 ]
               }
@@ -1297,6 +1943,10 @@
                   "    pm.response.to.have.status(500);",
                   "    pm.expect(pm.response.text()).to.include('Fault');",
                   "    pm.expect(pm.response.text()).to.include('OS-9999');",
+                  "});",
+                  "pm.test('codigo Client con el detalle PedidoInvalido (SCRUM-129)', () => {",
+                  "    pm.expect(pm.response.text()).to.match(/<faultcode[^>]*>[^<]*Client</);",
+                  "    pm.expect(pm.response.text()).to.include('PedidoInvalido');",
                   "});"
                 ]
               }
@@ -1335,7 +1985,7 @@
       ]
     },
     {
-      "name": "06 - ServicioDeTelemedicina (proveedor de video simulado)",
+      "name": "07 - ServicioDeTelemedicina (proveedor de video simulado)",
       "description": "SCRUM-99. Primero se ejercita el proveedor de video simulado solo, como un tercero (POST /externo/salas, sin autenticacion). Despues el componente: se crea y consulta la sesion de un turno de telemedicina sin pasar por la confirmacion del turno (al final, SCRUM-95: confirmar un turno de telemedicina crea la sala sola). Cada participante recibe solo su enlace; un tercero recibe 403.",
       "item": [
         {
@@ -1482,7 +2132,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-21T10:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
             }
           }
         },
@@ -1969,7 +2619,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-21T11:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             }
           }
         },
@@ -2071,7 +2721,110 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-21T12:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+            }
+          }
+        },
+        {
+          "name": "SCRUM-132 - PACIENTE_A no puede tener dos holds (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test('Pide confirmar o cancelar el otro', function () {",
+                  "    pm.expect(pm.response.json().error).to.include('otro turno reservado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_tele_conf}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos"
+              ]
+            },
+            "description": "Un hold vigente por paciente: cada reserva pide una autorizacion al legado de la obra social. PACIENTE_A todavia retiene el turno de la sala."
+          }
+        },
+        {
+          "name": "PACIENTE_A suelta el hold de la sala (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_tele}}/cancelar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "{{turno_tele}}",
+                "cancelar"
+              ]
             }
           }
         },
@@ -2195,7 +2948,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -2393,7 +3152,13 @@
           ],
           "request": {
             "method": "PUT",
-            "header": [],
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+            },
             "auth": {
               "type": "basic",
               "basic": [
@@ -2467,6 +3232,1771 @@
               ]
             },
             "description": "Un turno presencial no genera sala ni llama al proveedor."
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 - Resiliencia (fallas controladas)",
+      "description": "Demo de resiliencia: cada falla se provoca, se muestra y se revierte. 08a (pasarela de pago) corre solo desde Postman; 08b, 08c y 08d necesitan un comando de jboss-cli que provoca la falla (pedidos NOTA, con el comando en la descripcion) y otro que la quita. Si se interrumpe una de ellas, QUITAR la system property antes de seguir: con el legado caido ninguna reserva funciona.",
+      "item": [
+        {
+          "name": "08a - Pasarela de pago no disponible o que rechaza",
+          "description": "Una sola franja recorre las tres fallas del cobro (token caer_demo: pasarela caida, 502; rechazar_demo: tarjeta rechazada, 409; cuerpo vacio: 400). En todas la confirmacion se revierte entera y el turno sigue EN_HOLD: el hold de 5 minutos se corre en la ultima. Se recupera con un token que aprueba.",
+          "item": [
+            {
+              "name": "1 - Abrir franja PRESENCIAL (201)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201 Created', function () { pm.expect([200, 201]).to.include(pm.response.code); });",
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.id) { pm.environment.set('turno_id_falla', jsonData.id); pm.environment.set('profesional_id', jsonData.profesionalId); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{profesional_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{profesional_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/disponibilidad",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "disponibilidad"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2 - Reservar (EN_HOLD)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"turnoId\": {{turno_id_falla}}\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos"
+                  ]
+                },
+                "description": "Tiene 5 minutos para confirmar: correr los pedidos siguientes sin pausas largas."
+              }
+            },
+            {
+              "name": "3 - Pasarela caida: confirmar con caer_demo (502)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('502', function () {",
+                      "    pm.response.to.have.status(502);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tokenMedioDePago\": \"caer_demo\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_falla}}/confirmar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_falla}}",
+                    "confirmar"
+                  ]
+                },
+                "description": "La pasarela simulada responde 503 y MediConecta devuelve 502 (Bad Gateway) con el mensaje del backend. En el log: 'Pasarela externa: solicitud de cobro...'."
+              }
+            },
+            {
+              "name": "4 - Tarjeta rechazada: confirmar con rechazar_demo (409)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('409', function () {",
+                      "    pm.response.to.have.status(409);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tokenMedioDePago\": \"rechazar_demo\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_falla}}/confirmar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_falla}}",
+                    "confirmar"
+                  ]
+                },
+                "description": "La pasarela responde 'rejected': el copago no se cobra y la confirmacion se revierte."
+              }
+            },
+            {
+              "name": "5 - Sin medio de pago (400)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('400', function () {",
+                      "    pm.response.to.have.status(400);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_falla}}/confirmar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_falla}}",
+                    "confirmar"
+                  ]
+                },
+                "description": "Un turno con copago exige tokenMedioDePago en el cuerpo del PUT."
+              }
+            },
+            {
+              "name": "6 - El turno sigue EN_HOLD",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "var turnoId = pm.environment.get('turno_id_falla');",
+                      "var t = pm.response.json().find(function (x) { return String(x.id) === String(turnoId); });",
+                      "pm.test('El turno sigue EN_HOLD (la confirmacion se revirtio)', function () {",
+                      "    pm.expect(t, 'turno').to.exist;",
+                      "    pm.expect(t.estado).to.eql('EN_HOLD');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/mios",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "mios"
+                  ]
+                },
+                "description": "Las tres fallas dejaron el turno como estaba: reintentable dentro del hold."
+              }
+            },
+            {
+              "name": "7 - Pagos hasta ahora: ninguno APROBADO",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "var estados = pm.response.json().map(function (p) { return p.estado; });",
+                      "console.log('Pagos del turno: ' + estados.join(', '));",
+                      "pm.test('No hay pagos APROBADO', function () { pm.expect(estados).to.not.include('APROBADO'); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/pagos?turnoId={{turno_id_falla}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "pagos"
+                  ],
+                  "query": [
+                    {
+                      "key": "turnoId",
+                      "value": "{{turno_id_falla}}"
+                    }
+                  ]
+                },
+                "description": "El intento con caer_demo queda PENDIENTE (sin id de transaccion) y el de rechazar_demo, RECHAZADO; nada se cobro."
+              }
+            },
+            {
+              "name": "8 - Pasarela de vuelta: confirmar con tok_visa_demo (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_falla}}/confirmar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_falla}}",
+                    "confirmar"
+                  ]
+                },
+                "description": "Se recupera sin pasos manuales: el mismo turno, con un token que aprueba."
+              }
+            },
+            {
+              "name": "9 - Pagos: ahora hay uno APROBADO",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "var estados = pm.response.json().map(function (p) { return p.estado; });",
+                      "console.log('Pagos del turno: ' + estados.join(', '));",
+                      "pm.test('Hay un pago APROBADO', function () { pm.expect(estados).to.include('APROBADO'); });",
+                      "pm.test('Hay un pago RECHAZADO', function () { pm.expect(estados).to.include('RECHAZADO'); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/pagos?turnoId={{turno_id_falla}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "pagos"
+                  ],
+                  "query": [
+                    {
+                      "key": "turnoId",
+                      "value": "{{turno_id_falla}}"
+                    }
+                  ]
+                },
+                "description": "El historial conserva los intentos fallidos y el cobro final."
+              }
+            }
+          ]
+        },
+        {
+          "name": "08b - Legado de la obra social caido (reserva)",
+          "description": "La reserva consulta la cobertura por SOAP. Con el legado caido el Adapter corta y la reserva responde 503 sin dejar nada a medias. Requiere provocar la falla desde la terminal (notas).",
+          "item": [
+            {
+              "name": "1 - Abrir franja PRESENCIAL (201)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201 Created', function () { pm.expect([200, 201]).to.include(pm.response.code); });",
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.id) { pm.environment.set('turno_id_legado', jsonData.id); pm.environment.set('profesional_id', jsonData.profesionalId); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{profesional_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{profesional_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/disponibilidad",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "disponibilidad"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2 - NOTA: provocar la falla (terminal)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/usuarios/profesionales",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "usuarios",
+                    "profesionales"
+                  ]
+                },
+                "description": "Postman no puede cambiar la configuracion del servidor: este pedido es solo un recordatorio (lista los profesionales y no cambia nada). Correr el comando en una terminal; en Linux/macOS usar jboss-cli.sh, y en Windows PowerShell o Git Bash (cmd no reconoce las comillas simples).\n\njboss-cli.bat --connect '/system-property=mediconecta.obrasocial.url:add(value=\"http://127.0.0.1:1/x\")'\n\nPuerto 1 en loopback: nadie escucha, la conexion se rechaza."
+              }
+            },
+            {
+              "name": "3 - Reservar con el legado caido (503)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('503', function () {",
+                      "    pm.response.to.have.status(503);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"turnoId\": {{turno_id_legado}}\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos"
+                  ]
+                },
+                "description": "503: 'El sistema de la obra social no respondio. Intenta de nuevo en unos minutos.' En el log, un WARNING 'El legado de la obra social no respondio a autorizarPrestacion...'."
+              }
+            },
+            {
+              "name": "4 - La franja sigue DISPONIBLE",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "var t = pm.response.json().find(function (x) { return String(x.id) === String(pm.environment.get('turno_id_legado')); });",
+                      "pm.test('La franja sigue disponible (la reserva fallida no dejo nada)', function () { pm.expect(t, 'franja').to.exist; });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/turnos?profesionalId={{profesional_id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos"
+                  ],
+                  "query": [
+                    {
+                      "key": "profesionalId",
+                      "value": "{{profesional_id}}"
+                    }
+                  ]
+                },
+                "description": "El listado solo devuelve turnos DISPONIBLE: que aparezca prueba que la reserva fallida se revirtio."
+              }
+            },
+            {
+              "name": "5 - NOTA: restaurar el legado (terminal)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/usuarios/profesionales",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "usuarios",
+                    "profesionales"
+                  ]
+                },
+                "description": "Postman no puede cambiar la configuracion del servidor: este pedido es solo un recordatorio (lista los profesionales y no cambia nada). Correr el comando en una terminal; en Linux/macOS usar jboss-cli.sh, y en Windows PowerShell o Git Bash (cmd no reconoce las comillas simples).\n\njboss-cli.bat --connect '/system-property=mediconecta.obrasocial.url:remove'"
+              }
+            },
+            {
+              "name": "6 - Reservar con el legado de vuelta (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"turnoId\": {{turno_id_legado}}\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos"
+                  ]
+                },
+                "description": "Con el legado restaurado la misma franja se reserva sin pasos adicionales."
+              }
+            },
+            {
+              "name": "7 - Soltar el hold para seguir (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_legado}}/cancelar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_legado}}",
+                    "cancelar"
+                  ]
+                },
+                "description": "Un hold vigente por paciente: sin esto, la reserva de 08c responde 409."
+              }
+            }
+          ]
+        },
+        {
+          "name": "08c - Legado caido al reclamar (reintentos de la cola)",
+          "description": "La confirmacion no depende del legado; el reclamo a la obra social si, y se hace por una cola con reintentos (2, 4, 8 y 16 s; el quinto intento fallido lo deja EN_REVISION_MANUAL). Se reserva con el legado arriba, se rompe, se confirma, y se restaura antes del quinto intento: el reclamo se envia solo.",
+          "item": [
+            {
+              "name": "1 - Abrir franja PRESENCIAL (201)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201 Created', function () { pm.expect([200, 201]).to.include(pm.response.code); });",
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.id) { pm.environment.set('turno_id_reintento', jsonData.id); pm.environment.set('profesional_id', jsonData.profesionalId); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{profesional_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{profesional_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/disponibilidad",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "disponibilidad"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2 - Reservar con el legado arriba (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"turnoId\": {{turno_id_reintento}}\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3 - NOTA: romper el legado (terminal)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/usuarios/profesionales",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "usuarios",
+                    "profesionales"
+                  ]
+                },
+                "description": "Postman no puede cambiar la configuracion del servidor: este pedido es solo un recordatorio (lista los profesionales y no cambia nada). Correr el comando en una terminal; en Linux/macOS usar jboss-cli.sh, y en Windows PowerShell o Git Bash (cmd no reconoce las comillas simples).\n\njboss-cli.bat --connect '/system-property=mediconecta.obrasocial.url:add(value=\"http://127.0.0.1:1/x\")'"
+              }
+            },
+            {
+              "name": "4 - Confirmar con el legado caido (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_reintento}}/confirmar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_reintento}}",
+                    "confirmar"
+                  ]
+                },
+                "description": "La confirmacion y el cobro no necesitan al legado: responde 200."
+              }
+            },
+            {
+              "name": "5 - El reclamo reintenta (intentos >= 1)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "var r = pm.response.json().find(function (x) { return String(x.turnoId) === String(pm.environment.get('turno_id_reintento')); });",
+                      "pm.test('Hay un reclamo con intentos fallidos y sin enviar (si no, reenviar el pedido)', function () {",
+                      "    pm.expect(r, 'reclamo del turno').to.exist;",
+                      "    pm.expect(r.intentos).to.be.at.least(1);",
+                      "    pm.expect(r.estado).to.not.eql('ENVIADO');",
+                      "});",
+                      "if (r) { console.log('Reclamo: estado ' + r.estado + ', intentos ' + r.intentos + ', ultimoError: ' + r.ultimoError); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{admin_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{admin_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/reclamos",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "reclamos"
+                  ]
+                },
+                "description": "Solo ADMINISTRADOR. En el log, cada intento deja un WARNING del cliente SOAP y la entrega de la cola se reintenta (ERROR AMQ154004 con stack trace: es lo esperado)."
+              }
+            },
+            {
+              "name": "6 - NOTA: restaurar el legado (terminal)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/usuarios/profesionales",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "usuarios",
+                    "profesionales"
+                  ]
+                },
+                "description": "Postman no puede cambiar la configuracion del servidor: este pedido es solo un recordatorio (lista los profesionales y no cambia nada). Correr el comando en una terminal; en Linux/macOS usar jboss-cli.sh, y en Windows PowerShell o Git Bash (cmd no reconoce las comillas simples).\n\njboss-cli.bat --connect '/system-property=mediconecta.obrasocial.url:remove'\n\nHacerlo antes del quinto intento (unos 30 s despues de confirmar). Si no, el reclamo queda EN_REVISION_MANUAL."
+              }
+            },
+            {
+              "name": "7 - El reclamo se envia solo (ENVIADO)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "var r = pm.response.json().find(function (x) { return String(x.turnoId) === String(pm.environment.get('turno_id_reintento')); });",
+                      "pm.test('Reclamo ENVIADO (si no, reenviar el pedido: el reintento llega a los 2, 4, 8 o 16 s)', function () {",
+                      "    pm.expect(r, 'reclamo del turno').to.exist;",
+                      "    pm.expect(r.estado).to.eql('ENVIADO');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{admin_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{admin_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/reclamos",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "reclamos"
+                  ]
+                },
+                "description": "Reenviar este pedido cada pocos segundos hasta que pase."
+              }
+            }
+          ]
+        },
+        {
+          "name": "08d - Proveedor de video caido (sala al confirmar)",
+          "description": "La sala de telemedicina se crea dentro de la confirmacion. Con el proveedor caido la confirmacion falla con 503 y el turno sigue EN_HOLD.",
+          "item": [
+            {
+              "name": "1 - Abrir franja de TELEMEDICINA (201)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('201 Created', function () { pm.expect([200, 201]).to.include(pm.response.code); });",
+                      "var jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.id) { pm.environment.set('turno_id_tele_falla', jsonData.id); pm.environment.set('profesional_id', jsonData.profesionalId); }"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{profesional_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{profesional_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/disponibilidad",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "disponibilidad"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "2 - Reservar (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"turnoId\": {{turno_id_tele_falla}}\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "3 - NOTA: tirar el proveedor de video (terminal)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/usuarios/profesionales",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "usuarios",
+                    "profesionales"
+                  ]
+                },
+                "description": "Postman no puede cambiar la configuracion del servidor: este pedido es solo un recordatorio (lista los profesionales y no cambia nada). Correr el comando en una terminal; en Linux/macOS usar jboss-cli.sh, y en Windows PowerShell o Git Bash (cmd no reconoce las comillas simples).\n\njboss-cli.bat --connect '/system-property=mediconecta.video.simular-caida:add(value=true)'"
+              }
+            },
+            {
+              "name": "4 - Confirmar con el video caido (503)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('503', function () {",
+                      "    pm.response.to.have.status(503);",
+                      "});",
+                      "pm.test('Retry-After: 30', function () { pm.expect(pm.response.headers.get('Retry-After')).to.eql('30'); });"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_tele_falla}}/confirmar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_tele_falla}}",
+                    "confirmar"
+                  ]
+                },
+                "description": "503 con Retry-After: 30. En el log, 'Pasarela externa: solicitud de cobro...' aparece antes que 'Proveedor de video externo: solicitud de sala...': el cobro salio antes de que fallara la sala (cobro huerfano, ver el documento tecnico)."
+              }
+            },
+            {
+              "name": "5 - El turno sigue EN_HOLD",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "var turnoId = pm.environment.get('turno_id_tele_falla');",
+                      "var t = pm.response.json().find(function (x) { return String(x.id) === String(turnoId); });",
+                      "pm.test('El turno sigue EN_HOLD (la confirmacion se revirtio)', function () {",
+                      "    pm.expect(t, 'turno').to.exist;",
+                      "    pm.expect(t.estado).to.eql('EN_HOLD');",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/mios",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "mios"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "5b - El copago cobrado se reembolso solo (REEMBOLSADO)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});",
+                      "pm.test('El cobro huerfano quedo REEMBOLSADO', function () {",
+                      "    pm.expect(pm.response.json().some(function (p) { return p.estado === 'REEMBOLSADO'; })).to.be.true;",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/pagos?turnoId={{turno_id_tele_falla}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "pagos"
+                  ],
+                  "query": [
+                    {
+                      "key": "turnoId",
+                      "value": "{{turno_id_tele_falla}}"
+                    }
+                  ]
+                },
+                "description": "La pasarela aprobo el copago antes de que fallara la sala. El rollback no alcanza a la pasarela: CompensacionDeCobro lo reembolsa despues del rollback, antes de que llegue el 503."
+              }
+            },
+            {
+              "name": "6 - NOTA: restaurar el proveedor de video (terminal)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/usuarios/profesionales",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "usuarios",
+                    "profesionales"
+                  ]
+                },
+                "description": "Postman no puede cambiar la configuracion del servidor: este pedido es solo un recordatorio (lista los profesionales y no cambia nada). Correr el comando en una terminal; en Linux/macOS usar jboss-cli.sh, y en Windows PowerShell o Git Bash (cmd no reconoce las comillas simples).\n\njboss-cli.bat --connect '/system-property=mediconecta.video.simular-caida:remove'"
+              }
+            },
+            {
+              "name": "7 - Confirmar con el video de vuelta (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tokenMedioDePago\": \"{{token_medio_de_pago}}\"\n}"
+                },
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_tele_falla}}/confirmar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_tele_falla}}",
+                    "confirmar"
+                  ]
+                },
+                "description": "Se recupera: la sala se crea y el turno queda CONFIRMADO."
+              }
+            },
+            {
+              "name": "8 - El paciente paga una sola vez (un solo APROBADO)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Un solo pago APROBADO', function () {",
+                      "    var aprobados = pm.response.json().filter(function (p) { return p.estado === 'APROBADO'; });",
+                      "    pm.expect(aprobados.length).to.eql(1);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "GET",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/pagos?turnoId={{turno_id_tele_falla}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "pagos"
+                  ],
+                  "query": [
+                    {
+                      "key": "turnoId",
+                      "value": "{{turno_id_tele_falla}}"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09 - ServicioDeObrasSociales (afiliaciones)",
+      "description": "Capa de presentacion del componente de obras sociales. Requiere pacienteA_id (lo resuelve la carpeta 01). Se registran los mismos datos del seed (plan medio, OS-2002), asi que el copago del 70% de la carpeta 02 no cambia.",
+      "item": [
+        {
+          "name": "Registrar afiliacion de PACIENTE_A - ADMINISTRADOR (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var afiliacion = pm.response.json();",
+                  "pm.test('devuelve la afiliacion registrada', function () {",
+                  "    pm.expect(afiliacion.pacienteId).to.eql(Number(pm.environment.get('pacienteA_id')));",
+                  "    pm.expect(afiliacion.numeroAfiliado).to.eql('OS-2002');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{admin_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/afiliaciones",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "afiliaciones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pacienteId\": {{pacienteA_id}},\n  \"dni\": \"30333444\",\n  \"numeroAfiliado\": \"OS-2002\"\n}"
+            },
+            "description": "@RolesAllowed(ADMINISTRADOR) sobre ServicioDeObrasSociales.registrarAfiliacion. Alta o correccion: responde 200 en los dos casos."
+          }
+        },
+        {
+          "name": "PACIENTE_A ve su afiliacion (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('es la suya', function () {",
+                  "    pm.expect(pm.response.json().numeroAfiliado).to.eql('OS-2002');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/afiliaciones/mia",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "afiliaciones",
+                "mia"
+              ]
+            },
+            "description": "El paciente sale del usuario autenticado, nunca de un parametro. Sin obra social registrada responde 404 con {\"error\": ...}."
+          }
+        },
+        {
+          "name": "Registrar afiliacion - PACIENTE (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/afiliaciones",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "afiliaciones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pacienteId\": {{pacienteA_id}},\n  \"dni\": \"30333444\",\n  \"numeroAfiliado\": \"OS-2002\"\n}"
+            },
+            "description": "Solo el ADMINISTRADOR registra afiliaciones: el paciente autenticado recibe 403 desde la fachada."
           }
         }
       ]

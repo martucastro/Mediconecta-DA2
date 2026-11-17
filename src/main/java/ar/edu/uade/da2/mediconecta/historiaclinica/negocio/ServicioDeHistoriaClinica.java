@@ -11,7 +11,7 @@ import ar.edu.uade.da2.mediconecta.historiaclinica.datos.TipoEntrada;
 import java.util.List;
 import java.util.logging.Logger;
 
-import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -54,7 +54,7 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
     // Dependencia hacia otro componente, siempre a través de su fachada:
     // nunca se consulta la tabla de usuarios directamente desde acá.
     @Inject
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     // Identifica al usuario autenticado. @RolesAllowed no alcanza para las
     // reglas que dependen de *cual* historia se esta pidiendo.
@@ -105,11 +105,11 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
             throw new DatosInvalidosException("Los datos de la entrada son obligatorios.");
         }
         validarPaciente(pacienteId);
-        validarProfesional(datos.getProfesionalId());
+        Long autorId = profesionalAutenticado();
 
         HistoriaClinica historia = obtenerOCrearHistoria(pacienteId);
 
-        EntradaClinica entrada = factory.crear(datos, historia, datos.getProfesionalId());
+        EntradaClinica entrada = factory.crear(datos, historia, autorId);
         entradaDAO.guardar(entrada);
         historia.agregarEntrada(entrada);
         return entrada;
@@ -135,21 +135,26 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
             throw new DatosInvalidosException("La consulta debe incluir un diagnóstico.");
         }
         validarPaciente(pacienteId);
-        validarProfesional(datos.getProfesionalId());
+        Long autorId = profesionalAutenticado();
 
         HistoriaClinica historia = obtenerOCrearHistoria(pacienteId);
 
         datos.getDiagnostico().setTipo(TipoEntrada.DIAGNOSTICO);
         EntradaClinica diagnostico =
-                factory.crear(datos.getDiagnostico(), historia, datos.getProfesionalId());
+                factory.crear(datos.getDiagnostico(), historia, autorId);
         entradaDAO.guardar(diagnostico);
         historia.agregarEntrada(diagnostico);
 
         if (datos.getRecetas() != null) {
             for (NuevaEntradaDTO datosReceta : datos.getRecetas()) {
+                // "recetas":[null] llega asi desde JSON-B; el rollback deshace
+                // lo ya guardado, igual que cuando el factory rechaza una receta.
+                if (datosReceta == null) {
+                    throw new DatosInvalidosException("Las recetas no pueden ser nulas.");
+                }
                 datosReceta.setTipo(TipoEntrada.RECETA);
                 EntradaClinica receta =
-                        factory.crear(datosReceta, historia, datos.getProfesionalId());
+                        factory.crear(datosReceta, historia, autorId);
                 entradaDAO.guardar(receta);
                 historia.agregarEntrada(receta);
             }
@@ -203,30 +208,33 @@ public class ServicioDeHistoriaClinica implements ServicioDeHistoriaClinicaLocal
         return historia;
     }
 
+    /**
+     * Mismo mensaje si el id no existe o si no es de un paciente (SCRUM-127):
+     * distinguirlos dejaba enumerar que ids estan ocupados y con que rol.
+     */
     private void validarPaciente(Long pacienteId) {
-        Usuario paciente = validarUsuario(pacienteId, "paciente");
-        if (!ROL_PACIENTE.equals(paciente.getRol())) {
-            throw new DatosInvalidosException(
-                    "El usuario " + pacienteId + " no tiene rol " + ROL_PACIENTE + ".");
+        if (pacienteId == null) {
+            throw new DatosInvalidosException("El id del paciente es obligatorio.");
+        }
+        Usuario paciente = servicioDeUsuarios.obtenerUsuario(pacienteId);
+        if (paciente == null || !ROL_PACIENTE.equals(paciente.getRol())) {
+            throw new DatosInvalidosException("El paciente indicado no es válido.");
         }
     }
 
-    private void validarProfesional(Long profesionalId) {
-        Usuario profesional = validarUsuario(profesionalId, "profesional");
-        if (!ROL_PROFESIONAL.equals(profesional.getRol())) {
-            throw new DatosInvalidosException(
-                    "El usuario " + profesionalId + " no tiene rol " + ROL_PROFESIONAL + ".");
+    /**
+     * El autor de una entrada es siempre el profesional autenticado. Si saliera
+     * del cuerpo del pedido, cualquier profesional podria firmar a nombre de
+     * otro: por eso el profesionalId de los DTO se ignora (queda solo para no
+     * romper a los clientes que lo siguen mandando). El rol ya lo garantiza
+     * el @RolesAllowed("PROFESIONAL") de los metodos que lo llaman.
+     */
+    private Long profesionalAutenticado() {
+        String email = contexto.getCallerPrincipal().getName();
+        Usuario profesional = servicioDeUsuarios.obtenerPorEmail(email);
+        if (profesional == null) {
+            throw new EJBAccessException("No se pudo resolver el usuario autenticado: " + email);
         }
-    }
-
-    private Usuario validarUsuario(Long id, String descripcion) {
-        if (id == null) {
-            throw new DatosInvalidosException("El id del " + descripcion + " es obligatorio.");
-        }
-        Usuario usuario = servicioDeUsuarios.obtenerUsuario(id);
-        if (usuario == null) {
-            throw new DatosInvalidosException("No existe un usuario con id " + id + ".");
-        }
-        return usuario;
+        return profesional.getId();
     }
 }

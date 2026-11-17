@@ -54,8 +54,8 @@ flowchart LR
     os -->|"SOAP"| leg
     pag -->|"REST"| pas
     tur -->|"evento CDI sincronico: cobertura al reservar"| os
-    tur -.->|"planificado SCRUM-93: copago al confirmar"| pag
-    tur -.->|"planificado SCRUM-95: sala de video"| tel
+    tur -->|"evento CDI sincronico: copago al confirmar (SCRUM-93)"| pag
+    tur -->|"evento CDI sincronico: sala de video al confirmar (SCRUM-95)"| tel
     tel -->|"REST"| vid
 ```
 
@@ -73,6 +73,7 @@ flowchart LR
     classDef broker fill:#FFB575,stroke:#CC7830,color:#542700
 
     spa["Frontend SPA<br/>React + TypeScript"]:::client
+    rec["ServicioDeRecordatorios<br/>Node.js + NestJS, proceso aparte"]:::impl
 
     subgraph wf["WildFly 41, WAR mediconecta"]
         api["API REST<br/>JAX-RS /api"]:::impl
@@ -103,6 +104,7 @@ flowchart LR
     tur -->|"topico JMS: publica al confirmar"| top
     top -->|"topico JMS: suscriptor"| fac
     top -->|"topico JMS: suscriptor"| noti
+    top -->|"AMQP 1.0: suscripcion durable"| rec
     fac -->|"cola JMS: encola el reclamo"| cola
     cola -->|"cola JMS: MDB consume con reintentos"| fac
     cola -.->|"mensajes no procesables"| dlq
@@ -112,6 +114,97 @@ flowchart LR
     os -->|"SOAP: validarCobertura, autorizarPrestacion, presentarReclamo"| leg
     pag -->|"REST: POST /externo/pagos"| pas
     tur -->|"evento CDI sincronico: cobertura al reservar"| os
-    tur -.->|"evento CDI sincronico, planificado SCRUM-95"| tel
+    tur -->|"evento CDI sincronico: copago al confirmar (SCRUM-93)"| pag
+    tur -->|"evento CDI sincronico: sala al confirmar (SCRUM-95)"| tel
     tel -->|"REST"| vid
 ```
+
+### Un componente en otra tecnología: ServicioDeRecordatorios (Node.js)
+
+`ServicioDeRecordatorios` (`recordatorios/`) está escrito en TypeScript con
+NestJS y corre como un proceso Node.js aparte de WildFly. Es el tercer
+suscriptor del tópico `TurnoConfirmado`: por cada turno confirmado programa un
+recordatorio para 24 h antes, lo guarda en su propio almacén y lo expone en
+`GET /recordatorios`.
+
+**Por qué en Node.js.** Es un componente periférico: reacciona a eventos y
+expone una API de lectura chica. No usa nada de lo que da el contenedor Jakarta
+EE (transacciones JTA, seguridad declarativa, EJB). Además prueba que el tópico
+es un contrato de integración y no un detalle de Java: `ServicioDeTurnos` no
+cambió una línea y no sabe que existe un suscriptor en otra tecnología.
+
+**El contrato entre stacks** es el tópico más el formato del mensaje:
+
+- **Protocolo:** AMQP 1.0, un estándar abierto que Artemis atiende con un
+  acceptor propio en el puerto 5672 (paso 6 de `deploy/mediconecta-setup.cli`).
+- **Dirección:** `jms.topic.TurnoConfirmadoTopic`. Es el mismo destino que
+  `java:/jms/topic/TurnoConfirmado`, con el prefijo que le pone WildFly.
+- **Cuerpo:** Artemis convierte el `MapMessage` JMS en un mapa AMQP con las
+  mismas claves (`turnoId`, `pacienteId`, `profesionalId`, `fechaHora`).
+- **Entrega:** la suscripción es durable, así que Artemis guarda los eventos
+  mientras el proceso Node está caído. Igual que los MDB, un mensaje ilegible
+  se descarta, y un error al guardar hace que Artemis lo reentregue con la
+  política del tópico.
+- **Seguridad:** SASL PLAIN contra el `ApplicationRealm` de WildFly, con un
+  usuario de aplicación del rol `recordatorios`, que solo puede consumir el
+  tópico y crear su cola durable.
+
+**Por qué AMQP y no STOMP.** Por STOMP, Artemis entrega el `MapMessage` como
+los bytes de su formato interno: llega un `MESSAGE` con `content-length:4` y un
+cuerpo binario, sin `turnoId` ni `fechaHora` legibles. Para usar STOMP habría
+que duplicar esos campos como propiedades en el publicador. AMQP tiene un tipo
+mapa nativo, así que el evento se reusa tal como se publica.
+
+## Cobro del copago al confirmar: qué pasa si la pasarela falla (SCRUM-93)
+
+`confirmarTurno` corre en una sola transacción JTA. El observador `CobroAlConfirmar`
+(prioridad `COBRO_COPAGO` = 100) cobra el copago **dentro** de esa transacción,
+antes de la sala de video (`SALA_DE_VIDEO` = 200). El rollback de JTA deshace la
+base y JMS, pero **no deshace un cobro REST que ya salió**: la pasarela es un
+tercero por HTTP. De ahí los tres desenlaces.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as Paciente
+    participant T as confirmarTurno (TX JTA)
+    participant C as CobroAlConfirmar (100)
+    participant G as Pasarela ($ externo)
+    participant S as SalaAlConfirmar (200)
+
+    P->>T: PUT /turnos/{id}/confirmar { tokenMedioDePago }
+    T->>C: fire(TurnoEnConfirmacion)
+    Note over C: copago null o 0 → return,<br/>no se cobra ni se pide medio de pago
+    C->>G: cobrar(copago, token)
+
+    alt A) la pasarela no responde
+        G--xC: PasarelaNoDisponibleException (rollback=true)
+        Note over T: rollback total: nada cobrado,<br/>turno sigue EN_HOLD, timer vivo
+        T-->>P: 502 — reintentar
+    else B) cobró OK, pero un paso posterior falla
+        G-->>C: APROBADO ($ ya se movió)
+        T->>S: fire → crear sala
+        S--xT: ProveedorDeVideoNoDisponibleException (rollback=true)
+        Note over T,G: rollback deshace la actualización del Pago,<br/>pero el $ externo ya salió = COBRO HUÉRFANO.<br/>Sobrevive solo el rastro PENDIENTE (REQUIRES_NEW), sin id de transacción:<br/>hoy no se compensa (trabajo futuro)
+        T-->>P: 503 (proveedor de video caído)
+    else B') la pasarela rechaza el cobro
+        G-->>C: RECHAZADO (no lanza)
+        C--xT: ConflictoDeNegocioException (rollback=true)
+        Note over T: no se confirma un turno impago
+        T-->>P: 409
+    else C) todo OK
+        G-->>C: APROBADO
+        T->>S: sala creada
+        Note over T: commit único:<br/>turno CONFIRMADO + Pago APROBADO + mensaje TurnoConfirmado
+        T-->>P: 200
+    end
+```
+
+**Defensa de cada caso:**
+
+- **A — pasarela caída:** `PasarelaNoDisponibleException` es `@ApplicationException(rollback = true)`; atraviesa el `fire()`, revierte todo, el turno sigue `EN_HOLD` con su temporizador vivo y el paciente reintenta. **No se cobró nada.** Mismo patrón que la sala (sección 9.4 del documento técnico).
+- **B — cobro huérfano (el caso que la consigna pide defender):** si el cobro se aprueba y después falla la sala, JTA revierte la base pero el dinero externo ya se movió. Es inevitable con un cobro REST inmediato porque el recurso externo no es transaccional. Hoy **no se compensa**: `ServicioDePagos` inserta el `Pago` en `PENDIENTE` con `REQUIRES_NEW` antes de llamar a la pasarela y ese rastro sobrevive al rollback, pero el id de la transacción externa solo se guarda en la actualización que se revierte, y `ServicioDePagos.reembolsar` solo acepta pagos `APROBADO` con ese id. El rastro sirve para conciliar a mano contra la pasarela; la compensación automática (crear la sala antes de cobrar, guardar el id en `REQUIRES_NEW` y reembolsar desde un observador `AFTER_FAILURE`, o idempotencia por turno) queda para la entrega final ([documento técnico de la Entrega N.º 2](documento-tecnico-entrega-2.md), sección 6).
+- **B' — rechazo del cobro:** la pasarela no lanza ante un rechazo; devuelve el `Pago` en `RECHAZADO`. `CobroAlConfirmar` lo traduce a `ConflictoDeNegocioException` (409) para no dejar un turno confirmado sin pagar.
+- **C — camino feliz:** una sola transacción confirma el turno, aprueba el pago y publica `TurnoConfirmado` de forma atómica.
+
+El medio de pago (`tokenMedioDePago`) viaja en el cuerpo del `PUT /turnos/{id}/confirmar`: el paciente confirma pagando, sin necesidad de un vault de medios guardados. Un turno sin copago (cobertura total o aún sin cotizar) se confirma sin cuerpo, como antes.

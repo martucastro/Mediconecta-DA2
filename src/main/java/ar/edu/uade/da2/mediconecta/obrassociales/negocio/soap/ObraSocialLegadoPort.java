@@ -11,6 +11,12 @@ import jakarta.jws.WebService;
  * Escrito a mano en vez de generado con wsimport: son dos operaciones y un tipo,
  * y así el build no depende de tener el legado levantado para leer su WSDL.
  * Nombres y namespace tienen que coincidir exactamente con los del WSDL.
+ *
+ * El WSDL declara el fault PedidoInvalido en cada operación, pero acá no se
+ * declara a propósito: sin él, el proxy entrega el fault como
+ * SOAPFaultException y SistemaDeObraSocialSoap lo clasifica por su faultcode
+ * (Client es un pedido inválido; cualquier otro, una falla del legado), que es
+ * el criterio que también vale para faults no declarados.
  */
 @WebService(name = "ObraSocialLegado", targetNamespace = ObraSocialLegadoPort.NAMESPACE)
 public interface ObraSocialLegadoPort {

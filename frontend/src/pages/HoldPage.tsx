@@ -1,31 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../api'
+import { aDate, formatearHora, parsearFechaHora } from '../fechas'
+import { DURACION_HOLD_MS, vencimientoDelHold } from '../proximoTurno'
 import { leerTurnoEnHold, limpiarTurnoEnHold, type TurnoDTO } from '../turnoEnHold'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
-
-// Mismo valor que ExpiradorDeHolds.DURACION_HOLD_MS en el backend. El backend
-// es quien decide de verdad: si el hold ya vencio, confirmar responde 409.
-const DURACION_HOLD_MS = 5 * 60 * 1000
+import UnirseAConsulta from './UnirseAConsulta'
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
 const PESOS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 })
 
+// El copago se cobra al confirmar (SCRUM-93) con el token del medio de pago,
+// nunca con el numero de tarjeta. Con una pasarela real el token lo devuelve su
+// formulario; la simulada (PasarelaExternaResource) aprueba cualquier token
+// salvo los que empiezan con "rechazar" (409) o "caer" (pasarela caida, 502).
+const MEDIOS_DE_PAGO = [
+  { token: 'tok_visa_demo', nombre: 'Tarjeta de prueba (se aprueba)' },
+  { token: 'rechazar_demo', nombre: 'Tarjeta de prueba (se rechaza)' },
+  { token: 'caer_demo', nombre: 'Simular pasarela caída' },
+]
+
 type Estado = 'reservado' | 'enviando' | 'confirmado' | 'vencido'
+
+// Un 403 al confirmar o liberar es que el hold es de otra cuenta (por ejemplo,
+// se inicio sesion con otro paciente en la misma pestana): reintentar no sirve,
+// asi que se trata como un hold vencido.
+const RESERVA_AJENA = 'Esta reserva no es de tu cuenta. Elegí otro horario para reservar.'
 
 function dosDigitos(n: number): string {
   return String(n).padStart(2, '0')
-}
-
-// inicioHold es un LocalDateTime del servidor: hora local sin zona horaria y
-// con hasta nanosegundos. Se recorta a milisegundos, que es lo que Date acepta
-// en todos los navegadores, y se interpreta como hora local (servidor y
-// navegador estan en la misma zona en el entorno del TP).
-function vencimientoDelHold(inicioHold: string): number {
-  const inicio = new Date(inicioHold.replace(/(\.\d{3})\d+/, '$1'))
-  return inicio.getTime() + DURACION_HOLD_MS
 }
 
 function segundosRestantes(vence: number): number {
@@ -33,8 +38,9 @@ function segundosRestantes(vence: number): number {
 }
 
 function formatearFecha(fechaHora: string): string {
-  const fecha = new Date(fechaHora)
-  return `${DIAS[fecha.getDay()]} ${dosDigitos(fecha.getDate())}/${dosDigitos(fecha.getMonth() + 1)} · ${dosDigitos(fecha.getHours())}:${dosDigitos(fecha.getMinutes())} hs`
+  const f = parsearFechaHora(fechaHora)
+  if (!f) return '—'
+  return `${DIAS[aDate(f).getDay()]} ${dosDigitos(f.dia)}/${dosDigitos(f.mes)} · ${formatearHora(f)} hs`
 }
 
 function formatearCuenta(segundos: number): string {
@@ -58,10 +64,12 @@ export default function HoldPage() {
   // El turno lo guarda la pantalla de disponibilidad al reservar (SCRUM-84):
   // no hay un GET de un turno individual.
   const [turno] = useState<TurnoDTO | null>(() => leerTurnoEnHold())
-  const [vence] = useState(() => (turno?.inicioHold ? vencimientoDelHold(turno.inicioHold) : 0))
+  // El backend es quien decide de verdad: si el hold ya vencio, confirmar responde 409.
+  const [vence] = useState(() => (turno ? vencimientoDelHold(turno) ?? 0 : 0))
   const [restante, setRestante] = useState(() => segundosRestantes(vence))
   const [estado, setEstado] = useState<Estado>(() => (segundosRestantes(vence) > 0 ? 'reservado' : 'vencido'))
   const [error, setError] = useState('')
+  const [tokenMedioDePago, setTokenMedioDePago] = useState(MEDIOS_DE_PAGO[0].token)
   // Guarda sincronica contra el doble clic: el estado de React recien cambia en
   // el proximo render, y dos clics seguidos llegan antes de que el boton se
   // deshabilite. Sin esto se mandan dos PUT y el 409 del segundo podria pisar
@@ -90,11 +98,27 @@ export default function HoldPage() {
     setEstado('enviando')
     setError('')
     try {
-      await api<TurnoDTO>(`/turnos/${turno.id}/confirmar`, { method: 'PUT' })
+      // El token viaja siempre: sin copago el backend lo ignora.
+      await api<TurnoDTO>(`/turnos/${turno.id}/confirmar`, {
+        method: 'PUT',
+        body: JSON.stringify({ tokenMedioDePago }),
+      })
       limpiarTurnoEnHold()
       setEstado('confirmado')
     } catch (err) {
-      if (err instanceof ApiError && err.estado === 409) {
+      if (err instanceof ApiError && err.estado === 403) {
+        limpiarTurnoEnHold()
+        setEstado('vencido')
+        setError(RESERVA_AJENA)
+        return
+      }
+      // Un 409 con el hold todavia corriendo es un copago rechazado: la
+      // confirmacion se revirtio, el turno sigue reservado y se puede reintentar
+      // con otro medio de pago (igual que tras un 502 o un 400).
+      // ponytail: se distingue por la cuenta regresiva del navegador; si el
+      // servidor vence el hold unos segundos antes, se ve su mensaje y la cuenta
+      // llega a cero sola.
+      if (err instanceof ApiError && err.estado === 409 && segundosRestantes(vence) === 0) {
         // El hold vencio (o el turno ya no esta reservado): se informa y se
         // vuelve a elegir turno.
         limpiarTurnoEnHold()
@@ -116,6 +140,13 @@ export default function HoldPage() {
     try {
       await api<TurnoDTO>(`/turnos/${turno.id}/cancelar`, { method: 'PUT' })
     } catch (err) {
+      if (err instanceof ApiError && err.estado === 403) {
+        limpiarTurnoEnHold()
+        setEstado('vencido')
+        setError(RESERVA_AJENA)
+        enviando.current = false
+        return
+      }
       // Un 409 es que el hold ya habia vencido: el turno igual quedo libre.
       // Cualquier otro error (por ejemplo, sin conexion) deja el turno
       // retenido, asi que se informa en vez de salir como si se hubiera liberado.
@@ -127,7 +158,7 @@ export default function HoldPage() {
       }
     }
     limpiarTurnoEnHold()
-    navigate('/disponibilidad', { replace: true })
+    navigate('/disponibilidad', { replace: true, state: { profesionalId: turno.profesionalId } })
   }
 
   const porcentaje = Math.round((restante * 1000 * 100) / DURACION_HOLD_MS)
@@ -142,7 +173,8 @@ export default function HoldPage() {
           MediConecta
         </Link>
         <Link className="m" to="/disponibilidad" style={{ fontWeight: 500 }}>← Turno</Link>
-        <img className="avatar d" src={ASSETS.avatar} alt="Perfil" />
+        <Link className="d" to="/notificaciones">Notificaciones</Link>
+        <img className="avatar d" src={ASSETS.avatar} alt="" />
         <img className="m" src={ASSETS.logo} alt="MediConecta" style={{ width: 18, height: 18 }} />
       </header>
 
@@ -152,7 +184,7 @@ export default function HoldPage() {
             {confirmado ? (
               <>
                 <span className="label-caps">TURNO CONFIRMADO</span>
-                <p>Te vamos a avisar por notificación. Podés verlo en tu inicio.</p>
+                <p>Podés verlo en tu inicio.</p>
               </>
             ) : vencido ? (
               <>
@@ -180,17 +212,33 @@ export default function HoldPage() {
               <div><dt>Modalidad</dt><dd>{textoModalidad(turno)}</dd></div>
               <div><dt>Cobertura</dt><dd className={turno.coberturaAutorizada ? 'ok' : undefined}>{textoCobertura(turno)}</dd></div>
               <div>
-                <dt>Copago<span className="d"> a abonar en la consulta</span></dt>
+                <dt>Copago<span className="d"> a abonar al confirmar</span></dt>
                 <dd className="strong">{turno.copago == null ? '—' : PESOS.format(turno.copago)}</dd>
               </div>
             </dl>
           </section>
 
+          {!confirmado && !vencido && (turno.copago ?? 0) > 0 && (
+            <div className="field">
+              <label htmlFor="medio-de-pago">MEDIO DE PAGO</label>
+              <select className="input" id="medio-de-pago" value={tokenMedioDePago} onChange={(e) => setTokenMedioDePago(e.target.value)} disabled={estado !== 'reservado'}>
+                {MEDIOS_DE_PAGO.map((medio) => (
+                  <option key={medio.token} value={medio.token}>{medio.nombre}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {error && <p className="muted" role="alert" style={{ color: 'var(--accent)' }}>{error}</p>}
 
           <div className="actions">
             {confirmado ? (
-              <Link className="btn btn-primary" to="/home">Volver al inicio</Link>
+              <>
+                {/* La sala se crea dentro de la confirmacion (SCRUM-95): un turno
+                    de telemedicina confirmado ya tiene su enlace (SCRUM-104). */}
+                {turno.modalidad === 'TELEMEDICINA' && <UnirseAConsulta turnoId={turno.id} />}
+                <Link className={turno.modalidad === 'TELEMEDICINA' ? 'btn' : 'btn btn-primary'} to="/home">Volver al inicio</Link>
+              </>
             ) : vencido ? (
               <Link className="btn btn-primary" to="/disponibilidad" replace>Elegir otro turno</Link>
             ) : (
