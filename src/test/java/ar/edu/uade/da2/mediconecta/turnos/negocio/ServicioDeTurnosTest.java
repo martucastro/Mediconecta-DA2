@@ -371,7 +371,7 @@ class ServicioDeTurnosTest {
         ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
                 () -> servicio.confirmarTurno(32L));
         // El estado se nombra con palabras, no con el enum.
-        assertEquals("El turno no tiene un hold activo: está disponible", e.getMessage());
+        assertEquals("El turno no tiene una reserva vigente: está disponible", e.getMessage());
     }
 
     @Test
@@ -384,7 +384,7 @@ class ServicioDeTurnosTest {
 
         ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
                 () -> servicio.confirmarTurno(33L));
-        assertEquals("El turno no tiene un hold activo: el hold venció", e.getMessage());
+        assertEquals("La reserva del turno venció: ya no se puede confirmar", e.getMessage());
         assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
         assertTrue(eventoConfirmacion.disparados().isEmpty());
         verify(turnoDAO, never()).actualizar(any());

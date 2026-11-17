@@ -96,8 +96,8 @@ public class TurnosResource {
         try {
             return ModalidadTurno.valueOf(modalidad.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            throw new DatosInvalidosException("Modalidad desconocida: " + modalidad
-                    + ". Valores posibles: PRESENCIAL, TELEMEDICINA");
+            throw new DatosInvalidosException(
+                    "Modalidad desconocida: tiene que ser presencial o telemedicina");
         }
     }
 
@@ -139,7 +139,7 @@ public class TurnosResource {
         try {
             return LocalDate.parse(fecha);
         } catch (DateTimeParseException e) {
-            throw new DatosInvalidosException("Fecha invalida, se espera YYYY-MM-DD: " + fecha);
+            throw new DatosInvalidosException("Fecha inválida: se espera el formato AAAA-MM-DD");
         }
     }
 }
