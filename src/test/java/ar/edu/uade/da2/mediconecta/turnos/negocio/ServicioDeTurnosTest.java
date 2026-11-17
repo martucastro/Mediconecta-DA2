@@ -306,6 +306,42 @@ class ServicioDeTurnosTest {
         assertEquals("El turno ya no está disponible: está reservado", e.getMessage());
     }
 
+    // ---- Un hold vigente por paciente (SCRUM-132) -----------------------------
+
+    @Test
+    void unPacienteConUnHoldVigenteNoPuedeReservarOtro() {
+        // Cada hold pide una autorizacion al legado de la obra social: sin
+        // tope, un paciente podia retener la agenda entera.
+        Turno turno = turnoDisponible(15L);
+        prepararReserva(turno);
+        when(turnoDAO.listarPorPaciente(paciente.getId()))
+                .thenReturn(List.of(turnoEnHold(16L, ModalidadTurno.PRESENCIAL)));
+
+        ConflictoDeNegocioException e = assertThrows(ConflictoDeNegocioException.class,
+                () -> servicio.reservarTurno(15L));
+
+        assertTrue(e.getMessage().contains("otro turno reservado"), e.getMessage());
+        assertEquals(EstadoTurno.DISPONIBLE, turno.getEstado());
+        assertNull(turno.getPaciente());
+        assertTrue(eventoReserva.disparados().isEmpty(), "No se pide otra autorizacion al legado");
+        verify(expirador, never()).programar(anyLong(), anyLong());
+    }
+
+    @Test
+    void unHoldVencidoOUnTurnoConfirmadoNoImpidenReservar() {
+        Turno turno = turnoDisponible(17L);
+        prepararReserva(turno);
+        Turno vencido = turnoEnHold(18L, ModalidadTurno.PRESENCIAL);
+        vencido.setInicioHold(LocalDateTime.now().minusMinutes(10));
+        Turno confirmado = turnoEnHold(19L, ModalidadTurno.PRESENCIAL);
+        confirmado.setEstado(EstadoTurno.CONFIRMADO);
+        when(turnoDAO.listarPorPaciente(paciente.getId())).thenReturn(List.of(vencido, confirmado));
+
+        servicio.reservarTurno(17L);
+
+        assertEquals(EstadoTurno.EN_HOLD, turno.getEstado());
+    }
+
     @Test
     void siUnObservadorDeLaReservaFallaNoQuedaHold() {
         Turno turno = turnoDisponible(11L);

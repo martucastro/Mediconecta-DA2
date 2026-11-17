@@ -125,16 +125,19 @@ comprobar "modalidad desconocida"             400 "$(codigo -u "$PROF" -H "Conte
 comprobar "paciente NO abre disponibilidad"   403 "$(codigo -u "$PACI" -H "Content-Type: application/json" \
                                                      -d '{"fechaHora":"2027-01-15T11:00:00"}' "$BASE/turnos/disponibilidad")"
 
+# Un hold vigente por paciente (SCRUM-132): la teleconsulta se reserva y se
+# suelta antes de reservar $ID.
+ID_TELE=$(printf '%s' "$TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+RESERVA_TELE=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID_TELE}" "$BASE/turnos")
+comprobar "telemedicina se cotiza como teleconsulta" "si" "$(printf '%s' "$RESERVA_TELE" | grep -q '"copago":4500.00' && echo si || echo no)"
+comprobar "cancelar libera el turno de telemedicina" 200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID_TELE/cancelar")"
 RESERVA=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID}" "$BASE/turnos")
 comprobar "reservar deja el turno EN_HOLD"    "si" "$(printf '%s' "$RESERVA" | grep -q EN_HOLD && echo si || echo no)"
 comprobar "la respuesta NO filtra el hash"    "si" "$(printf '%s' "$RESERVA" | grep -q contrasena && echo no || echo si)"
 # El paciente semilla es afiliado al plan medio (70%): una CONSULTA de 20000 le deja 6000.
 comprobar "la reserva calcula el copago del 70%"  "si" "$(printf '%s' "$RESERVA" | grep -q '"copago":6000.00' && echo si || echo no)"
 comprobar "la reserva guarda la autorizacion"     "si" "$(printf '%s' "$RESERVA" | grep -q '"numeroAutorizacion":"AUT-OS-2002-CONSULTA"' && echo si || echo no)"
-ID_TELE=$(printf '%s' "$TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-RESERVA_TELE=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID_TELE}" "$BASE/turnos")
-comprobar "telemedicina se cotiza como teleconsulta" "si" "$(printf '%s' "$RESERVA_TELE" | grep -q '"copago":4500.00' && echo si || echo no)"
-comprobar "cancelar libera el turno de telemedicina" 200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$ID_TELE/cancelar")"
+comprobar "un segundo hold del paciente: 409"     409 "$(codigo -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID_TELE}" "$BASE/turnos")"
 comprobar "otro usuario NO confirma el hold"  403 "$(codigo -u "$PROF" -X PUT "${PAGO[@]}" "$BASE/turnos/$ID/confirmar")"
 # Copago rechazado: la transaccion de confirmarTurno se revierte entera.
 comprobar "copago con tarjeta rechazada"      409 "$(codigo -u "$PACI" -X PUT -H "Content-Type: application/json" \
@@ -200,6 +203,8 @@ CONF_TELE=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
             -d '{"fechaHora":"2027-01-15T16:00:00","modalidad":"TELEMEDICINA"}' \
             "$BASE/turnos/disponibilidad")
 IDC=$(printf '%s' "$CONF_TELE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+# Un hold vigente por paciente: se suelta el de $IDT antes de reservar $IDC.
+comprobar "soltar el hold de la sala anterior" 200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$IDT/cancelar")"
 curl -s -o /dev/null -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$IDC}" "$BASE/turnos"
 comprobar "reservar NO crea la sala"          404 "$(codigo -u "$PACI" "$BASE/telemedicina/turno/$IDC")"
 comprobar "confirmar telemedicina"            200 "$(codigo -u "$PACI" -X PUT "${PAGO[@]}" "$BASE/turnos/$IDC/confirmar")"
@@ -332,6 +337,8 @@ if [ "$RESILIENCIA" = "si" ]; then
   comprobar "la franja sigue DISPONIBLE"              "si" "$(curl -s -u "$PACI" "$BASE/turnos?profesionalId=2" | grep -q "\"id\":$IDL[,}]" && echo si || echo no)"
   cli "/system-property=$PROP_LEGADO:remove"
   comprobar "legado de vuelta: la reserva funciona"    200 "$(reservar "$IDL")"
+  # Un hold vigente por paciente: se suelta antes de reservar el siguiente.
+  comprobar "se suelta ese hold"                      200 "$(codigo -u "$PACI" -X PUT "$BASE/turnos/$IDL/cancelar")"
 
   # 2. Reintentos de la cola: se reserva con el legado arriba, se rompe y se confirma.
   #    La confirmacion no depende del legado; el reclamo si, y se reintenta solo.

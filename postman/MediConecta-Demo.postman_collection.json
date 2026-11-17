@@ -2699,6 +2699,109 @@
           }
         },
         {
+          "name": "SCRUM-132 - PACIENTE_A no puede tener dos holds (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test('Pide confirmar o cancelar el otro', function () {",
+                  "    pm.expect(pm.response.json().error).to.include('otro turno reservado');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"turnoId\": {{turno_tele_conf}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos"
+              ]
+            },
+            "description": "Un hold vigente por paciente: cada reserva pide una autorizacion al legado de la obra social. PACIENTE_A todavia retiene el turno de la sala."
+          }
+        },
+        {
+          "name": "PACIENTE_A suelta el hold de la sala (200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pacienteA_email}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pacienteA_password}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/turnos/{{turno_tele}}/cancelar",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "turnos",
+                "{{turno_tele}}",
+                "cancelar"
+              ]
+            }
+          }
+        },
+        {
           "name": "SCRUM-95 - PACIENTE_A reserva (200)",
           "event": [
             {
@@ -3873,6 +3976,53 @@
                   ]
                 },
                 "description": "Con el legado restaurado la misma franja se reserva sin pasos adicionales."
+              }
+            },
+            {
+              "name": "7 - Soltar el hold para seguir (200)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('200', function () {",
+                      "    pm.response.to.have.status(200);",
+                      "});"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "auth": {
+                  "type": "basic",
+                  "basic": [
+                    {
+                      "key": "username",
+                      "value": "{{pacienteA_email}}",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "{{pacienteA_password}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{base_url}}/turnos/{{turno_id_legado}}/cancelar",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "turnos",
+                    "{{turno_id_legado}}",
+                    "cancelar"
+                  ]
+                },
+                "description": "Un hold vigente por paciente: sin esto, la reserva de 08c responde 409."
               }
             }
           ]
