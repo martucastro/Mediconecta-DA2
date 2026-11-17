@@ -4,13 +4,35 @@
     "description": "Coleccion de demostracion de la Entrega Obligatoria N.1.\n\nRequiere el sistema desplegado en WildFly (ver README.md).\n\nLas variables de coleccion traen los usuarios de prueba que crea el seed al arrancar. La autenticacion es HTTP Basic: cada carpeta define el usuario que corresponde, asi que no hay que configurar nada por request.\n\nOrden sugerido para la demo:\n1. Seguridad, para mostrar 401 y 403\n2. Flujo del turno, para mostrar el hold\n3. Expiracion del hold, esperando 5 minutos",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// {{franja}}: fecha y hora futura al azar (entre 30 y 630 dias desde hoy, a cualquier minuto)",
+          "// para abrir franjas. Cambia en cada request, asi que correr la coleccion de nuevo",
+          "// sobre la misma base no choca con las franjas ya abiertas (409).",
+          "var dias = 30 + Math.floor(Math.random() * 600);",
+          "var minutos = Math.floor(Math.random() * 24 * 60);",
+          "var d = new Date(Date.now() + dias * 864e5);",
+          "d.setUTCHours(0, minutos, 0, 0);",
+          "pm.variables.set('franja', d.toISOString().slice(0, 16) + ':00');"
+        ]
+      }
+    }
+  ],
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080/mediconecta/api" },
     { "key": "clave", "value": "cambiar123" },
     { "key": "admin", "value": "admin@mediconecta.com" },
     { "key": "profesional", "value": "profesional@mediconecta.com" },
     { "key": "paciente", "value": "paciente@mediconecta.com" },
-    { "key": "turnoId", "value": "6" }
+    { "key": "turnoId", "value": "" },
+    { "key": "turnoSinConfirmar", "value": "" },
+    { "key": "profesionalId", "value": "2" },
+    { "key": "pacienteId", "value": "3" },
+    { "key": "tokenMedioDePago", "value": "tok_visa_demo" }
   ],
   "item": [
     {
@@ -19,15 +41,41 @@
       "item": [
         {
           "name": "Anonimo a historia clinica (espera 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": { "type": "noauth" },
             "method": "GET",
-            "url": "{{baseUrl}}/historias/paciente/3",
+            "url": "{{baseUrl}}/historias/paciente/{{pacienteId}}",
             "description": "Sin credenciales. El security-constraint de web.xml exige estar autenticado para /api/historias/*."
           }
         },
         {
           "name": "Credencial incorrecta (espera 401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -43,6 +91,19 @@
         },
         {
           "name": "Paciente lista usuarios (espera 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -58,6 +119,26 @@
         },
         {
           "name": "Admin lista usuarios (espera 200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "// Ids reales del profesional y del paciente, para no depender del orden del seed.",
+                  "var usuarios = pm.response.json();",
+                  "var buscar = function (email) { return usuarios.find(function (u) { return u.email === email; }); };",
+                  "var profesional = buscar(pm.variables.get('profesional'));",
+                  "var paciente = buscar(pm.variables.get('paciente'));",
+                  "if (profesional) { pm.collectionVariables.set('profesionalId', profesional.id); }",
+                  "if (paciente) { pm.collectionVariables.set('pacienteId', paciente.id); }"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -79,20 +160,47 @@
       "item": [
         {
           "name": "Ver disponibilidad (publico)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": { "type": "noauth" },
             "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/turnos?profesionalId=2",
+              "raw": "{{baseUrl}}/turnos?profesionalId={{profesionalId}}",
               "host": ["{{baseUrl}}"],
               "path": ["turnos"],
-              "query": [{ "key": "profesionalId", "value": "2" }]
+              "query": [{ "key": "profesionalId", "value": "{{profesionalId}}" }]
             },
             "description": "Consultar la agenda no exige autenticacion: es una decision de producto, cualquiera puede ver horarios antes de registrarse.\n\nFijate que la respuesta NO trae el hash de contrasena del profesional. Se devuelve un TurnoDTO, no la entidad."
           }
         },
         {
           "name": "Profesional abre una franja presencial",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.collectionVariables.set('turnoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -105,7 +213,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-15T16:00:00\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"PRESENCIAL\",\n  \"consultorio\": \"Consultorio 3\"\n}"
             },
             "url": "{{baseUrl}}/turnos/disponibilidad",
             "description": "El profesional se resuelve del usuario autenticado, no del cuerpo: nadie puede abrir agenda a nombre de otro.\n\nEl formato de fecha es ISO 8601 sin zona horaria, que es como JSON-B serializa un LocalDateTime.\n\nmodalidad es opcional (si no viene, PRESENCIAL). El consultorio solo se acepta en las franjas presenciales."
@@ -122,7 +230,8 @@
                   "pm.test('201 y modalidad TELEMEDICINA', function () {",
                   "    pm.response.to.have.status(201);",
                   "    pm.expect(pm.response.json().modalidad).to.eql('TELEMEDICINA');",
-                  "});"
+                  "});",
+                  "pm.collectionVariables.set('turnoSinConfirmar', pm.response.json().id);"
                 ]
               }
             }
@@ -150,7 +259,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fechaHora\": \"2027-03-16T10:00:00\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
+              "raw": "{\n  \"fechaHora\": \"{{franja}}\",\n  \"modalidad\": \"TELEMEDICINA\"\n}"
             },
             "url": "{{baseUrl}}/turnos/disponibilidad",
             "description": "Misma operacion, otra modalidad. Sin consultorio: una franja de telemedicina con consultorio responde 400."
@@ -158,6 +267,19 @@
         },
         {
           "name": "Paciente NO puede abrir franjas (espera 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -168,13 +290,29 @@
             },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"fechaHora\": \"2027-03-15T17:00:00\"\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"fechaHora\": \"{{franja}}\"\n}" },
             "url": "{{baseUrl}}/turnos/disponibilidad",
             "description": "@RolesAllowed(\"PROFESIONAL\") sobre el metodo de negocio."
           }
         },
         {
           "name": "Paciente reserva: arranca el hold",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('EN_HOLD', function () {",
+                  "    pm.expect(pm.response.json().estado).to.eql('EN_HOLD');",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -192,6 +330,19 @@
         },
         {
           "name": "Otro usuario NO confirma el hold ajeno (espera 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -201,12 +352,30 @@
               ]
             },
             "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"tokenMedioDePago\": \"{{tokenMedioDePago}}\"\n}" },
             "url": "{{baseUrl}}/turnos/{{turnoId}}/confirmar",
             "description": "Esto no lo puede resolver @RolesAllowed: la anotacion sabe que el que llama tiene un rol, no que ESTE turno sea suyo. La comprobacion es programatica, con SessionContext."
           }
         },
         {
           "name": "El paciente confirma el suyo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('CONFIRMADO', function () {",
+                  "    pm.expect(pm.response.json().estado).to.eql('CONFIRMADO');",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -216,12 +385,30 @@
               ]
             },
             "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"tokenMedioDePago\": \"{{tokenMedioDePago}}\"\n}" },
             "url": "{{baseUrl}}/turnos/{{turnoId}}/confirmar",
-            "description": "El turno pasa a CONFIRMADO y se cancela el temporizador de expiracion."
+            "description": "El turno pasa a CONFIRMADO y se cancela el temporizador de expiracion.\n\nSi el turno tiene copago, se cobra con el token de la variable tokenMedioDePago (SCRUM-93). La pasarela simulada aprueba cualquier token salvo los que empiezan con \"rechazar\" (409, el turno sigue EN_HOLD) o \"caer\" (502, pasarela caida)."
           }
         },
         {
           "name": "Cancelar un turno reservado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('CANCELADO', function () {",
+                  "    pm.expect(pm.response.json().estado).to.eql('CANCELADO');",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -243,6 +430,22 @@
       "item": [
         {
           "name": "Reservar y NO confirmar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('EN_HOLD', function () {",
+                  "    pm.expect(pm.response.json().estado).to.eql('EN_HOLD');",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -253,23 +456,36 @@
             },
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"turnoId\": 7\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"turnoId\": {{turnoSinConfirmar}}\n}" },
             "url": "{{baseUrl}}/turnos",
             "description": "Anota la hora. No confirmes."
           }
         },
         {
           "name": "Esperar 5 minutos y ver la disponibilidad",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": { "type": "noauth" },
             "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/turnos?profesionalId=2",
+              "raw": "{{baseUrl}}/turnos?profesionalId={{profesionalId}}",
               "host": ["{{baseUrl}}"],
               "path": ["turnos"],
-              "query": [{ "key": "profesionalId", "value": "2" }]
+              "query": [{ "key": "profesionalId", "value": "{{profesionalId}}" }]
             },
-            "description": "Antes de los 5 minutos el turno 7 no aparece, porque solo se listan los DISPONIBLE. Despues de los 5 minutos vuelve a aparecer."
+            "description": "Antes de los 5 minutos el turno reservado (la franja de telemedicina) no aparece, porque solo se listan los DISPONIBLE. Despues de los 5 minutos vuelve a aparecer."
           }
         }
       ]
@@ -279,6 +495,19 @@
       "item": [
         {
           "name": "Profesional consulta la historia de un paciente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, o 404 si el paciente todavia no tiene historia', function () {",
+                  "    pm.expect([200, 404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -288,12 +517,25 @@
               ]
             },
             "method": "GET",
-            "url": "{{baseUrl}}/historias/paciente/3",
+            "url": "{{baseUrl}}/historias/paciente/{{pacienteId}}",
             "description": "Un profesional puede leer cualquier historia: lo necesita para atender.\n\nSi el paciente todavia no tiene historia creada, la respuesta es 404, que es correcto."
           }
         },
         {
           "name": "Crear la historia de un paciente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201, o 409 si ya la tenia de una corrida anterior', function () {",
+                  "    pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
             "auth": {
               "type": "basic",
@@ -303,7 +545,7 @@
               ]
             },
             "method": "POST",
-            "url": "{{baseUrl}}/historias/paciente/3",
+            "url": "{{baseUrl}}/historias/paciente/{{pacienteId}}",
             "description": "@RolesAllowed(\"PROFESIONAL\") sobre la fachada de negocio."
           }
         }

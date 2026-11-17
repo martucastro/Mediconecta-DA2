@@ -1,7 +1,8 @@
 package ar.edu.uade.da2.mediconecta.turnos.negocio;
 
 /**
- * Orden de los observadores de TurnoEnReserva y TurnoEnConfirmacion.
+ * Orden de los observadores de TurnoEnReserva, TurnoEnConfirmacion y
+ * TurnoEnCancelacion.
  *
  * Los componentes que se enganchan al flujo de turnos lo hacen con un
  * observador sincronico:
@@ -38,6 +39,15 @@ public final class PuntosDeExtension {
 
     /** TurnoEnConfirmacion: encolado del reclamo a la obra social. */
     public static final int RECLAMO = 300;
+
+    /** TurnoEnCancelacion: anulacion del reclamo a la obra social (SCRUM-124). */
+    public static final int ANULACION_RECLAMO = 100;
+
+    /**
+     * TurnoEnCancelacion: reembolso del copago (SCRUM-124). Va al final: es lo
+     * unico que el rollback no deshace.
+     */
+    public static final int REEMBOLSO_COPAGO = 200;
 
     private PuntosDeExtension() {
     }

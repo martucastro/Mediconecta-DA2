@@ -1,6 +1,8 @@
-package ar.edu.uade.da2.mediconecta.telemedicina.negocio;
+package ar.edu.uade.da2.mediconecta;
 
 import java.util.Map;
+
+import ar.edu.uade.da2.mediconecta.telemedicina.negocio.ProveedorDeVideoNoDisponibleException;
 
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -12,8 +14,8 @@ import jakarta.ws.rs.ext.Provider;
  * ObraSocialNoDisponibleMapper. Retry-After le sugiere al cliente cuanto
  * esperar antes de reintentar.
  *
- * La excepcion es especifica de telemedicina, asi que su mapper vive junto a
- * ella, como en pagos y obras sociales.
+ * La excepcion es de telemedicina, pero el mapper vive en el paquete raiz con
+ * los demas: armar respuestas HTTP no es trabajo de la capa de negocio.
  */
 @Provider
 public class ProveedorDeVideoNoDisponibleMapper

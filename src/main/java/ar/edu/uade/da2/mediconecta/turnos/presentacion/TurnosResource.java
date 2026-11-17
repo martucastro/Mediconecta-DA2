@@ -76,6 +76,9 @@ public class TurnosResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response abrirDisponibilidad(NuevaDisponibilidadRequest solicitud) {
+        if (solicitud == null) {
+            throw new DatosInvalidosException("Faltan los datos de la franja");
+        }
         Turno turno = servicio.abrirDisponibilidad(solicitud.getFechaHora(),
                 leerModalidad(solicitud.getModalidad()), solicitud.getConsultorio());
         return Response.status(Response.Status.CREATED).entity(new TurnoDTO(turno)).build();
@@ -102,14 +105,24 @@ public class TurnosResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response reservar(ReservaTurnoRequest reserva) {
+        if (reserva == null) {
+            throw new DatosInvalidosException("El id del turno es obligatorio");
+        }
         return Response.ok(new TurnoDTO(servicio.reservarTurno(reserva.getTurnoId()))).build();
     }
 
+    /**
+     * Confirma el hold. El cuerpo es opcional: solo hace falta cuando el turno
+     * tiene copago, y lleva el token del medio de pago para cobrarlo (SCRUM-93).
+     * Sin cuerpo, "cuerpo" llega null y el token queda null.
+     */
     @PUT
     @Path("/{id}/confirmar")
+    @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response confirmar(@PathParam("id") Long id) {
-        return Response.ok(new TurnoDTO(servicio.confirmarTurno(id))).build();
+    public Response confirmar(@PathParam("id") Long id, ConfirmarTurnoRequest cuerpo) {
+        String token = cuerpo != null ? cuerpo.getTokenMedioDePago() : null;
+        return Response.ok(new TurnoDTO(servicio.confirmarTurno(id, token))).build();
     }
 
     @PUT

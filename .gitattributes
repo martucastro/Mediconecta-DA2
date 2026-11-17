@@ -1,0 +1,2 @@
+# Contrato del legado SOAP: se versiona byte a byte, sin conversion de fin de linea.
+docs/obrasocial.wsdl -text
