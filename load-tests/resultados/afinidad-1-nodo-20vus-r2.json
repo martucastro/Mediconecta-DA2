@@ -1,0 +1,293 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {
+            "reserva de un turno": {
+                "name": "reserva de un turno",
+                "path": "::reserva de un turno",
+                "id": "3b70060e04723ebe3ffe516ba71404ad",
+                "groups": {},
+                "checks": {
+                    "disponibilidad 200": {
+                        "fails": 0,
+                        "name": "disponibilidad 200",
+                        "path": "::reserva de un turno::disponibilidad 200",
+                        "id": "42d69d30f5778ed3011efbb6d550c7ff",
+                        "passes": 5000
+                    },
+                    "la franja del VU sigue disponible": {
+                        "name": "la franja del VU sigue disponible",
+                        "path": "::reserva de un turno::la franja del VU sigue disponible",
+                        "id": "77506fcee692669a62717bd775c2bdc5",
+                        "passes": 5000,
+                        "fails": 0
+                    },
+                    "reservar 200": {
+                        "name": "reservar 200",
+                        "path": "::reserva de un turno::reservar 200",
+                        "id": "d580a5624bcee4de64cae9e42e0a9ad5",
+                        "passes": 5000,
+                        "fails": 0
+                    },
+                    "queda EN_HOLD": {
+                        "name": "queda EN_HOLD",
+                        "path": "::reserva de un turno::queda EN_HOLD",
+                        "id": "349cf677d2ca1aefbcfed4e845a6f337",
+                        "passes": 5000,
+                        "fails": 0
+                    },
+                    "cancelar 200": {
+                        "id": "20e6daab49a3c9f1478cf7ecac89b175",
+                        "passes": 4996,
+                        "fails": 4,
+                        "name": "cancelar 200",
+                        "path": "::reserva de un turno::cancelar 200"
+                    },
+                    "cancelar (reintento) 200": {
+                        "path": "::reserva de un turno::cancelar (reintento) 200",
+                        "id": "6598fa2f3dbf2ae3b25122075387da25",
+                        "passes": 4,
+                        "fails": 0,
+                        "name": "cancelar (reintento) 200"
+                    }
+                }
+            }
+        },
+        "checks": {}
+    },
+    "metrics": {
+        "iteration_duration": {
+            "med": 296.63705,
+            "p(90)": 461.48429000000004,
+            "p(95)": 514.477665,
+            "p(99)": 642.667467,
+            "max": 887.6085,
+            "avg": 311.4344467200003,
+            "min": 69.3372
+        },
+        "http_req_duration{operacion:disponibilidad}": {
+            "avg": 94.94335251999978,
+            "min": 21.0128,
+            "med": 76.43365,
+            "p(90)": 175.71502,
+            "p(95)": 217.07537000000008,
+            "p(99)": 316.335375,
+            "max": 577.7752,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "http_req_waiting": {
+            "avg": 103.24751007643765,
+            "min": 20.9975,
+            "med": 85.5194,
+            "p(90)": 192.2176,
+            "p(95)": 230.83574,
+            "p(99)": 324.547128,
+            "max": 577.7752
+        },
+        "http_req_receiving": {
+            "avg": 0.21359655699567984,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0.79762,
+            "p(95)": 0.9287199999999997,
+            "p(99)": 1.0022,
+            "max": 3.0022
+        },
+        "vus_max": {
+            "value": 20,
+            "min": 20,
+            "max": 20
+        },
+        "http_req_duration{operacion:reservar}": {
+            "avg": 111.64031945999986,
+            "min": 22.1495,
+            "med": 94.8613,
+            "p(90)": 203.01429000000007,
+            "p(95)": 242.65700000000004,
+            "p(99)": 329.2578850000001,
+            "max": 512.8028,
+            "thresholds": {
+                "p(95)<1000": false
+            }
+        },
+        "http_req_blocked": {
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 14.4483,
+            "avg": 0.0034119175805915583,
+            "min": 0
+        },
+        "iterations": {
+            "count": 5000,
+            "rate": 62.388151691425456
+        },
+        "http_req_duration{operacion:cancelar}": {
+            "min": 21.9362,
+            "med": 88.1499,
+            "p(90)": 192.98860000000002,
+            "p(95)": 230.71465500000002,
+            "p(99)": 330.3228650000001,
+            "max": 567.406,
+            "avg": 104.44893779999995,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 103.46941985240377,
+            "min": 21.0128,
+            "med": 85.6934,
+            "p(90)": 192.4391,
+            "p(95)": 230.874,
+            "p(99)": 324.88860000000017,
+            "max": 577.7752
+        },
+        "http_req_sending": {
+            "avg": 0.005387258225324033,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 1.504
+        },
+        "data_received": {
+            "count": 17289841,
+            "rate": 215736.24460572546
+        },
+        "http_req_tls_handshaking": {
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0
+        },
+        "group_duration": {
+            "max": 887.6085,
+            "avg": 311.41346786000014,
+            "min": 69.3372,
+            "med": 296.56219999999996,
+            "p(90)": 461.48429000000004,
+            "p(95)": 514.477665,
+            "p(99)": 642.667467
+        },
+        "http_req_duration": {
+            "p(99)": 324.86755999999974,
+            "max": 577.7752,
+            "avg": 103.46649389165871,
+            "min": 21.0128,
+            "med": 85.6905,
+            "p(90)": 192.42162000000002,
+            "p(95)": 230.87207999999998
+        },
+        "http_req_failed": {
+            "passes": 4,
+            "fails": 15041,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0.0002658690594882021
+        },
+        "vus": {
+            "value": 2,
+            "min": 0,
+            "max": 20
+        },
+        "http_reqs": {
+            "rate": 187.7259484394992,
+            "count": 15045
+        },
+        "http_req_connecting": {
+            "p(99)": 0,
+            "max": 3.0024,
+            "avg": 0.0013198670654702561,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "checks": {
+            "passes": 25000,
+            "fails": 4,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 0.9998400255959047
+        },
+        "http_reqs{instancia:1}": {
+            "count": 15004,
+            "rate": 187.21436559562952,
+            "thresholds": {
+                "count>0": false
+            }
+        },
+        "data_sent": {
+            "count": 4215183,
+            "rate": 52595.495282223565
+        },
+        "flujo_reserva_completo": {
+            "med": 296,
+            "p(90)": 461.10000000000036,
+            "p(95)": 514,
+            "p(99)": 642.0100000000002,
+            "max": 888,
+            "avg": 311.4162,
+            "min": 70
+        }
+    },
+    "setup_data": {
+        "pacientes": [
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0yQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0zQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi00QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi01QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi02QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi03QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi04QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi05QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xMUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xMkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xM0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xNEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xNUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xNkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xN0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xOEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0xOUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NTA4NzAyMi0yMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY="
+        ],
+        "profesionalId": 2,
+        "franjas": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+        ]
+    }
+}

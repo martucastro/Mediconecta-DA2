@@ -105,6 +105,12 @@ Umbrales de referencia (están en el script, y si se rompen k6 termina con códi
 
 ## Resultados (17/11/2026)
 
+Hay tres mediciones:
+- **1 y 2:** comparan 1 y 2 instancias en la misma máquina, sin repartir la CPU entre ellas.
+- **3:** repite la comparación con dos nodos del mismo tamaño, cada uno con sus propios núcleos (afinidad de CPU).
+
+La [conclusión general](#conclusión-general) está al final.
+
 ### Entorno
 
 - **Máquina:** Intel Core i7-12700K, con 12 núcleos (8 P-cores y 4 E-cores) y 20 procesadores lógicos; 64 GB de RAM; Windows 11 Pro.
@@ -193,7 +199,7 @@ Después de la serie, se le sacó EcoQoS (el *power throttling* de Windows) a la
 
 La misma instancia, con EcoQoS, sola y con 10 VUs, había dado 28,0 iteraciones/s en una corrida de diagnóstico. Los JSON de control son `resultados/control-8180-sin-ecoqos-*.json`.
 
-### Conclusión
+### Conclusión de las mediciones 1 y 2
 
 **Escalar a dos instancias en esta máquina no mejoró el throughput.** Quedó igual o apenas peor: -7 %, -5 % y -1 % con 10, 20 y 50 VUs. Todas las corridas, con una o con dos instancias, dieron entre 28 y 32 reservas completas por segundo.
 
@@ -225,8 +231,101 @@ La misma instancia, con EcoQoS, sola y con 10 VUs, había dado 28,0 iteraciones/
 **Qué sí quedó demostrado.**
 - El componente escala horizontalmente en lo funcional: dos instancias con el mismo WAR, contra la misma base, atendieron 13.800 reservas.
 - No hubo ningún `409`, y el hold vive en la fila del turno.
-- La mejora medible pide más hardware (otra máquina o contenedores con CPU asignada y un balanceador), no otra JVM en el mismo equipo.
+- La mejora medible pide más hardware (otra máquina o contenedores con CPU asignada y un balanceador), no otra JVM en el mismo equipo. La medición 3 lo comprueba.
 - También se puede bajar el costo por request: hoy se paga PBKDF2 en cada llamada con Basic, cuando alcanzaría con pagarlo en el login (con una sesión o un token).
+
+### Medición 3: dos nodos del mismo tamaño (afinidad de CPU)
+
+**El modelo.** Una sola máquina física hace de dos nodos iguales:
+- **Nodo A:** la instancia `:8080`, fijada a los procesadores lógicos 0–7 (P-cores 0–3, con hyperthreading).
+- **Nodo B:** la instancia `:8180`, fijada a los lógicos 8–15 (P-cores 4–7).
+- **k6:** fijado a los 4 E-cores (lógicos 16–19), para no robarle CPU a ningún nodo.
+- **EcoQoS:** apagado en las dos JVMs.
+- **La base sigue siendo una sola y compartida,** como en un escalado horizontal real. PostgreSQL no se fijó: corre en cualquier núcleo libre.
+
+**Por qué es la prueba justa.**
+- En las mediciones 1 y 2, la segunda instancia no agregaba capacidad: las dos JVMs se repartían la misma CPU.
+- Escalar horizontalmente es sumar otro servidor igual al primero. Acá la "1 instancia" usa solo los núcleos del nodo A. Los del nodo B quedan ociosos, como una segunda máquina que todavía no está. Con 2 nodos se suma exactamente la misma capacidad que ya tenía el primero.
+- **Lo que este modelo no reproduce:** los nodos comparten la caché L3, la memoria, el disco y la máquina de PostgreSQL y de k6, y no hay red entre ellos. Una medición en máquinas separadas daría números algo distintos.
+
+**Cómo se corrió.**
+- **Topología:** se verificó con `GetLogicalProcessorInformationEx`. Hay 8 P-cores con 2 hilos cada uno (lógicos 0–15) y 4 E-cores (16–19).
+- **Mismo tamaño de pools:** las dos JVMs arrancan viendo los 20 lógicos y se fijan recién después del arranque. Así dimensionan igual sus pools de hilos y de GC. La 8080 ya estaba corriendo; la 8180 se levantó igual que en la medición 2.
+- **Afinidad y EcoQoS**, sobre los procesos en marcha, desde PowerShell y sin permisos de administrador:
+  ```powershell
+  (Get-Process -Id <pid de la 8080>).ProcessorAffinity = 0x00FF   # nodo A: lógicos 0-7
+  (Get-Process -Id <pid de la 8180>).ProcessorAffinity = 0xFF00   # nodo B: lógicos 8-15
+  # EcoQoS apagado en las dos: SetProcessInformation(ProcessPowerThrottling,
+  #   ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED, StateMask = 0)
+  ```
+- **k6** se lanzó con `Start-Process` y `ProcessorAffinity = 0xF0000` (E-cores):
+  ```bash
+  k6 run -e VUS=20 -e ITERACIONES=250 \
+    --summary-export=load-tests/resultados/afinidad-1-nodo-20vus-r1.json load-tests/reserva-turnos.js
+  k6 run -e VUS=20 -e ITERACIONES=250 \
+    -e BASE_URLS=http://localhost:8080/mediconecta/api,http://localhost:8180/mediconecta/api \
+    --summary-export=load-tests/resultados/afinidad-2-nodos-20vus-r1.json load-tests/reserva-turnos.js
+  ```
+- **Cargas:** lo mismo con `VUS=50 ITERACIONES=100` y con `VUS=100 ITERACIONES=50`. Son 5000 reservas por corrida, de 45 a 90 s.
+- **Orden:** alternando 1 y 2 nodos, dos veces cada uno, con la base en el estado del seed antes de cada corrida. Antes hubo una corrida de calentamiento con 2 nodos, que no se registró.
+
+**Resultados por corrida.** Latencias en ms. Los JSON son `resultados/afinidad-*.json`.
+
+| Nodos | VUs | Iter./VU | Corrida | disponibilidad p50 / p95 | reservar p50 / p95 | cancelar p50 / p95 | flujo p50 / p95 | Iteraciones/s | Requests/s | Errores (%) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 20 | 250 | r1 | 78 / 220 | 97 / 248 | 88 / 233 | 295 / 526 | 61.8 | 186.1 | 0.06 |
+| 1 | 20 | 250 | r2 | 76 / 217 | 95 / 243 | 88 / 231 | 296 / 514 | 62.4 | 187.7 | 0.03 |
+| 2 | 20 | 250 | r1 | 48 / 94 | 50 / 99 | 49 / 98 | 164 / 238 | 106.4 | 320.8 | 0.21 |
+| 2 | 20 | 250 | r2 | 47 / 91 | 49 / 90 | 48 / 89 | 161 / 220 | 112.1 | 337.5 | 0.11 |
+| 1 | 50 | 100 | r1 | 224 / 367 | 325 / 467 | 281 / 422 | 829 / 1073 | 58.5 | 176.6 | 0.02 |
+| 1 | 50 | 100 | r2 | 224 / 373 | 320 / 467 | 284 / 433 | 830 / 1075 | 58.3 | 176.1 | 0.03 |
+| 2 | 50 | 100 | r1 | 92 / 281 | 128 / 329 | 110 / 314 | 382 / 689 | 112.4 | 339.8 | 0.05 |
+| 2 | 50 | 100 | r2 | 91 / 283 | 122 / 337 | 110 / 311 | 380 / 692 | 112.8 | 340.6 | 0.03 |
+| 1 | 100 | 50 | r1 | 489 / 774 | 525 / 869 | 515 / 849 | 1708 / 2013 | 56.3 | 171.1 | 0.00 |
+| 1 | 100 | 50 | r2 | 489 / 753 | 531 / 863 | 520 / 845 | 1713 / 1957 | 56.3 | 171.2 | 0.01 |
+| 2 | 100 | 50 | r1 | 248 / 378 | 279 / 429 | 268 / 407 | 818 / 1018 | 105.3 | 320.3 | 0.08 |
+| 2 | 100 | 50 | r2 | 249 / 378 | 278 / 418 | 267 / 399 | 812 / 1008 | 106.2 | 323.0 | 0.11 |
+
+Solo las dos corridas de 1 nodo con 100 VUs rompen un umbral: el p95 de cancelar (849 y 845 ms, contra 800). Con 2 nodos, todas pasan.
+
+**Comparación**, con el promedio de `r1` y `r2`:
+
+| VUs | Iteraciones/s (1 → 2 nodos) | flujo p50 en ms (1 → 2) | flujo p95 en ms (1 → 2) |
+| --- | --- | --- | --- |
+| 20 | 62.1 → 109.3 (+76 %) | 296 → 162 (-45 %) | 520 → 229 (-56 %) |
+| 50 | 58.4 → 112.6 (+93 %) | 830 → 381 (-54 %) | 1074 → 690 (-36 %) |
+| 100 | 56.3 → 105.7 (+88 %) | 1710 → 815 (-52 %) | 1985 → 1013 (-49 %) |
+
+**Reparto entre nodos:** cada nodo atendió 7500 requests del flujo por corrida, más sus reintentos de cancelación (de 7501 a 7527).
+
+**CPU durante la carga.** Los procesos van en % de un procesador lógico. Los grupos de núcleos, en % promedio del grupo.
+
+| Configuración | CPU total | JVM 8080 | JVM 8180 | PostgreSQL | k6 | Nodo A (0–7) | Nodo B (8–15) | E-cores (16–19) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 nodo | 33–40 % | 583–705 % | 0 % | 8–13 % | 5–8 % | 75–89 % | 8–10 % | 8–9 % |
+| 2 nodos | 72–77 % | 630–699 % | 695–734 % | 28–40 % | 12–18 % | 80–87 % | 89–91 % | 20–33 % |
+
+**Lectura.**
+- **Con dos nodos del mismo tamaño, el throughput casi se duplica:** +76 %, +93 % y +88 % con 20, 50 y 100 VUs.
+- **La latencia baja a la mitad:** el p50 del flujo baja entre 45 y 54 %, y el p95 entre 36 y 56 %.
+- **Un nodo solo se satura** en unas 56–62 reservas/s. Con más VUs no rinde más: solo crece la espera.
+- **Por qué no llega a 2×:**
+  - PostgreSQL pasa de 0,1 a 0,3–0,4 núcleos y comparte los núcleos libres con k6.
+  - Los dos nodos comparten la caché y la memoria.
+  - Con 20 VUs, 10 por nodo no alcanzan a saturar cada uno.
+  - Aun así, la base no se volvió el cuello de botella: sigue siendo la CPU de cada nodo (PBKDF2 en cada request).
+
+### Conclusión general
+
+1. **Otra JVM en la misma CPU no escala.**
+   - Mediciones 1 y 2: con la máquina sin repartir, la segunda instancia no agregó capacidad. Las dos JVMs se repartieron la misma CPU, que además Windows limitó a los 4 E-cores.
+   - El throughput no cambió (de 28 a 32 reservas/s) y el p95 empeoró hasta un 138 %.
+2. **Un nodo más del mismo tamaño casi duplica la capacidad.**
+   - Medición 3: con dos nodos iguales (4 P-cores cada uno) y la base compartida, el throughput subió entre 76 y 93 % (de unas 56–62 a 105–113 reservas/s).
+   - La latencia del flujo bajó a la mitad (p50 de -45 a -54 %, p95 de -36 a -56 %).
+3. **El componente escala horizontalmente** porque el hold vive en la fila del turno y no en la JVM. Las dos instancias atendieron, con la misma base, 13.800 reservas en la medición 2 y 30.000 en la medición 3, sin ningún `409`.
+4. **El límite es la CPU de cada nodo, no PostgreSQL.** Cada request verifica la contraseña con PBKDF2. La base pasó de 0,1 a 0,4 núcleos con dos nodos.
+5. **Para una prueba de producción faltan** máquinas separadas con un balanceador, la base en su propio servidor y el arreglo de la carrera de `ExpiradorDeHolds` (ver abajo).
 
 ### Errores y hallazgos
 
@@ -235,7 +334,9 @@ La misma instancia, con EcoQoS, sola y con 10 VUs, había dado 28,0 iteraciones/
 - Si otro pedido canceló ese timer en el medio, WildFly lanza `NoSuchObjectLocalException` (`WFLYEJB0331: Timer ... was canceled`) y revierte la transacción entera.
 - Pasa al cancelar y también al reservar, porque `programar` llama primero a `cancelar`.
 - En la serie fallaron 12 cancelaciones y 1 reserva con 2 instancias, y 1 cancelación con 1 instancia, sobre 13.800 iteraciones de cada configuración.
-- Con más concurrencia es más frecuente. En el control sin EcoQoS fallaron 40 cancelaciones y 5 reservas en 9000 iteraciones.
+- Con más concurrencia es más frecuente:
+  - en el control sin EcoQoS fallaron 40 cancelaciones y 5 reservas en 9000 iteraciones;
+  - en la medición 3 fallaron 104 cancelaciones y 5 reservas en 60.000 iteraciones (0 a 0,21 % de las requests).
 - Cada fallo de k6 coincide con una excepción en el log del servidor, y todos los reintentos de cancelación respondieron 200.
 - Arreglo sugerido, fuera del alcance de esta prueba: ignorar `NoSuchObjectLocalException` dentro del bucle de `cancelar`, porque un timer ya cancelado es justo lo que se buscaba.
 
@@ -247,5 +348,5 @@ La misma instancia, con EcoQoS, sola y con 10 VUs, había dado 28,0 iteraciones/
 
 **Timers por instancia (ADR 0001): no afectó la prueba.**
 - Cada VU va siempre a la misma instancia, así que reserva y cancela en la misma, y la cancelación encuentra el timer local.
-- En ninguna de las dos instancias venció un hold por temporizador ni por barrido: no hay ninguna línea `Hold vencido` en los logs.
+- En ninguna de las dos instancias venció un hold por temporizador ni por barrido, ni en la medición 2 ni en la 3: no hay ninguna línea `Hold vencido` en los logs.
 - Con un balanceador round-robin, la cancelación podría caer en la otra instancia. El timer viejo seguiría vivo en la primera y dispararía a los 5 minutos, que es el riesgo que documenta el ADR 0001.
