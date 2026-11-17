@@ -169,6 +169,27 @@ class ServicioDePagosTest {
     }
 
     @Test
+    void unCobroSinRespuestaQuedaIncierto() {
+        // R3-timeout-cobro-incierto: el pedido salio y la respuesta no llego.
+        // La pasarela pudo haber cobrado y no hay id para reembolsar: el pago
+        // queda INCIERTO (en su propia transaccion, sobrevive al rollback de
+        // la confirmacion) para que lo concilie un administrador.
+        comoElPacienteDelTurno();
+        CobroInciertoException incierto = new CobroInciertoException("sin respuesta", null);
+        when(pasarela.cobrar(any(), any(), any())).thenThrow(incierto);
+
+        assertSame(incierto, assertThrows(CobroInciertoException.class,
+                () -> servicio.cobrar(cobro("tok_visa_demo"))));
+
+        ArgumentCaptor<Pago> guardado = ArgumentCaptor.forClass(Pago.class);
+        verify(pagoDAO).actualizarEnNuevaTransaccion(guardado.capture());
+        assertEquals(EstadoPago.INCIERTO, guardado.getValue().getEstado());
+        assertNull(guardado.getValue().getIdTransaccionExterna());
+        verify(pagoDAO, never()).actualizar(any());
+        verify(cobroAprobado, never()).fire(any());
+    }
+
+    @Test
     void unTokenDeMasDe255CaracteresEsDatoInvalido() {
         // Sin tope, un token de 200 KB se aceptaba y se cobraba.
         DatosInvalidosException e = assertThrows(DatosInvalidosException.class,
