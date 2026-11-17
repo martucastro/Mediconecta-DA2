@@ -54,6 +54,7 @@ comprobar() { # descripcion, esperado, obtenido
 }
 
 codigo() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+tipo() { curl -s -o /dev/null -w '%{content_type}' "$@" | cut -d';' -f1; }
 
 # Los consumidores de JMS corren despues de la respuesta HTTP, en otros hilos:
 # lo que dejan (notificacion, reclamo) puede tardar unos milisegundos en verse.
@@ -80,6 +81,19 @@ comprobar "credencial incorrecta"             401 "$(codigo -u "admin@mediconect
 comprobar "admin lista usuarios"              200 "$(codigo -u "$ADMIN" "$BASE/usuarios")"
 comprobar "paciente NO lista usuarios"        403 "$(codigo -u "$PACI" "$BASE/usuarios")"
 comprobar "profesional NO lista usuarios"     403 "$(codigo -u "$PROF" "$BASE/usuarios")"
+
+echo
+echo "Errores en JSON (SCRUM-132)"
+comprobar "401 del contenedor"                application/json "$(tipo "$BASE/turnos/mios")"
+comprobar "403 del contenedor (web.xml)"      application/json "$(tipo -u "$PACI" "$BASE/usuarios")"
+comprobar "403 del componente"                application/json "$(tipo -u "$PACI" "$BASE/usuarios/999999999")"
+comprobar "404 de un usuario inexistente"     application/json "$(tipo -u "$ADMIN" "$BASE/usuarios/999999999")"
+comprobar "401 del login"                     application/json "$(tipo -H "Content-Type: application/json" \
+                                                     -d '{"email":"nadie@mediconecta.com","contrasena":"mal"}' "$BASE/usuarios/login")"
+# AutenticacionBasica (SCRUM-103): sin X-Requested-With se pide Basic; con el
+# encabezado del SPA, no (si no, el navegador muestra su popup).
+comprobar "401 de curl pide Basic"            si "$(curl -s -D - -o /dev/null "$BASE/turnos/mios" | grep -qi '^WWW-Authenticate: Basic' && echo si || echo no)"
+comprobar "401 del SPA no pide Basic"         si "$(curl -s -D - -o /dev/null -H 'X-Requested-With: XMLHttpRequest' "$BASE/turnos/mios" | grep -qi '^WWW-Authenticate' && echo no || echo si)"
 
 echo
 echo "Rutas del frontend (SCRUM-134)"
@@ -112,9 +126,24 @@ comprobar "profesionales sigue siendo publico"        200 "$(codigo "$BASE/usuar
 comprobar "el login sigue siendo publico"             200 "$(codigo -H "Content-Type: application/json" \
                                                              -d "{\"email\":\"${PACI%%:*}\",\"contrasena\":\"${PACI#*:}\"}" \
                                                              "$BASE/usuarios/login")"
-comprobar "el registro sigue siendo publico"          201 "$(codigo -H "Content-Type: application/json" \
+# SCRUM-132: el email no distingue mayusculas, ni en el login ni en Basic.
+PACI_MAYUS="$(printf '%s' "${PACI%%:*}" | tr '[:lower:]' '[:upper:]')"
+comprobar "login con el email en mayusculas"          200 "$(codigo -H "Content-Type: application/json" \
+                                                             -d "{\"email\":\"$PACI_MAYUS\",\"contrasena\":\"${PACI#*:}\"}" \
+                                                             "$BASE/usuarios/login")"
+comprobar "Basic con el email en mayusculas"          200 "$(codigo -u "$PACI_MAYUS:${PACI#*:}" "$BASE/turnos/mios")"
+comprobar "el registro sigue siendo publico"         201 "$(codigo -H "Content-Type: application/json" \
                                                              -d "{\"nombre\":\"Registro publico\",\"email\":\"smoke-reg-$(date +%s)@mediconecta.com\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
                                                              "$BASE/usuarios")"
+# SCRUM-127: 5 fallos seguidos bloquean el email 15 minutos. Se usa un email
+# inventado: se bloquea igual que uno real, asi el 429 no delata cuentas.
+BLOQ="smoke-bloqueo-$(date +%s)@mediconecta.com"
+for i in 1 2 3 4 5; do
+  codigo -H "Content-Type: application/json" -d "{\"email\":\"$BLOQ\",\"contrasena\":\"mal\"}" "$BASE/usuarios/login" > /dev/null
+done
+comprobar "tras 5 fallos el login responde 429"       429 "$(codigo -H "Content-Type: application/json" \
+                                                             -d "{\"email\":\"$BLOQ\",\"contrasena\":\"mal\"}" \
+                                                             "$BASE/usuarios/login")"
 
 echo
 echo "Turnos"
@@ -134,6 +163,13 @@ comprobar "modalidad desconocida"             400 "$(codigo -u "$PROF" -H "Conte
                                                      "$BASE/turnos/disponibilidad")"
 comprobar "paciente NO abre disponibilidad"   403 "$(codigo -u "$PACI" -H "Content-Type: application/json" \
                                                      -d '{"fechaHora":"2027-01-15T11:00:00"}' "$BASE/turnos/disponibilidad")"
+# SCRUM-132: JSON-B ya no convierte tipos en silencio (1.5 era 1, 123 era "123").
+comprobar "turnoId con decimales"             400 "$(codigo -u "$PACI" -H "Content-Type: application/json" \
+                                                     -d '{"turnoId":1.5}' "$BASE/turnos")"
+comprobar "turnoId fuera de rango"            400 "$(codigo -u "$PACI" -H "Content-Type: application/json" \
+                                                     -d '{"turnoId":99999999999999999999}' "$BASE/turnos")"
+comprobar "token de pago numerico"            400 "$(codigo -u "$PACI" -X PUT -H "Content-Type: application/json" \
+                                                     -d '{"tokenMedioDePago":123}' "$BASE/turnos/999999999/confirmar")"
 
 RESERVA=$(curl -s -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$ID}" "$BASE/turnos")
 comprobar "reservar deja el turno EN_HOLD"    "si" "$(printf '%s' "$RESERVA" | grep -q EN_HOLD && echo si || echo no)"
@@ -185,6 +221,14 @@ curl -s -o /dev/null -H "Content-Type: application/json" \
      -d "{\"nombre\":\"Otro paciente\",\"email\":\"${OTRO_PACI%%:*}\",\"rol\":\"PACIENTE\",\"contrasena\":\"cambiar123\"}" \
      "$BASE/usuarios"
 comprobar "otro paciente NO ve ese turno"     "si" "$(curl -s -u "$OTRO_PACI" "$BASE/turnos/mios" | grep -q "\"id\":$ID[,}]" && echo no || echo si)"
+
+echo
+echo "Pagos (SCRUM-127: el mismo 403 para un id inexistente que para uno ajeno)"
+comprobar "paciente con un pago inexistente da 403"  403 "$(codigo -u "$PACI" "$BASE/pagos/999999999")"
+comprobar "paciente con un turno inexistente da 403" 403 "$(codigo -u "$PACI" "$BASE/pagos?turnoId=999999999")"
+comprobar "admin con un pago inexistente da 404"     404 "$(codigo -u "$ADMIN" "$BASE/pagos/999999999")"
+# SCRUM-132: el reembolso de un pago inexistente era 400; ahora 404, como el GET.
+comprobar "admin reembolsa un pago inexistente: 404" 404 "$(codigo -u "$ADMIN" -X PUT "$BASE/pagos/999999999/reembolso")"
 
 echo
 echo "Afiliaciones a la obra social (ServicioDeObrasSociales)"

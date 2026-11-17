@@ -43,10 +43,7 @@ public class PagosResource {
     public Response consultar(@PathParam("id") Long id) {
         Pago pago = servicio.consultarPago(id);
         if (pago == null) {
-            return Response.status(Response.Status.NOT_FOUND)
-                    .entity(Map.of("error", "No existe un pago con id " + id + "."))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return pagoInexistente(id);
         }
         return Response.ok(new PagoDTO(pago)).build();
     }
@@ -65,6 +62,18 @@ public class PagosResource {
     @Path("/{id}/reembolso")
     @Produces(MediaType.APPLICATION_JSON)
     public Response reembolsar(@PathParam("id") Long id) {
+        // Mismo 404 que el GET (SCRUM-132): antes el PUT de un pago inexistente
+        // salia 400. consultarPago ya da 403 a un no-administrador, exista o no.
+        if (servicio.consultarPago(id) == null) {
+            return pagoInexistente(id);
+        }
         return Response.ok(new PagoDTO(servicio.reembolsar(id))).build();
+    }
+
+    private static Response pagoInexistente(Long id) {
+        return Response.status(Response.Status.NOT_FOUND)
+                .entity(Map.of("error", "No existe un pago con id " + id + "."))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
     }
 }

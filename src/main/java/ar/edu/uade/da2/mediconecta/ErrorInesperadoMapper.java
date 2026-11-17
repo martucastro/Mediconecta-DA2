@@ -28,10 +28,19 @@ public class ErrorInesperadoMapper implements ExceptionMapper<Throwable> {
 
     @Override
     public Response toResponse(Throwable excepcion) {
-        // Las excepciones propias de JAX-RS (404, 415, etc.) ya traen su
-        // respuesta armada: se dejan pasar tal cual.
+        // Las excepciones propias de JAX-RS (404, 405, 415, etc.) ya traen su
+        // respuesta armada. Si no tiene cuerpo, se le agrega el {"error": ...}
+        // de toda la API (SCRUM-132), conservando estado y encabezados (por
+        // ejemplo Allow en un 405).
         if (excepcion instanceof WebApplicationException webException) {
-            return webException.getResponse();
+            Response respuesta = webException.getResponse();
+            if (respuesta.hasEntity()) {
+                return respuesta;
+            }
+            return Response.fromResponse(respuesta)
+                    .entity(Map.of("error", mensajeDe(respuesta.getStatusInfo())))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         }
 
         // Un cuerpo que JSON-B no puede leer (JSON roto, un texto donde va un
@@ -51,9 +60,19 @@ public class ErrorInesperadoMapper implements ExceptionMapper<Throwable> {
         LOGGER.log(Level.SEVERE, "Error no controlado procesando la peticion", excepcion);
 
         return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                .entity("Error interno del servidor. Consulte el log para el detalle.")
-                .type("text/plain")
+                .entity(Map.of("error", "Error interno del servidor. Consulte el log para el detalle."))
+                .type(MediaType.APPLICATION_JSON)
                 .build();
+    }
+
+    private static String mensajeDe(Response.StatusType estado) {
+        return switch (estado.getStatusCode()) {
+            case 403 -> AccesoDenegadoMapper.MENSAJE;
+            case 404 -> "No existe el recurso pedido.";
+            case 405 -> "El recurso no admite ese método HTTP.";
+            case 415 -> "El cuerpo del pedido tiene que ser application/json.";
+            default -> estado.getReasonPhrase();
+        };
     }
 
     private static boolean esErrorDeJsonb(Throwable excepcion) {

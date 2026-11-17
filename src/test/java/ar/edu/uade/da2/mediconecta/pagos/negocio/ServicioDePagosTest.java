@@ -227,6 +227,9 @@ class ServicioDePagosTest {
 
     @Test
     void consultarUnPagoInexistenteDevuelveNull() {
+        // Solo al administrador: el resto recibe 403 (ServicioDePagosAccesoTest).
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(true);
+
         assertNull(servicio.consultarPago(5L));
     }
 
@@ -282,6 +285,10 @@ class ServicioDePagosTest {
 
     @Test
     void reembolsarUnPagoInexistenteEsDatoInvalido() {
+        // reembolsar es solo del administrador. Por REST no se llega: PagosResource
+        // responde 404 antes de llamarlo (SCRUM-132).
+        when(contexto.isCallerInRole(ServicioDeUsuarios.ROL_ADMINISTRADOR)).thenReturn(true);
+
         assertThrows(DatosInvalidosException.class, () -> servicio.reembolsar(5L));
     }
 

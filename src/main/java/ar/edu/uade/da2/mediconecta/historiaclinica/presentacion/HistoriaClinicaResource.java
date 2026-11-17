@@ -7,6 +7,7 @@ import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.RegistrarConsultaDTO;
 import ar.edu.uade.da2.mediconecta.historiaclinica.negocio.ServicioDeHistoriaClinicaLocal;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -57,7 +58,8 @@ public class HistoriaClinicaResource {
         HistoriaClinica historia = servicio.obtenerHistoriaDePaciente(pacienteId);
         if (historia == null) {
             return Response.status(Response.Status.NOT_FOUND)
-                    .entity("El paciente no tiene una historia clínica abierta")
+                    .entity(Map.of("error", "El paciente no tiene una historia clínica abierta."))
+                    .type(MediaType.APPLICATION_JSON)
                     .build();
         }
         return Response.ok(new HistoriaClinicaDTO(historia)).build();

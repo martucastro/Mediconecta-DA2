@@ -202,4 +202,13 @@ class ServicioDeUsuariosTest {
         assertEquals("ana@test.com", nuevo.getEmail());
         verify(usuarioDAO).guardar(nuevo);
     }
+
+    @Test
+    void elRegistroGuardaElEmailEnMinusculas() {
+        // SCRUM-132: si no, "Ana@Test.com" y "ana@test.com" eran dos cuentas.
+        Usuario nuevo = servicio.registrarUsuario("Ana Perez", "Ana@Test.COM", "PACIENTE", "cambiar123");
+
+        assertEquals("ana@test.com", nuevo.getEmail());
+        verify(usuarioDAO).buscarPorEmail("ana@test.com");
+    }
 }

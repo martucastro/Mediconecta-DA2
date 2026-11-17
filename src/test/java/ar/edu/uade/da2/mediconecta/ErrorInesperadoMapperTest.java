@@ -67,7 +67,8 @@ class ErrorInesperadoMapperTest {
         Response respuesta = mapper.toResponse(new IllegalStateException("detalle interno"));
 
         assertEquals(Response.Status.INTERNAL_SERVER_ERROR.getStatusCode(), respuesta.getStatus());
-        assertEquals("Error interno del servidor. Consulte el log para el detalle.",
+        assertEquals(MediaType.APPLICATION_JSON, respuesta.getMediaType().toString());
+        assertEquals(Map.of("error", "Error interno del servidor. Consulte el log para el detalle."),
                 respuesta.getEntity());
     }
 }
