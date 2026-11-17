@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import BotonCerrarSesion from './BotonCerrarSesion'
 import { api } from '../api'
+import { formatearDiaLargo, formatearHora, parsearFechaHora } from '../fechas'
 import { ASSETS } from '../rutas'
 import { useTitulo } from '../useTitulo'
 
@@ -15,16 +16,11 @@ interface Notificacion {
   fechaEnvio: string
 }
 
-function dosDigitos(n: number): string {
-  return String(n).padStart(2, '0')
-}
-
-// fechaEnvio llega con hasta nanosegundos: se recorta a milisegundos, que es lo
-// que Date acepta en todos los navegadores (ver HoldPage).
+// fechaEnvio llega con hasta nanosegundos y sin zona: se lee con fechas.ts
+// en vez de new Date(texto), que segun el navegador da Invalid Date.
 function formatearFecha(fechaEnvio: string): string {
-  const fecha = new Date(fechaEnvio.replace(/(\.\d{3})\d+/, '$1'))
-  return `${dosDigitos(fecha.getDate())}/${dosDigitos(fecha.getMonth() + 1)}/${fecha.getFullYear()} `
-    + `${dosDigitos(fecha.getHours())}:${dosDigitos(fecha.getMinutes())}`
+  const fecha = parsearFechaHora(fechaEnvio)
+  return fecha ? `${formatearDiaLargo(fecha)}, ${formatearHora(fecha)} hs` : ''
 }
 
 export default function NotificacionesPage() {
@@ -60,10 +56,10 @@ export default function NotificacionesPage() {
         <nav className="nav">
           <Link to="/home">Mis turnos</Link>
           <Link to="/notificaciones" aria-current="page">Notificaciones</Link>
-          <img className="avatar" src={ASSETS.avatar} alt="Perfil" />
+          <img className="avatar" src={ASSETS.avatar} alt="" />
           <BotonCerrarSesion />
         </nav>
-        <img className="avatar m" src={ASSETS.avatar} alt="Perfil" />
+        <img className="avatar m" src={ASSETS.avatar} alt="" />
       </header>
 
       <main className="content stack" style={{ gap: 26 }}>
