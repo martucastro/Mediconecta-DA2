@@ -104,7 +104,10 @@ APP="${BASE%/api}"
 comprobar "recargar una pantalla da 200"      200 "$(codigo "$APP/home")"
 comprobar "el panel del administrador da 200" 200 "$(codigo "$APP/admin")"
 comprobar "un archivo inexistente sigue en 404" 404 "$(codigo "$APP/assets/no-existe.js")"
-comprobar "una ruta de la API inexistente, 404" 404 "$(codigo "$BASE/no-existe")"
+# Con credenciales: asi el 404 lo da JAX-RS y no depende de que la ruta quede
+# fuera de los security-constraint (las protegidas responden 401 sin credencial).
+comprobar "una ruta de la API inexistente, 404" 404 "$(codigo -u "$ADMIN" "$BASE/no-existe")"
+comprobar "ese 404 es JSON, no el index.html"  application/json "$(tipo -u "$ADMIN" "$BASE/no-existe")"
 
 
 echo
@@ -151,7 +154,9 @@ echo "Turnos"
 NUEVO=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
         -d '{"fechaHora":"2027-01-15T10:00:00"}' "$BASE/turnos/disponibilidad")
 ID=$(printf '%s' "$NUEVO" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-comprobar "profesional abre disponibilidad"   "si" "$([ -n "$ID" ] && echo si || echo no)"
+# El id del profesional sale de la franja que abrio, no de suponer el de la semilla.
+ID_PROF=$(printf '%s' "$NUEVO" | sed -n 's/.*"profesionalId":\([0-9]*\).*/\1/p')
+comprobar "profesional abre disponibilidad"   "si" "$([ -n "$ID" ] && [ -n "$ID_PROF" ] && echo si || echo no)"
 comprobar "sin modalidad la franja es PRESENCIAL" "si" "$(printf '%s' "$NUEVO" | grep -q '"modalidad":"PRESENCIAL"' && echo si || echo no)"
 TELE=$(curl -s -u "$PROF" -H "Content-Type: application/json" \
        -d '{"fechaHora":"2027-01-15T12:00:00","modalidad":"TELEMEDICINA"}' "$BASE/turnos/disponibilidad")
@@ -310,7 +315,9 @@ IDF=$(printf '%s' "$FALLA" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
 curl -s -o /dev/null -u "$PACI" -H "Content-Type: application/json" -d "{\"turnoId\":$IDF}" "$BASE/turnos"
 comprobar "pasarela caida: 502"                 502 "$(confirmar_con "$PACI" "$IDF" caer_demo)"
 comprobar "la falla deja el turno EN_HOLD"      "si" "$(curl -s -u "$PACI" "$BASE/turnos/mios" | tr '{' '\n' | grep "\"id\":$IDF[,}]" | grep -q EN_HOLD && echo si || echo no)"
-comprobar "no se cobro nada (pago PENDIENTE)"   "si" "$(curl -s -u "$PACI" "$BASE/pagos?turnoId=$IDF" | grep -q '"estado":"PENDIENTE"' && echo si || echo no)"
+PAGOS_F=$(curl -s -u "$PACI" "$BASE/pagos?turnoId=$IDF")
+comprobar "queda el intento PENDIENTE"          "si" "$(printf '%s' "$PAGOS_F" | grep -q '"estado":"PENDIENTE"' && echo si || echo no)"
+comprobar "y no se cobro nada (ningun APROBADO)" "si" "$(printf '%s' "$PAGOS_F" | grep -q '"estado":"APROBADO"' && echo no || echo si)"
 comprobar "copago sin medio de pago: 400"       400 "$(codigo -u "$PACI" -X PUT -H "Content-Type: application/json" -d '{}' "$BASE/turnos/$IDF/confirmar")"
 comprobar "al volver la pasarela se confirma"   200 "$(confirmar_con "$PACI" "$IDF" tok_visa_demo)"
 
@@ -382,7 +389,7 @@ if [ "$RAPIDO" != "si" ]; then
   inicio=$(date +%s)
   for i in $(seq 1 28); do
     sleep 15
-    if curl -s -u "$PACI" "$BASE/turnos?profesionalId=2" | grep -q "\"id\":$ID2"; then
+    if curl -s -u "$PACI" "$BASE/turnos?profesionalId=$ID_PROF" | grep -q "\"id\":$ID2[,}]"; then
       liberado=si
       echo "  liberado a los $(( $(date +%s) - inicio )) segundos"
       break
@@ -400,10 +407,27 @@ if [ "$RESILIENCIA" = "si" ]; then
   fi
   PROP_LEGADO=mediconecta.obrasocial.url
   PROP_VIDEO=mediconecta.video.simular-caida
-  cli() { "$JBOSS_CLI" --connect "$@" >/dev/null 2>&1; }
+  # Un :add que no se aplico explica una comprobacion fallida, y un :remove que no
+  # se aplico deja el servidor roto: cada falla de jboss-cli se informa.
+  cli() {
+    local salida
+    salida=$("$JBOSS_CLI" --connect "$@" 2>&1) && return 0
+    echo "  ATENCION: jboss-cli fallo en $*: $(printf '%s' "$salida" | grep -m1 -E 'WFLY|[Ff]ailed' || printf '%s' "$salida" | tail -n 1)"
+    return 1
+  }
+  activas() { # las propiedades de falla que siguen en el servidor, o "?" si no se pudo consultar
+    local salida
+    salida=$("$JBOSS_CLI" --connect ':read-children-names(child-type=system-property)' 2>&1) || { echo "?"; return; }
+    printf '%s' "$salida" | grep -oE "\"($PROP_LEGADO|$PROP_VIDEO)\"" | tr -d '"'
+  }
   # Las fallas son system properties del servidor: si el script se corta, quedarian
-  # activas y ninguna reserva funcionaria. Se quitan siempre al salir.
-  restaurar() { cli "/system-property=$PROP_LEGADO:remove"; cli "/system-property=$PROP_VIDEO:remove"; }
+  # activas y ninguna reserva funcionaria. Se quitan siempre al salir, y se verifica.
+  restaurar() {
+    local p quedan
+    for p in $(activas); do [ "$p" = "?" ] || cli "/system-property=$p:remove"; done
+    quedan=$(activas)
+    [ -z "$quedan" ] || echo "  ATENCION: siguen activas o no se pudo verificar ($quedan): quitarlas con jboss-cli /system-property=<nombre>:remove"
+  }
   trap restaurar EXIT
   restaurar   # parte de un estado limpio, por si quedo algo de una corrida anterior
 
@@ -417,7 +441,7 @@ if [ "$RESILIENCIA" = "si" ]; then
   IDL=$(abrir 2027-01-18T10:00:00 PRESENCIAL)
   cli "/system-property=$PROP_LEGADO:add(value=\"http://127.0.0.1:1/x\")"
   comprobar "legado caido: la reserva da 503"          503 "$(reservar "$IDL")"
-  comprobar "la franja sigue DISPONIBLE"              "si" "$(curl -s -u "$PACI" "$BASE/turnos?profesionalId=2" | grep -q "\"id\":$IDL[,}]" && echo si || echo no)"
+  comprobar "la franja sigue DISPONIBLE"              "si" "$(curl -s -u "$PACI" "$BASE/turnos?profesionalId=$ID_PROF" | grep -q "\"id\":$IDL[,}]" && echo si || echo no)"
   cli "/system-property=$PROP_LEGADO:remove"
   comprobar "legado de vuelta: la reserva funciona"    200 "$(reservar "$IDL")"
   # Un hold vigente por paciente: se suelta antes de reservar el siguiente.
@@ -428,11 +452,19 @@ if [ "$RESILIENCIA" = "si" ]; then
   IDR=$(abrir 2027-01-18T11:00:00 PRESENCIAL)
   reservar "$IDR" >/dev/null
   cli "/system-property=$PROP_LEGADO:add(value=\"http://127.0.0.1:1/x\")"
+  T_CONFIRMAR=$(date +%s)
   comprobar "con el legado caido se confirma igual"    200 "$(confirmar_con "$PACI" "$IDR" tok_visa_demo)"
   comprobar "el reclamo reintenta (intentos >= 1)"    "si" "$(sondear "$ADMIN" /reclamos "\"intentos\":[1-9].*\"turnoId\":$IDR[,}]" 40)"
-  comprobar "y todavia no se envio"                   "si" "$(curl -s -u "$ADMIN" "$BASE/reclamos" | tr '{' '\n' | grep "\"turnoId\":$IDR[,}]" | grep -q ENVIADO && echo no || echo si)"
-  cli "/system-property=$PROP_LEGADO:remove"
-  echo "  legado restaurado, esperando el siguiente reintento (hasta 40 s)..."
+  # El quinto intento llega unos 30 s despues de confirmar (2, 4, 8 y 16 s) y deja
+  # el reclamo EN_REVISION_MANUAL. Cada jboss-cli arranca una JVM: el :remove sale
+  # ya, en paralelo con la comprobacion siguiente, y se informa cuanto tardo.
+  cli "/system-property=$PROP_LEGADO:remove" &
+  QUITAR=$!
+  RECLAMO_R=$(curl -s -u "$ADMIN" "$BASE/reclamos" | tr '{' '\n' | grep "\"turnoId\":$IDR[,}]")
+  comprobar "y todavia no se envio"                   "si" "$([ -n "$RECLAMO_R" ] && ! printf '%s' "$RECLAMO_R" | grep -q ENVIADO && echo si || echo no)"
+  wait "$QUITAR"
+  echo "  legado restaurado a los $(( $(date +%s) - T_CONFIRMAR )) s de confirmar (si pasa de ~30 s, el quinto intento puede ganar)"
+  echo "  esperando el siguiente reintento (hasta 40 s)..."
   comprobar "al volver el legado el reclamo se envia" "si" "$(sondear "$ADMIN" /reclamos "\"estado\":\"ENVIADO\".*\"turnoId\":$IDR[,}]" 80)"
 
   # 3. Proveedor de video caido: la sala se crea dentro de la confirmacion.
@@ -463,6 +495,8 @@ if [ "$RESILIENCIA" = "si" ]; then
   echo "  esperando que venza el tiempo de apertura del circuito (11 s)..."
   sleep 11
   comprobar "vencido, la llamada de prueba confirma"   200 "$(confirmar_con "$PACI" "$IDP" tok_visa_demo)"
+  quedan=$(activas)
+  comprobar "no queda ninguna falla en el servidor"   ninguna "${quedan:-ninguna}"
 fi
 
 echo
