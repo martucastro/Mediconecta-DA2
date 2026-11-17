@@ -1312,6 +1312,9 @@
                   "pm.test('publica las dos operaciones', () => {",
                   "    pm.expect(pm.response.text()).to.include('validarCobertura');",
                   "    pm.expect(pm.response.text()).to.include('autorizarPrestacion');",
+                  "});",
+                  "pm.test('declara el fault PedidoInvalido (SCRUM-129)', () => {",
+                  "    pm.expect(pm.response.text()).to.include('<wsdl:fault message=\"tns:PedidoInvalidoException\"');",
                   "});"
                 ]
               }
@@ -1593,6 +1596,10 @@
                   "    pm.response.to.have.status(500);",
                   "    pm.expect(pm.response.text()).to.include('Fault');",
                   "    pm.expect(pm.response.text()).to.include('OS-9999');",
+                  "});",
+                  "pm.test('codigo Client con el detalle PedidoInvalido (SCRUM-129)', () => {",
+                  "    pm.expect(pm.response.text()).to.match(/<faultcode[^>]*>[^<]*Client</);",
+                  "    pm.expect(pm.response.text()).to.include('PedidoInvalido');",
                   "});"
                 ]
               }

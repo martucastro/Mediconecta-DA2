@@ -206,6 +206,11 @@ comprobar "afiliado inexistente da SOAP Fault" "si" \
 # del legado (faultcode Server) por este codigo.
 comprobar "ese Fault tiene codigo Client" "si" \
   "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -Eq '<faultcode[^>]*>[^<]*Client</faultcode>' && echo si || echo no)"
+# SCRUM-129: el fault esta declarado en el contrato y viaja con su detalle.
+comprobar "el WSDL declara el fault PedidoInvalido" "si" \
+  "$(curl -s "$SOAP?wsdl" | grep -q '<wsdl:fault message="tns:PedidoInvalidoException"' && echo si || echo no)"
+comprobar "el Fault trae el detalle PedidoInvalido" "si" \
+  "$(soap validarCobertura 1 OS-9999 CONSULTA | grep -q 'PedidoInvalido' && echo si || echo no)"
 # presentarReclamo (SCRUM-97 T4): presenta una autorizacion ya emitida, no
 # evalua cobertura de nuevo.
 R=$(soapReclamo 30333444 OS-2002 AUT-OS-2002-CONSULTA)
