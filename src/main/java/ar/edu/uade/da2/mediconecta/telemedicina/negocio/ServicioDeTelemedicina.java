@@ -9,9 +9,10 @@ import ar.edu.uade.da2.mediconecta.telemedicina.datos.SesionVideoDAO;
 import ar.edu.uade.da2.mediconecta.turnos.datos.EstadoTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
-import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 import jakarta.annotation.Resource;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ejb.EJBAccessException;
@@ -38,7 +39,7 @@ import jakarta.inject.Inject;
  */
 @Stateless
 @RolesAllowed({ ServicioDeUsuarios.ROL_PACIENTE, ServicioDeUsuarios.ROL_PROFESIONAL })
-public class ServicioDeTelemedicina {
+public class ServicioDeTelemedicina implements ServicioDeTelemedicinaLocal {
 
     private static final Logger LOGGER = Logger.getLogger(ServicioDeTelemedicina.class.getName());
 
@@ -52,10 +53,10 @@ public class ServicioDeTelemedicina {
     private ProveedorDeVideoAdapter proveedor;
 
     @Inject
-    private ServicioDeTurnos servicioDeTurnos;
+    private ServicioDeTurnosLocal servicioDeTurnos;
 
     @Inject
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     @Resource
     private SessionContext contexto;

@@ -201,6 +201,25 @@
     </security-constraint>
 
     <!--
+      Operacion sensible 9: las afiliaciones a la obra social (DNI y numero de
+      afiliado). Ninguna operacion es anonima. Que registrar sea solo del
+      ADMINISTRADOR y que GET /mia sea solo del PACIENTE lo decide @RolesAllowed
+      sobre ServicioDeObrasSociales; aca solo se exige estar autenticado, asi un
+      rol equivocado recibe 403 desde el componente y un anonimo recibe 401.
+    -->
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>Afiliaciones a la obra social</web-resource-name>
+            <url-pattern>/api/afiliaciones/*</url-pattern>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>PACIENTE</role-name>
+            <role-name>PROFESIONAL</role-name>
+            <role-name>ADMINISTRADOR</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <!--
       Las pantallas del frontend (/home, /agenda, /admin...) no existen como
       archivos: las sirve con index.html y status 200 el filtro
       web.RutasDelFrontend (SCRUM-134). Antes lo hacia una error-page de 404,

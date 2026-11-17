@@ -4,6 +4,7 @@ import ar.edu.uade.da2.mediconecta.notificaciones.datos.Notificacion;
 import ar.edu.uade.da2.mediconecta.notificaciones.datos.NotificacionDAO;
 import ar.edu.uade.da2.mediconecta.usuarios.datos.Usuario;
 import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuarios;
+import ar.edu.uade.da2.mediconecta.usuarios.negocio.ServicioDeUsuariosLocal;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -33,7 +34,7 @@ import jakarta.inject.Inject;
  */
 @Stateless
 @PermitAll
-public class ServicioDeNotificaciones {
+public class ServicioDeNotificaciones implements ServicioDeNotificacionesLocal {
 
     private static final Logger LOG = Logger.getLogger(ServicioDeNotificaciones.class.getName());
 
@@ -44,7 +45,7 @@ public class ServicioDeNotificaciones {
     private NotificacionDAO notificacionDAO;
 
     @Inject
-    private ServicioDeUsuarios servicioDeUsuarios;
+    private ServicioDeUsuariosLocal servicioDeUsuarios;
 
     @Resource
     private SessionContext contexto;

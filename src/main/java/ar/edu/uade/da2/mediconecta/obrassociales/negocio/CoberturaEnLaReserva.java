@@ -26,7 +26,7 @@ import jakarta.transaction.Transactional.TxType;
 public class CoberturaEnLaReserva {
 
     @Inject
-    private ServicioDeObrasSociales obrasSociales;
+    private ServicioDeObrasSocialesLocal obrasSociales;
 
     @Transactional(TxType.MANDATORY)
     public void alReservar(@Observes @Priority(PuntosDeExtension.COBERTURA) TurnoEnReserva evento) {

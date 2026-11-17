@@ -29,6 +29,10 @@ import jakarta.xml.ws.soap.SOAPFaultException;
  * corresponde, prestación desconocida) vuelve como SOAP Fault de código Client:
  * el error es del cliente, no del servidor. Un cliente puede así distinguirlo de
  * una falla interna del legado (código Server), que no se reintenta igual.
+ *
+ * Ese fault está declarado en el contrato (SCRUM-129): cada operación lanza
+ * PedidoInvalidoException, así que el WSDL publica un wsdl:fault por operación
+ * y el SOAP Fault lleva el elemento PedidoInvalido en su detail.
  */
 @WebService(
         serviceName = "ObraSocialLegadoService",
@@ -45,7 +49,7 @@ public class ObraSocialLegado {
     public RespuestaCobertura validarCobertura(
             @WebParam(name = "dni") String dni,
             @WebParam(name = "numeroAfiliado") String numeroAfiliado,
-            @WebParam(name = "codigoPrestacion") String codigoPrestacion) {
+            @WebParam(name = "codigoPrestacion") String codigoPrestacion) throws PedidoInvalidoException {
         return evaluar(dni, numeroAfiliado, codigoPrestacion);
     }
 
@@ -59,7 +63,7 @@ public class ObraSocialLegado {
     public RespuestaCobertura autorizarPrestacion(
             @WebParam(name = "dni") String dni,
             @WebParam(name = "numeroAfiliado") String numeroAfiliado,
-            @WebParam(name = "codigoPrestacion") String codigoPrestacion) {
+            @WebParam(name = "codigoPrestacion") String codigoPrestacion) throws PedidoInvalidoException {
         RespuestaCobertura respuesta = evaluar(dni, numeroAfiliado, codigoPrestacion);
         if (respuesta.isAutorizado()) {
             respuesta.setNumeroAutorizacion("AUT-" + numeroAfiliado + "-" + codigoPrestacion);
@@ -82,29 +86,40 @@ public class ObraSocialLegado {
     public RespuestaReclamo presentarReclamo(
             @WebParam(name = "dni") String dni,
             @WebParam(name = "numeroAfiliado") String numeroAfiliado,
-            @WebParam(name = "numeroAutorizacion") String numeroAutorizacion) {
+            @WebParam(name = "numeroAutorizacion") String numeroAutorizacion) throws PedidoInvalidoException {
         try {
             return PadronDeAfiliados.presentarReclamo(dni, numeroAfiliado, numeroAutorizacion);
         } catch (PedidoInvalidoException e) {
-            throw faultDelCliente(e.getMessage());
+            throw comoFaultDelCliente(e);
         }
     }
 
-    private static RespuestaCobertura evaluar(String dni, String numeroAfiliado, String codigoPrestacion) {
+    private static RespuestaCobertura evaluar(String dni, String numeroAfiliado, String codigoPrestacion)
+            throws PedidoInvalidoException {
         try {
             return PadronDeAfiliados.evaluar(dni, numeroAfiliado, codigoPrestacion);
         } catch (PedidoInvalidoException e) {
-            throw faultDelCliente(e.getMessage());
+            throw comoFaultDelCliente(e);
         }
     }
 
-    private static SOAPFaultException faultDelCliente(String mensaje) {
+    /**
+     * Un fault declarado sale por defecto con código Server (JAX-WS lo trata
+     * como excepción de la aplicación), y el cliente lo tomaría como una falla
+     * del legado. Con un SOAPFaultException de código Client como causa, CXF
+     * toma de ahí el faultcode y escribe el detail a partir de la excepción.
+     */
+    // ponytail: depende de cómo CXF (el runtime de WildFly) arma el fault; el
+    // smoke test verifica el código Client contra el servidor desplegado. Si se
+    // cambia de runtime, un SOAPHandler que fije el faultcode cumple lo mismo.
+    private static PedidoInvalidoException comoFaultDelCliente(PedidoInvalidoException e) {
         try {
-            SOAPFault fault = SOAPFactory.newInstance().createFault(mensaje,
+            SOAPFault fault = SOAPFactory.newInstance().createFault(e.getMessage(),
                     new QName(SOAPConstants.URI_NS_SOAP_1_1_ENVELOPE, "Client"));
-            return new SOAPFaultException(fault);
-        } catch (SOAPException e) {
-            throw new IllegalStateException("No se pudo armar el SOAP Fault", e);
+            e.initCause(new SOAPFaultException(fault));
+            return e;
+        } catch (SOAPException ex) {
+            throw new IllegalStateException("No se pudo armar el SOAP Fault", ex);
         }
     }
 }

@@ -8,7 +8,7 @@ import java.util.List;
 import ar.edu.uade.da2.mediconecta.comun.negocio.DatosInvalidosException;
 import ar.edu.uade.da2.mediconecta.turnos.datos.ModalidadTurno;
 import ar.edu.uade.da2.mediconecta.turnos.datos.Turno;
-import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnos;
+import ar.edu.uade.da2.mediconecta.turnos.negocio.ServicioDeTurnosLocal;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -36,7 +36,7 @@ public class TurnosResource {
     // sí solo. La expiración del hold la gestiona el contenedor a través de
     // ExpiradorDeHolds, que es un @Singleton con TimerService.
     @Inject
-    private ServicioDeTurnos servicio;
+    private ServicioDeTurnosLocal servicio;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
