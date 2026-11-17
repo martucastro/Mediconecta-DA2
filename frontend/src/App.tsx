@@ -4,6 +4,7 @@ import HomePage from './pages/HomePage'
 import DisponibilidadPage from './pages/DisponibilidadPage'
 import HoldPage from './pages/HoldPage'
 import AgendaPage from './pages/AgendaPage'
+import AdminPage from './pages/AdminPage'
 import NotFoundPage from './pages/NotFoundPage'
 import RutaProtegida from './pages/RutaProtegida'
 
@@ -21,6 +22,10 @@ function App() {
       <Route element={<RutaProtegida roles={['PROFESIONAL']} />}>
         <Route path="/agenda" element={<AgendaPage />} />
         {/* /historia queda deshabilitada hasta que SCRUM-87 conecte HistoriaPage con /api/historias. */}
+      </Route>
+
+      <Route element={<RutaProtegida roles={['ADMINISTRADOR']} />}>
+        <Route path="/admin" element={<AdminPage />} />
       </Route>
 
       <Route path="*" element={<NotFoundPage />} />

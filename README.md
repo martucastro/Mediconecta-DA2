@@ -296,8 +296,9 @@ en cada pedido a la API.
 
 - Dura lo que dura la pestaña: sobrevive a un refresco, pero no a una pestaña
   nueva ni a cerrar el navegador.
-- Cada ruta exige un rol: un paciente que pide `/agenda` vuelve a `/home`, y un
-  profesional que pide `/home` vuelve a `/agenda`. Es solo para no mostrar
+- Cada ruta exige un rol: un paciente que pide `/agenda` vuelve a `/home`, un
+  profesional que pide `/home` vuelve a `/agenda`, y el administrador vuelve a
+  `/admin`. Es solo para no mostrar
   pantallas que no le corresponden; la autorización real la hace el backend.
 - Un 401 en medio de la sesión (la credencial ya no vale) cierra la sesión y
   vuelve al login. Esto depende de que el fetch pueda manejar la respuesta: la
@@ -306,8 +307,10 @@ en cada pedido a la API.
   así el navegador no abre su popup nativo de credenciales antes de que el
   código de arriba se ejecute. Un curl o un Postman que no manden ese
   encabezado sí reciben `WWW-Authenticate`, como corresponde a HTTP Basic.
-- El administrador no tiene pantallas: si inicia sesión en la interfaz web se le
-  avisa que opera por la API, y no se guarda la sesión.
+- El administrador entra a `/admin`, el panel de reclamos de facturación
+  (`GET /api/reclamos`): turno, monto, estado, intentos y última actualización,
+  con un filtro por estado. Un reclamo aparece al confirmar un turno con
+  cobertura y pasa a "Enviado" cuando la obra social lo acepta.
 
 Guardar la credencial en el navegador es lo que pide la card porque hoy el
 backend solo habla HTTP Basic. Reemplazarlo por un token con vencimiento

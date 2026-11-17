@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aDate, claveDelDia, formatearDiaLargo, formatearHora, horaSugerida, inicioDelDia, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
+import { aDate, claveDelDia, formatearDiaLargo, formatearFechaHora, formatearHora, horaSugerida, inicioDelDia, instante, parsearFechaHora, partesDeCaja, soloFuturos } from './fechas'
 
 describe('parsearFechaHora', () => {
   it('lee un LocalDateTime con segundos como hora local', () => {
@@ -69,6 +69,10 @@ describe('formatos', () => {
 
   it('arma el dia largo en castellano', () => {
     expect(formatearDiaLargo(jueves)).toBe('jueves 19 de noviembre')
+  })
+
+  it('arma fecha y hora numericas', () => {
+    expect(formatearFechaHora(jueves)).toBe('19/11/2026 08:05')
   })
 
   it('arma la caja de fecha de la tarjeta', () => {
