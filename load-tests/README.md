@@ -338,7 +338,7 @@ Solo las dos corridas de 1 nodo con 100 VUs rompen un umbral: el p95 de cancelar
   - en el control sin EcoQoS fallaron 40 cancelaciones y 5 reservas en 9000 iteraciones;
   - en la medición 3 fallaron 104 cancelaciones y 5 reservas en 60.000 iteraciones (0 a 0,21 % de las requests).
 - Cada fallo de k6 coincide con una excepción en el log del servidor, y todos los reintentos de cancelación respondieron 200.
-- Arreglo sugerido, fuera del alcance de esta prueba: ignorar `NoSuchObjectLocalException` dentro del bucle de `cancelar`, porque un timer ya cancelado es justo lo que se buscaba.
+- Se corrigió después de estas mediciones, en #77: `cancelar` ya no falla si otro pedido canceló el timer en el medio. Las tres mediciones corrieron con el build anterior (`fe1495e`).
 
 **`409`: ninguno.**
 - Todas las reservas fallidas fueron el `500` de arriba.
