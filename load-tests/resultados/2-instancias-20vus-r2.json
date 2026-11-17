@@ -1,0 +1,300 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {
+            "reserva de un turno": {
+                "name": "reserva de un turno",
+                "path": "::reserva de un turno",
+                "id": "3b70060e04723ebe3ffe516ba71404ad",
+                "groups": {},
+                "checks": {
+                    "disponibilidad 200": {
+                        "name": "disponibilidad 200",
+                        "path": "::reserva de un turno::disponibilidad 200",
+                        "id": "42d69d30f5778ed3011efbb6d550c7ff",
+                        "passes": 2400,
+                        "fails": 0
+                    },
+                    "la franja del VU sigue disponible": {
+                        "name": "la franja del VU sigue disponible",
+                        "path": "::reserva de un turno::la franja del VU sigue disponible",
+                        "id": "77506fcee692669a62717bd775c2bdc5",
+                        "passes": 2400,
+                        "fails": 0
+                    },
+                    "reservar 200": {
+                        "passes": 2400,
+                        "fails": 0,
+                        "name": "reservar 200",
+                        "path": "::reserva de un turno::reservar 200",
+                        "id": "d580a5624bcee4de64cae9e42e0a9ad5"
+                    },
+                    "queda EN_HOLD": {
+                        "id": "349cf677d2ca1aefbcfed4e845a6f337",
+                        "passes": 2400,
+                        "fails": 0,
+                        "name": "queda EN_HOLD",
+                        "path": "::reserva de un turno::queda EN_HOLD"
+                    },
+                    "cancelar 200": {
+                        "id": "20e6daab49a3c9f1478cf7ecac89b175",
+                        "passes": 2399,
+                        "fails": 1,
+                        "name": "cancelar 200",
+                        "path": "::reserva de un turno::cancelar 200"
+                    },
+                    "cancelar (reintento) 200": {
+                        "id": "6598fa2f3dbf2ae3b25122075387da25",
+                        "passes": 1,
+                        "fails": 0,
+                        "name": "cancelar (reintento) 200",
+                        "path": "::reserva de un turno::cancelar (reintento) 200"
+                    }
+                }
+            }
+        },
+        "checks": {}
+    },
+    "metrics": {
+        "http_req_duration": {
+            "p(95)": 461.654815,
+            "p(99)": 607.2061660000005,
+            "max": 773.4007,
+            "avg": 186.33231125379675,
+            "min": 22.3663,
+            "med": 143.24915,
+            "p(90)": 366.48113000000006
+        },
+        "http_req_tls_handshaking": {
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "avg": 0,
+            "min": 0
+        },
+        "vus": {
+            "value": 10,
+            "min": 0,
+            "max": 20
+        },
+        "http_req_duration{operacion:cancelar}": {
+            "med": 143.02704999999997,
+            "p(90)": 382.67848999999995,
+            "p(95)": 460.2685999999996,
+            "p(99)": 581.3625739999987,
+            "max": 753.0317,
+            "avg": 189.6891149166669,
+            "min": 30.0275,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 773.4007,
+            "avg": 186.3272140450209,
+            "min": 22.3663,
+            "med": 143.2375,
+            "p(90)": 366.4953,
+            "p(95)": 461.6554,
+            "p(99)": 607.2387400000011
+        },
+        "http_req_duration{operacion:reservar}": {
+            "avg": 210.0246212499997,
+            "min": 33.0858,
+            "med": 151.48755,
+            "p(90)": 458.93363,
+            "p(95)": 545.1742849999997,
+            "p(99)": 662.4099729999996,
+            "max": 773.4007,
+            "thresholds": {
+                "p(95)<1000": false
+            }
+        },
+        "vus_max": {
+            "max": 20,
+            "value": 20,
+            "min": 20
+        },
+        "http_req_failed": {
+            "passes": 1,
+            "fails": 7241,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0.00013808340237503452
+        },
+        "http_req_blocked": {
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 39.7965,
+            "avg": 0.017987061585197462,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0
+        },
+        "http_req_connecting": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 1.6228,
+            "avg": 0.002623046119856394,
+            "min": 0,
+            "med": 0
+        },
+        "http_req_sending": {
+            "avg": 0.061651118475559236,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 62.6437
+        },
+        "group_duration": {
+            "max": 1605.7089,
+            "avg": 563.064902374999,
+            "min": 105.6092,
+            "med": 449.278,
+            "p(90)": 1139.58718,
+            "p(95)": 1256.6116599999998,
+            "p(99)": 1412.7144439999993
+        },
+        "http_req_waiting": {
+            "min": 7.7475,
+            "med": 142.94735,
+            "p(90)": 365.6205100000001,
+            "p(95)": 461.654815,
+            "p(99)": 607.2061660000005,
+            "max": 773.4007,
+            "avg": 185.96503131731558
+        },
+        "data_sent": {
+            "count": 2030073,
+            "rate": 25174.89046467316
+        },
+        "http_reqs{instancia:2}": {
+            "count": 3601,
+            "rate": 44.65592151774249,
+            "thresholds": {
+                "count>0": false
+            }
+        },
+        "http_reqs{instancia:1}": {
+            "rate": 44.643520539814766,
+            "count": 3600,
+            "thresholds": {
+                "count>0": false
+            }
+        },
+        "http_req_receiving": {
+            "avg": 0.3056288180060758,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0.444219999999999,
+            "p(99)": 8.361564000000019,
+            "max": 77.5592
+        },
+        "data_received": {
+            "count": 8808656,
+            "rate": 109235.94862893406
+        },
+        "flujo_reserva_completo": {
+            "p(90)": 1140,
+            "p(95)": 1256.0499999999997,
+            "p(99)": 1413.0199999999995,
+            "max": 1605,
+            "avg": 563.1054166666667,
+            "min": 106,
+            "med": 449.5
+        },
+        "checks": {
+            "passes": 12000,
+            "fails": 1,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 0.9999166736105325
+        },
+        "iteration_duration": {
+            "avg": 563.2431651249988,
+            "min": 105.6092,
+            "med": 449.278,
+            "p(90)": 1139.58718,
+            "p(95)": 1258.84892,
+            "p(99)": 1412.7144439999993,
+            "max": 1605.7089
+        },
+        "iterations": {
+            "count": 2400,
+            "rate": 29.76234702654318
+        },
+        "http_reqs": {
+            "count": 7242,
+            "rate": 89.80788215259403
+        },
+        "http_req_duration{operacion:disponibilidad}": {
+            "avg": 161.90289562499999,
+            "min": 35.8057,
+            "med": 137.5913,
+            "p(90)": 284.38532,
+            "p(95)": 334.5288649999999,
+            "p(99)": 419.59699699999953,
+            "max": 567.5029,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        }
+    },
+    "setup_data": {
+        "franjas": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+        ],
+        "pacientes": [
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0yQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0zQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi00QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi01QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi02QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi03QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi04QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi05QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xMUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xMkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xM0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xNEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xNUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xNkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xN0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xOEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0xOUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0Mzg1NDk3Mi0yMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY="
+        ],
+        "profesionalId": 2
+    }
+}

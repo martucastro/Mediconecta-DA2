@@ -1,0 +1,293 @@
+{
+    "metrics": {
+        "http_req_duration": {
+            "max": 587.6749,
+            "avg": 104.34112633222612,
+            "min": 21.0882,
+            "med": 86.41965,
+            "p(90)": 192.23822,
+            "p(95)": 235.60223499999995,
+            "p(99)": 323.5400520000002
+        },
+        "vus": {
+            "max": 20,
+            "value": 8,
+            "min": 0
+        },
+        "http_req_blocked": {
+            "max": 12.4444,
+            "avg": 0.008216910299003323,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0
+        },
+        "group_duration": {
+            "min": 69.6926,
+            "med": 295.30415,
+            "p(90)": 464.85565,
+            "p(95)": 526.13936,
+            "p(99)": 639.523125,
+            "max": 858.7791,
+            "avg": 314.15223086
+        },
+        "vus_max": {
+            "value": 20,
+            "min": 20,
+            "max": 20
+        },
+        "http_req_duration{expected_response:true}": {
+            "min": 21.0882,
+            "med": 86.3954,
+            "p(90)": 192.1769,
+            "p(95)": 235.6264,
+            "p(99)": 323.6179200000003,
+            "max": 587.6749,
+            "avg": 104.31000888238836
+        },
+        "http_reqs{instancia:1}": {
+            "rate": 185.55996119419356,
+            "count": 15009,
+            "thresholds": {
+                "count>0": false
+            }
+        },
+        "http_req_receiving": {
+            "p(90)": 0.80371,
+            "p(95)": 0.9415749999999996,
+            "p(99)": 1.0028,
+            "max": 2.5565,
+            "avg": 0.21788327574750796,
+            "min": 0,
+            "med": 0
+        },
+        "data_sent": {
+            "count": 4216603,
+            "rate": 52130.900729650224
+        },
+        "http_req_duration{operacion:disponibilidad}": {
+            "p(90)": 174.41126,
+            "p(95)": 220.13423,
+            "p(99)": 311.7938070000004,
+            "max": 520.9091,
+            "avg": 95.15103247999964,
+            "min": 21.4394,
+            "med": 77.89135,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "http_req_failed": {
+            "passes": 9,
+            "fails": 15041,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0.0005980066445182724
+        },
+        "iteration_duration": {
+            "p(99)": 639.523125,
+            "max": 858.7791,
+            "avg": 314.1783410599999,
+            "min": 69.9646,
+            "med": 295.30415,
+            "p(90)": 464.85565,
+            "p(95)": 526.13936
+        },
+        "http_req_tls_handshaking": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "avg": 0,
+            "min": 0,
+            "med": 0
+        },
+        "http_req_sending": {
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 2.5594,
+            "avg": 0.006789328903654484,
+            "min": 0
+        },
+        "http_req_duration{operacion:cancelar}": {
+            "max": 531.6479,
+            "avg": 104.9863358799997,
+            "min": 21.0882,
+            "med": 87.68700000000001,
+            "p(90)": 189.91994000000003,
+            "p(95)": 233.4757050000002,
+            "p(99)": 314.8357070000001,
+            "thresholds": {
+                "p(95)<800": false
+            }
+        },
+        "http_req_duration{operacion:reservar}": {
+            "avg": 113.56425924000037,
+            "min": 21.7566,
+            "med": 96.98425,
+            "p(90)": 206.41539,
+            "p(95)": 247.50822,
+            "p(99)": 346.463066000001,
+            "max": 587.6749,
+            "thresholds": {
+                "p(95)<1000": false
+            }
+        },
+        "http_req_waiting": {
+            "avg": 104.11645372757499,
+            "min": 21.0882,
+            "med": 86.14590000000001,
+            "p(90)": 192.03499000000002,
+            "p(95)": 235.01725499999984,
+            "p(99)": 323.37271700000025,
+            "max": 587.6749
+        },
+        "checks": {
+            "passes": 25000,
+            "fails": 9,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 0.9996401295533608
+        },
+        "http_req_connecting": {
+            "max": 7.5115,
+            "avg": 0.0056391960132890365,
+            "min": 0,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0
+        },
+        "data_received": {
+            "count": 17336273,
+            "rate": 214332.6101093974
+        },
+        "iterations": {
+            "count": 5000,
+            "rate": 61.816230659668726
+        },
+        "http_reqs": {
+            "rate": 186.06685428560286,
+            "count": 15050
+        },
+        "flujo_reserva_completo": {
+            "p(90)": 465,
+            "p(95)": 526.0500000000002,
+            "p(99)": 639.0100000000002,
+            "max": 858,
+            "avg": 314.1558,
+            "min": 70,
+            "med": 295
+        }
+    },
+    "setup_data": {
+        "franjas": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+        ],
+        "pacientes": [
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0yQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0zQG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni00QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni01QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni02QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni03QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni04QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni05QG1lZGljb25lY3RhLnRlc3Q6Q2FyZ2EtazYtMjAyNg==",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xMUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xMkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xM0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xNEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xNUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xNkBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xN0BtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xOEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0xOUBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY=",
+            "Basic Y2FyZ2EtMTc5NDk0NDk1NDU3Ni0yMEBtZWRpY29uZWN0YS50ZXN0OkNhcmdhLWs2LTIwMjY="
+        ],
+        "profesionalId": 2
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {
+            "reserva de un turno": {
+                "name": "reserva de un turno",
+                "path": "::reserva de un turno",
+                "id": "3b70060e04723ebe3ffe516ba71404ad",
+                "groups": {},
+                "checks": {
+                    "disponibilidad 200": {
+                        "passes": 5000,
+                        "fails": 0,
+                        "name": "disponibilidad 200",
+                        "path": "::reserva de un turno::disponibilidad 200",
+                        "id": "42d69d30f5778ed3011efbb6d550c7ff"
+                    },
+                    "la franja del VU sigue disponible": {
+                        "name": "la franja del VU sigue disponible",
+                        "path": "::reserva de un turno::la franja del VU sigue disponible",
+                        "id": "77506fcee692669a62717bd775c2bdc5",
+                        "passes": 5000,
+                        "fails": 0
+                    },
+                    "reservar 200": {
+                        "path": "::reserva de un turno::reservar 200",
+                        "id": "d580a5624bcee4de64cae9e42e0a9ad5",
+                        "passes": 5000,
+                        "fails": 0,
+                        "name": "reservar 200"
+                    },
+                    "queda EN_HOLD": {
+                        "name": "queda EN_HOLD",
+                        "path": "::reserva de un turno::queda EN_HOLD",
+                        "id": "349cf677d2ca1aefbcfed4e845a6f337",
+                        "passes": 5000,
+                        "fails": 0
+                    },
+                    "cancelar 200": {
+                        "id": "20e6daab49a3c9f1478cf7ecac89b175",
+                        "passes": 4991,
+                        "fails": 9,
+                        "name": "cancelar 200",
+                        "path": "::reserva de un turno::cancelar 200"
+                    },
+                    "cancelar (reintento) 200": {
+                        "fails": 0,
+                        "name": "cancelar (reintento) 200",
+                        "path": "::reserva de un turno::cancelar (reintento) 200",
+                        "id": "6598fa2f3dbf2ae3b25122075387da25",
+                        "passes": 9
+                    }
+                }
+            }
+        },
+        "checks": {}
+    }
+}
